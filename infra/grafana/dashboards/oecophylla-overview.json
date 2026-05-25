@@ -1,0 +1,8 @@
+{
+  "title": "Oecophylla Overview",
+  "panels": [
+    { "id": 1, "type": "stat", "title": "Services up",
+      "targets": [{ "expr": "sum(up{job=\"oecophylla-services\"})" }] }
+  ],
+  "schemaVersion": 39, "version": 1, "tags": ["oecophylla"]
+}

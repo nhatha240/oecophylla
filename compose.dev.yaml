@@ -1,0 +1,7 @@
+services:
+  postgres: { ports: ["5432:5432"] }
+  redis:    { ports: ["6379:6379"] }
+  kafka:    { ports: ["9092:9092"] }
+  auth-service:    { ports: ["8001:8001"] }
+  user-service:    { ports: ["8002:8002"] }
+  content-service: { ports: ["8003:8003"] }
