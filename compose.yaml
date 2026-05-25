@@ -71,19 +71,20 @@ services:
     restart: "no"
 
   migrate:
-    image: rust:1.85-trixie
+    image: rust:slim
     depends_on:
       postgres:
         condition: service_healthy
     working_dir: /app
     volumes:
       - ./migrations:/app/migrations:ro
+      - cargo_cache:/usr/local/cargo/registry
     environment:
       DATABASE_URL: ${DATABASE_URL}
     entrypoint: ["/bin/bash", "-c"]
     command:
       - |
-        cargo install --quiet sqlx-cli@0.8 --no-default-features --features postgres,rustls && \
+        cargo install --quiet sqlx-cli --version '^0.8' --no-default-features --features postgres,rustls && \
         sqlx migrate run --source ./migrations
     restart: "no"
 
@@ -188,3 +189,4 @@ volumes:
   postgres_data:
   redis_data:
   kafka_data:
+  cargo_cache:
