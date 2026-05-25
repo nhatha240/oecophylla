@@ -1,0 +1,124 @@
+/* Responsive overrides — keep layouts usable at smaller widths.
+   Loaded last so it wins specificity battles. */
+
+/* App shell — collapse sidebar to icon strip on narrow screens */
+@media (max-width: 1100px) {
+  .app { grid-template-columns: 72px 1fr; }
+  .sidebar { padding: 18px 10px; }
+  .sidebar .brand-name,
+  .sidebar .nav-item span,
+  .sidebar .nav-item .count,
+  .sidebar .nav-section,
+  .sidebar .profile-card .name,
+  .sidebar .profile-card .handle { display: none; }
+  .sidebar .brand { justify-content: center; padding: 6px 0 22px; }
+  .sidebar .nav-item { justify-content: center; padding: 11px 0; }
+  .sidebar .profile-card { justify-content: center; padding: 6px 0; }
+  .sidebar .nav-item > span:first-child:not(svg) { display: inline-block; }
+}
+
+/* Feed grid — drop the right rail */
+@media (max-width: 1100px) {
+  .feed-grid { grid-template-columns: minmax(0, 1fr); padding: 24px 24px 80px; max-width: 720px; }
+  .rail { position: static; }
+}
+
+/* Profile grid — stack the right column */
+@media (max-width: 980px) {
+  .profile-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Explore grid */
+@media (max-width: 1000px) {
+  .explore-grid { grid-template-columns: minmax(0, 1fr); }
+  .explore-hero { padding: 32px; }
+  .explore-hero h1 { font-size: 30px; }
+}
+
+/* Topbar — compact */
+@media (max-width: 1100px) {
+  .topbar { padding: 0 18px; gap: 10px; }
+  .topbar .crumbs { font-size: 16px; }
+  .topbar .search { margin: 0 8px; max-width: none; }
+}
+
+@media (max-width: 760px) {
+  .topbar .search { display: none; }
+  .topbar-actions .btn { display: none; }
+}
+
+/* Admin sidebar — same icon-strip treatment */
+@media (max-width: 1200px) {
+  .admin-shell { grid-template-columns: 72px 1fr; }
+  .admin-sidebar { padding: 18px 10px; }
+  .admin-sidebar .brand-name,
+  .admin-sidebar .nav-item span,
+  .admin-sidebar .nav-item .count,
+  .admin-sidebar .nav-section,
+  .admin-sidebar .profile-card .name,
+  .admin-sidebar .profile-card .handle,
+  .admin-sidebar-tag,
+  .admin-sidebar .sidebar-foot .profile-card { display: none; }
+  .admin-sidebar .brand { justify-content: center; padding: 6px 0 22px; }
+  .admin-sidebar .nav-item { justify-content: center; padding: 11px 0; }
+  .admin-sidebar .profile-card { justify-content: center; padding: 6px 0; }
+}
+
+/* Admin KPIs */
+@media (max-width: 1100px) {
+  .kpi-grid { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 700px) {
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* Admin main padding */
+@media (max-width: 900px) {
+  .admin-main { padding: 22px 20px 60px; }
+}
+
+/* Composer foot wraps in a friendly way */
+.composer-foot { flex-wrap: wrap; }
+.composer-foot > .t-meta { font-size: 11.5px; }
+
+/* Post actions — wrap on small */
+.post-actions { flex-wrap: wrap; }
+
+/* Auth — already responsive, but tweak padding */
+@media (max-width: 900px) {
+  .auth-form-wrap { padding: 40px 28px; }
+}
+
+/* Onboarding */
+@media (max-width: 520px) {
+  .topic-grid { grid-template-columns: 1fr; }
+  .onb-title { font-size: 30px; }
+}
+
+/* Reader */
+@media (max-width: 720px) {
+  .reader { padding: 24px 20px 60px; }
+  .reader h1 { font-size: 32px; }
+  .reader .body { font-size: 17px; }
+}
+
+/* Moderation grid */
+@media (max-width: 1100px) {
+  .mod-grid { grid-template-columns: 1fr; }
+  .mod-detail { position: static; }
+}
+
+/* Chart grids */
+@media (max-width: 1000px) {
+  .chart-grid { grid-template-columns: 1fr; }
+}
+
+/* Notif page */
+@media (max-width: 720px) {
+  .notif-page { padding: 18px 16px 60px; }
+}
+
+/* Mobile preview — single column at narrow */
+@media (max-width: 900px) {
+  .mobile-frame { transform: scale(0.85); transform-origin: top center; }
+}

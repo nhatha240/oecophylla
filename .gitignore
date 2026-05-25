@@ -1,0 +1,33 @@
+# OS
+.DS_Store
+*.swp
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Node
+node_modules/
+.svelte-kit/
+build/
+dist/
+.pnpm-store/
+
+# Rust
+target/
+**/*.rs.bk
+.sqlx/*.json.tmp
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Docker volumes (compose default named)
+data/
+
+# Python
+__pycache__/
+*.pyc
+.venv/

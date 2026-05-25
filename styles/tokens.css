@@ -1,0 +1,84 @@
+/* Oecophylla — Design Tokens */
+:root {
+  --paper: #FAFAF6;
+  --paper-sunken: #F2F1EA;
+  --surface: #FFFFFF;
+  --surface-2: #F7F6F1;
+  --ink: #0F1614;
+  --ink-2: #2A322E;
+  --muted: #6B7370;
+  --muted-2: #9AA09C;
+  --hairline: #E6E4DC;
+  --hairline-strong: #D7D4C9;
+
+  --emerald-50:  #E8F5EE;
+  --emerald-100: #C9E8D5;
+  --emerald-300: #6BC394;
+  --emerald-500: #0F8C5A;
+  --emerald-600: #0B7349;
+  --emerald-700: #095A39;
+
+  --amber-50: #FBF4E2;
+  --amber-500: #B58514;
+  --rose-50:  #FBEAE6;
+  --rose-500: #C0432A;
+  --azure-50: #E6EEF6;
+  --azure-500: #2E6FB5;
+  --violet-50:#EDE9F6;
+  --violet-500:#5C45A6;
+
+  --r-2: 6px;
+  --r-3: 10px;
+  --r-4: 14px;
+  --r-5: 20px;
+  --r-pill: 999px;
+
+  --shadow-1: 0 1px 0 rgba(15, 22, 20, 0.04), 0 1px 2px rgba(15, 22, 20, 0.04);
+  --shadow-2: 0 1px 0 rgba(15, 22, 20, 0.04), 0 4px 14px rgba(15, 22, 20, 0.05);
+  --shadow-pop: 0 18px 40px -18px rgba(15, 22, 20, 0.18), 0 4px 12px rgba(15, 22, 20, 0.06);
+
+  --font-ui: 'Be Vietnam Pro', system-ui, sans-serif;
+  --font-serif: 'Lora', Georgia, serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+[data-theme="dark"] {
+  --paper: #0E1311;
+  --paper-sunken: #090C0B;
+  --surface: #151B18;
+  --surface-2: #1B221E;
+  --ink: #ECEEEA;
+  --ink-2: #C9CDC7;
+  --muted: #8C928D;
+  --muted-2: #5E635F;
+  --hairline: #232A26;
+  --hairline-strong: #2C342F;
+  --emerald-50:  #0E2A1C;
+  --emerald-100: #16432C;
+  --emerald-300: #3FA275;
+  --emerald-500: #2BB07A;
+  --emerald-600: #44C28D;
+  --emerald-700: #6DD5A8;
+  --amber-50: #2B2415;
+  --rose-50:  #2B1B15;
+  --azure-50: #15212E;
+  --violet-50:#1E1A2B;
+  --shadow-1: 0 1px 0 rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.4);
+  --shadow-2: 0 1px 0 rgba(0,0,0,0.4), 0 4px 14px rgba(0,0,0,0.4);
+  --shadow-pop: 0 18px 40px -18px rgba(0,0,0,0.7), 0 4px 12px rgba(0,0,0,0.4);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: var(--paper); color: var(--ink); font-family: var(--font-ui); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+body { font-size: 14px; line-height: 1.5; }
+a { color: inherit; text-decoration: none; }
+button { font-family: inherit; cursor: pointer; }
+
+/* type utilities */
+.serif { font-family: var(--font-serif); }
+.mono  { font-family: var(--font-mono); }
+.muted { color: var(--muted); }
+.t-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.t-meta { font-size: 12px; color: var(--muted); }
+.divider { height: 1px; background: var(--hairline); border: 0; margin: 16px 0; }
+.hidden { display: none !important; }
