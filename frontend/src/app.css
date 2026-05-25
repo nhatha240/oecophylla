@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  .glass-surface {
+    @apply bg-canvas-50/65 backdrop-blur-glass border border-white/40
+           rounded-glass shadow-glass;
+  }
+  .glass-chip {
+    @apply inline-flex items-center gap-1.5 px-3 py-1 text-sm
+           rounded-chip glass-surface;
+  }
+  .glass-pill {
+    @apply inline-flex items-center gap-2 px-4 py-2 rounded-chip
+           bg-ink-900 text-canvas-50 hover:bg-ink-800 transition-colors;
+  }
+  .glass-button-primary {
+    @apply glass-pill bg-accent-500 hover:bg-accent-600;
+  }
+  .text-display-serif { @apply font-display italic font-medium; }
+  .text-mono-meta     { @apply font-mono text-xs text-ink-500; }
+}
