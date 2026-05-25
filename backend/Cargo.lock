@@ -3214,6 +3214,8 @@ dependencies = [
  "chrono",
  "common",
  "deadpool-redis",
+ "rdkafka",
+ "reqwest",
  "serde",
  "serde_json",
  "sqlx",
