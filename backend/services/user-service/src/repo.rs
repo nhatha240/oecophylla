@@ -49,11 +49,7 @@ pub async fn update_profile(
     .await?)
 }
 
-pub async fn insert_follow(
-    db: &PgPool,
-    follower: Uuid,
-    followee: Uuid,
-) -> Result<bool, AppError> {
+pub async fn insert_follow(db: &PgPool, follower: Uuid, followee: Uuid) -> Result<bool, AppError> {
     let r = sqlx::query(
         "INSERT INTO follows (follower_id, followee_id) VALUES ($1, $2)
          ON CONFLICT DO NOTHING",
@@ -65,11 +61,7 @@ pub async fn insert_follow(
     Ok(r.rows_affected() == 1)
 }
 
-pub async fn delete_follow(
-    db: &PgPool,
-    follower: Uuid,
-    followee: Uuid,
-) -> Result<bool, AppError> {
+pub async fn delete_follow(db: &PgPool, follower: Uuid, followee: Uuid) -> Result<bool, AppError> {
     let r = sqlx::query("DELETE FROM follows WHERE follower_id=$1 AND followee_id=$2")
         .bind(follower)
         .bind(followee)

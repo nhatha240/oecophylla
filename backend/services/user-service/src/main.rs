@@ -3,10 +3,7 @@ use axum::{
     Router,
 };
 use common::{
-    config::SharedConfig,
-    db::pg_pool,
-    kafka::Producer,
-    middleware::trace::init_tracing,
+    config::SharedConfig, db::pg_pool, kafka::Producer, middleware::trace::init_tracing,
     redis::redis_pool,
 };
 use std::{net::SocketAddr, sync::Arc};

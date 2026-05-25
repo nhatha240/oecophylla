@@ -33,10 +33,7 @@ pub struct SearchQ {
     pub limit: Option<i64>,
 }
 
-fn current_user(
-    s: &AppState,
-    h: &axum::http::HeaderMap,
-) -> Option<common::models::AuthUser> {
+fn current_user(s: &AppState, h: &axum::http::HeaderMap) -> Option<common::models::AuthUser> {
     let raw = h.get(axum::http::header::COOKIE)?.to_str().ok()?;
     let token = raw
         .split(';')
@@ -55,7 +52,9 @@ pub async fn get(
     repo::get_profile(&s.db, id)
         .await?
         .map(Json)
-        .ok_or(AppError::NotFound { kind: "user".into() })
+        .ok_or(AppError::NotFound {
+            kind: "user".into(),
+        })
 }
 
 pub async fn update(

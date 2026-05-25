@@ -1,7 +1,10 @@
-use argon2::{Argon2, PasswordHasher, PasswordVerifier, password_hash::{SaltString, PasswordHash, rand_core::OsRng}};
+use argon2::{
+    password_hash::{rand_core::OsRng, PasswordHash, SaltString},
+    Argon2, PasswordHasher, PasswordVerifier,
+};
 use axum::http::HeaderValue;
-use chrono::{Utc, Duration};
-use jsonwebtoken::{encode, decode, EncodingKey, DecodingKey, Header, Validation, Algorithm};
+use chrono::{Duration, Utc};
+use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -18,15 +21,25 @@ pub struct Claims {
     pub jti: Uuid,
 }
 
-pub fn issue_access(secret: &[u8], ttl_seconds: i64, sub: Uuid, role: UserRole) -> anyhow::Result<String> {
+pub fn issue_access(
+    secret: &[u8],
+    ttl_seconds: i64,
+    sub: Uuid,
+    role: UserRole,
+) -> anyhow::Result<String> {
     let now = Utc::now();
     let claims = Claims {
-        sub, role,
+        sub,
+        role,
         exp: (now + Duration::seconds(ttl_seconds)).timestamp(),
         iat: now.timestamp(),
         jti: Uuid::now_v7(),
     };
-    Ok(encode(&Header::new(Algorithm::HS256), &claims, &EncodingKey::from_secret(secret))?)
+    Ok(encode(
+        &Header::new(Algorithm::HS256),
+        &claims,
+        &EncodingKey::from_secret(secret),
+    )?)
 }
 
 pub fn verify_access(secret: &[u8], token: &str) -> anyhow::Result<Claims> {
@@ -42,7 +55,7 @@ pub fn new_refresh_token() -> (String, String) {
     rand::thread_rng().fill_bytes(&mut bytes);
     use base64::Engine;
     let token = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
-    let hash  = sha256_hex(&token);
+    let hash = sha256_hex(&token);
     (token, hash)
 }
 
@@ -57,14 +70,19 @@ pub fn hash_password(plain: &str, m_cost: u32, t_cost: u32, p_cost: u32) -> anyh
     let params = argon2::Params::new(m_cost, t_cost, p_cost, None)
         .map_err(|e| anyhow::anyhow!("argon2 params: {e}"))?;
     let argon = Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params);
-    Ok(argon.hash_password(plain.as_bytes(), &salt)
+    Ok(argon
+        .hash_password(plain.as_bytes(), &salt)
         .map_err(|e| anyhow::anyhow!("argon2 hash: {e}"))?
         .to_string())
 }
 
 pub fn verify_password(plain: &str, hash: &str) -> bool {
-    let Ok(parsed) = PasswordHash::new(hash) else { return false; };
-    Argon2::default().verify_password(plain.as_bytes(), &parsed).is_ok()
+    let Ok(parsed) = PasswordHash::new(hash) else {
+        return false;
+    };
+    Argon2::default()
+        .verify_password(plain.as_bytes(), &parsed)
+        .is_ok()
 }
 
 pub struct CookieOpts {

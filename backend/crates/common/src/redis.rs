@@ -1,4 +1,4 @@
-use deadpool_redis::{Config, Runtime, Pool};
+use deadpool_redis::{Config, Pool, Runtime};
 
 pub fn redis_pool(url: &str) -> anyhow::Result<Pool> {
     let cfg = Config::from_url(url);

@@ -1,4 +1,8 @@
-use axum::{http::StatusCode, response::{IntoResponse, Response}, Json};
+use axum::{
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    Json,
+};
 use serde::Serialize;
 use thiserror::Error;
 
@@ -43,28 +47,71 @@ impl IntoResponse for AppError {
                 message.clone(),
                 Some(serde_json::json!({ "field": field })),
             ),
-            AppError::Unauthorized => (StatusCode::UNAUTHORIZED, "UNAUTHORIZED", self.to_string(), None),
-            AppError::Forbidden    => (StatusCode::FORBIDDEN,    "FORBIDDEN",    self.to_string(), None),
-            AppError::NotFound { kind } => (StatusCode::NOT_FOUND, "NOT_FOUND", format!("{kind} not found"), None),
-            AppError::Conflict { kind } => (StatusCode::CONFLICT,  "CONFLICT",  format!("{kind} already exists"), None),
+            AppError::Unauthorized => (
+                StatusCode::UNAUTHORIZED,
+                "UNAUTHORIZED",
+                self.to_string(),
+                None,
+            ),
+            AppError::Forbidden => (StatusCode::FORBIDDEN, "FORBIDDEN", self.to_string(), None),
+            AppError::NotFound { kind } => (
+                StatusCode::NOT_FOUND,
+                "NOT_FOUND",
+                format!("{kind} not found"),
+                None,
+            ),
+            AppError::Conflict { kind } => (
+                StatusCode::CONFLICT,
+                "CONFLICT",
+                format!("{kind} already exists"),
+                None,
+            ),
             AppError::RateLimited { retry_after_s } => {
                 let mut resp = (
                     StatusCode::TOO_MANY_REQUESTS,
-                    Json(ErrEnvelope { error: ErrBody { code: "RATE_LIMITED", message: self.to_string(), details: None }})
-                ).into_response();
-                resp.headers_mut().insert("Retry-After", retry_after_s.to_string().parse().unwrap());
+                    Json(ErrEnvelope {
+                        error: ErrBody {
+                            code: "RATE_LIMITED",
+                            message: self.to_string(),
+                            details: None,
+                        },
+                    }),
+                )
+                    .into_response();
+                resp.headers_mut()
+                    .insert("Retry-After", retry_after_s.to_string().parse().unwrap());
                 return resp;
             }
             AppError::Db(e) => {
                 tracing::error!(error = ?e, "db error");
-                (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "internal error".into(), None)
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "INTERNAL_ERROR",
+                    "internal error".into(),
+                    None,
+                )
             }
             AppError::Other(e) => {
                 tracing::error!(error = ?e, "internal error");
-                (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "internal error".into(), None)
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "INTERNAL_ERROR",
+                    "internal error".into(),
+                    None,
+                )
             }
         };
-        (status, Json(ErrEnvelope { error: ErrBody { code, message, details }})).into_response()
+        (
+            status,
+            Json(ErrEnvelope {
+                error: ErrBody {
+                    code,
+                    message,
+                    details,
+                },
+            }),
+        )
+            .into_response()
     }
 }
 

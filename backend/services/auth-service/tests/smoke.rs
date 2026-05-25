@@ -20,32 +20,53 @@ async fn register_login_refresh_logout() {
     let email = format!("{username}@example.com");
 
     // Register
-    let r = c.post(format!("{BASE}/api/v1/auth/register"))
+    let r = c
+        .post(format!("{BASE}/api/v1/auth/register"))
         .json(&json!({ "username": username, "email": email, "password": "Password!123" }))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
     assert_eq!(r.status(), StatusCode::OK);
     let user: serde_json::Value = r.json().await.unwrap();
     assert!(user["user"]["id"].as_str().unwrap().len() == 36);
 
     // Duplicate
-    let r = c.post(format!("{BASE}/api/v1/auth/register"))
+    let r = c
+        .post(format!("{BASE}/api/v1/auth/register"))
         .json(&json!({ "username": username, "email": email, "password": "Password!123" }))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
     assert_eq!(r.status(), StatusCode::CONFLICT);
 
     // Wrong password → 401, no leak
-    let r = c.post(format!("{BASE}/api/v1/auth/login"))
+    let r = c
+        .post(format!("{BASE}/api/v1/auth/login"))
         .json(&json!({ "email_or_username": email, "password": "wrong" }))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
     assert_eq!(r.status(), StatusCode::UNAUTHORIZED);
 
     // Refresh rotates
-    let r = c.post(format!("{BASE}/api/v1/auth/refresh")).send().await.unwrap();
+    let r = c
+        .post(format!("{BASE}/api/v1/auth/refresh"))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(r.status(), StatusCode::OK);
 
     // Logout invalidates refresh
-    let r = c.delete(format!("{BASE}/api/v1/auth/logout")).send().await.unwrap();
+    let r = c
+        .delete(format!("{BASE}/api/v1/auth/logout"))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(r.status(), StatusCode::NO_CONTENT);
-    let r = c.post(format!("{BASE}/api/v1/auth/refresh")).send().await.unwrap();
+    let r = c
+        .post(format!("{BASE}/api/v1/auth/refresh"))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(r.status(), StatusCode::UNAUTHORIZED);
 }

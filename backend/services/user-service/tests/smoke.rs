@@ -50,10 +50,13 @@ async fn register(c: &Client) -> serde_json::Value {
 fn kafka_current_offset() -> u64 {
     let out = std::process::Command::new("docker")
         .args([
-            "exec", "oecophylla-kafka-1",
+            "exec",
+            "oecophylla-kafka-1",
             "/opt/kafka/bin/kafka-get-offsets.sh",
-            "--bootstrap-server", "kafka:9092",
-            "--topic", "oecophylla.user.followed",
+            "--bootstrap-server",
+            "kafka:9092",
+            "--topic",
+            "oecophylla.user.followed",
         ])
         .output()
         .expect("docker exec kafka-get-offsets failed");
@@ -73,21 +76,27 @@ fn kafka_consume_one(offset: u64) -> serde_json::Value {
     for attempt in 0..5 {
         let out = std::process::Command::new("docker")
             .args([
-                "exec", "oecophylla-kafka-1",
+                "exec",
+                "oecophylla-kafka-1",
                 "/opt/kafka/bin/kafka-console-consumer.sh",
-                "--bootstrap-server", "kafka:9092",
-                "--topic", "oecophylla.user.followed",
-                "--offset", &offset.to_string(),
-                "--partition", "0",
-                "--max-messages", "1",
-                "--timeout-ms", "2000",
+                "--bootstrap-server",
+                "kafka:9092",
+                "--topic",
+                "oecophylla.user.followed",
+                "--offset",
+                &offset.to_string(),
+                "--partition",
+                "0",
+                "--max-messages",
+                "1",
+                "--timeout-ms",
+                "2000",
             ])
             .output()
             .expect("docker exec kafka-console-consumer failed");
         let stdout = String::from_utf8_lossy(&out.stdout);
         if let Some(line) = stdout.lines().find(|l| l.starts_with('{')) {
-            return serde_json::from_str(line)
-                .expect("failed to parse kafka message as JSON");
+            return serde_json::from_str(line).expect("failed to parse kafka message as JSON");
         }
         if attempt < 4 {
             std::thread::sleep(Duration::from_secs(1));
