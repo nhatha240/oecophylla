@@ -28,7 +28,7 @@ sqlx-prepare:
 	cd backend && cargo sqlx prepare --workspace -- --all-targets
 
 seed:
-	docker compose run --rm scripts python scripts/seed_phase1.py
+	docker compose --profile tools run --rm scripts seed_phase1.py
 
 clean:
 	docker compose down -v
