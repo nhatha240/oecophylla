@@ -3,12 +3,15 @@ import { apiFetch, ApiException } from './api';
 
 describe('apiFetch', () => {
   it('sends credentials and x-requested-with', async () => {
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'content-type': 'application/json' }}));
-    await apiFetch(fetchMock as any, '/auth/me');
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'content-type': 'application/json' }})
+    );
+    await apiFetch(fetchMock as unknown as typeof fetch, '/auth/me');
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [, init] = fetchMock.mock.calls[0];
+    const call = fetchMock.mock.calls[0]!;
+    const init = call[1] as RequestInit;
     expect(init.credentials).toBe('include');
-    expect((init.headers as any)['x-requested-with']).toBe('oec-web');
+    expect((init.headers as Record<string, string>)['x-requested-with']).toBe('oec-web');
   });
 
   it('throws ApiException with envelope code on non-2xx', async () => {
