@@ -1,0 +1,5 @@
+[toolchain]
+# Plan specified 1.83.0 but ecosystem (2026) broadly uses edition2024 deps
+# which require Cargo >= 1.85 to parse. Pinned to 1.85.0 as minimum compatible.
+channel = "1.85.0"
+components = ["rustfmt", "clippy"]
