@@ -1,7 +1,7 @@
 use common::{error::AppError, ids::new_id, models::AuthUser};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use sqlx::{PgConnection, Postgres, Transaction};
+use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
 // === interactions ===
