@@ -705,6 +705,7 @@ dependencies = [
  "chrono",
  "common",
  "deadpool-redis",
+ "redis",
  "reqwest",
  "serde",
  "serde_json",
