@@ -278,6 +278,7 @@ dependencies = [
  "common",
  "deadpool-redis",
  "rdkafka",
+ "redis",
  "serde",
  "serde_json",
  "tokio",
