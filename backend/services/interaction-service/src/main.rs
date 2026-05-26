@@ -1,6 +1,9 @@
 use axum::{routing::get, Router};
 use std::net::SocketAddr;
 
+mod repo;
+mod state;
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     common::middleware::trace::init_tracing("interaction-service");
