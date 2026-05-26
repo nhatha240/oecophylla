@@ -24,9 +24,35 @@ Browse:
 | auth-service | http://auth-service:8001 | http://localhost:8001 |
 | user-service | http://user-service:8002 | http://localhost:8002 |
 | content-service | http://content-service:8003 | http://localhost:8003 |
+| interaction-service | http://interaction-service:8004 | http://localhost:8004 |
+| feed-service | http://feed-service:8005 | http://localhost:8005 |
+| recommendation-api | http://recommendation-api:8090 | http://localhost:8090 |
+| feature-store-worker | (worker — Kafka consumer) | — |
+| cache-invalidator | (worker — Kafka consumer) | — |
 | postgres | postgres:5432 | localhost:5432 |
 | redis | redis:6379 | localhost:6379 |
 | kafka | kafka:9092 | localhost:9092 |
+
+`GET /api/v1/feed?cursor=&limit=` (auth required) returns the personalized feed.
+The `source` field is `cache` (Redis hit), `personalized` (recommendation-api),
+or `fallback` (Redis trending or recent published).
+
+To verify the fallback ladder:
+
+```bash
+docker compose stop recommendation-api
+curl -i --cookie cookies.txt http://localhost:8080/api/v1/feed?limit=5
+# expect HTTP 200 and `"source":"fallback"` in the body
+docker compose start recommendation-api
+```
+
+Kafka smoke (consumer / producer) must run inside the compose network because
+the `kafka` service hostname is not resolvable from macOS hosts:
+
+```bash
+docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh \
+  --bootstrap-server kafka:9092 --topic oecophylla.interactions --from-beginning --max-messages 10
+```
 
 ## Smoke tests
 
