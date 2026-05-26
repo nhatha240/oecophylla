@@ -1,6 +1,7 @@
 asyncpg==0.30.*
 redis==5.*
 aiokafka==0.12.*
+cramjam>=2.8
 pydantic==2.*
 pydantic-settings==2.*
 pytest==8.*
