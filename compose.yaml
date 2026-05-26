@@ -97,6 +97,7 @@ services:
       user-service:        { condition: service_started }
       content-service:     { condition: service_started }
       interaction-service: { condition: service_started }
+      feed-service:        { condition: service_started }
     volumes:
       - ./envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro
     ports:
@@ -163,6 +164,65 @@ services:
       redis:     { condition: service_healthy }
       kafka:     { condition: service_healthy }
       migrate:   { condition: service_completed_successfully }
+    environment:
+      <<: *svc_env
+
+  feed-service:
+    <<: *restart
+    build:
+      context: ./backend
+      dockerfile: services/feed-service/Dockerfile
+    depends_on:
+      postgres:           { condition: service_healthy }
+      redis:              { condition: service_healthy }
+      migrate:            { condition: service_completed_successfully }
+      recommendation-api: { condition: service_started }
+    environment:
+      <<: *svc_env
+      RECOMMENDATION_SERVICE_URL: http://recommendation-api:8090
+      FEED_CACHE_TTL_SECONDS: "600"
+      FEED_RECOMMENDATION_TIMEOUT_MS: "500"
+      FEED_RESULT_SIZE: "50"
+      FEED_CANDIDATE_POOL_SIZE: "300"
+
+  recommendation-api:
+    <<: *restart
+    build:
+      context: .
+      dockerfile: recommendation_api/Dockerfile
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+      migrate:  { condition: service_completed_successfully }
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+
+  feature-store-worker:
+    <<: *restart
+    build:
+      context: .
+      dockerfile: workers/feature_store_worker/Dockerfile
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+      kafka:    { condition: service_healthy }
+      migrate:  { condition: service_completed_successfully }
+      init-topics: { condition: service_completed_successfully }
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      KAFKA_BROKERS: ${KAFKA_BROKERS}
+
+  cache-invalidator:
+    <<: *restart
+    build:
+      context: ./backend
+      dockerfile: services/cache-invalidator/Dockerfile
+    depends_on:
+      redis: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+      init-topics: { condition: service_completed_successfully }
     environment:
       <<: *svc_env
 

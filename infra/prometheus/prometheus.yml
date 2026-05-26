@@ -8,6 +8,7 @@ scrape_configs:
           - "auth-service:8001"
           - "user-service:8002"
           - "content-service:8003"
+          - "feed-service:8005"
         labels: { stack: oecophylla }
   - job_name: envoy
     metrics_path: /stats/prometheus
