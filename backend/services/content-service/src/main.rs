@@ -11,6 +11,7 @@ use std::{net::SocketAddr, sync::Arc};
 mod handlers;
 mod repo;
 mod state;
+mod topics;
 
 use state::AppState;
 

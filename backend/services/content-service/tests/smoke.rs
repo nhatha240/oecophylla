@@ -138,6 +138,26 @@ async fn list_by_author_paginates() {
 }
 
 #[tokio::test]
+async fn create_infers_ai_topic_from_content() {
+    let c = cli();
+    let _ = register(&c).await;
+
+    let r = c
+        .post(format!("{CONTENT}/api/v1/posts"))
+        .json(&json!({
+            "content": "AI đang thay đổi cách doanh nghiệp dùng dữ liệu",
+            "tags": ["analysis"]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::OK);
+    let post: serde_json::Value = r.json().await.unwrap();
+    let topics = post["topics"].as_array().unwrap();
+    assert!(topics.iter().any(|topic| topic == "ai"));
+}
+
+#[tokio::test]
 async fn delete_non_owner_forbidden() {
     let a = cli();
     let b = cli();

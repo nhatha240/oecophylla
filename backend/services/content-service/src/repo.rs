@@ -28,12 +28,13 @@ pub async fn insert(
     content: &str,
     media: &[String],
     tags: &[String],
+    topics: &[String],
     status: PostStatus,
 ) -> Result<PostRow, AppError> {
     let id = new_id();
     Ok(sqlx::query_as::<_, PostRow>(
-        "INSERT INTO posts (id, author_id, content, media_urls, tags, status)
-         VALUES ($1, $2, $3, $4, $5, $6)
+        "INSERT INTO posts (id, author_id, content, media_urls, tags, topics, status)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
          RETURNING id, author_id, content, media_urls, tags, topics, safety_score, status, view_count, like_count, comment_count, save_count, share_count, created_at, updated_at",
     )
     .bind(id)
@@ -41,6 +42,7 @@ pub async fn insert(
     .bind(content)
     .bind(media)
     .bind(tags)
+    .bind(topics)
     .bind(status)
     .fetch_one(db)
     .await?)

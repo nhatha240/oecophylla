@@ -13,7 +13,7 @@ use common::{
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::{repo, state::AppState};
+use crate::{repo, state::AppState, topics};
 
 #[derive(Deserialize)]
 pub struct CreatePostReq {
@@ -22,6 +22,8 @@ pub struct CreatePostReq {
     pub media_urls: Vec<String>,
     #[serde(default)]
     pub tags: Vec<String>,
+    #[serde(default)]
+    pub topics: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -78,7 +80,17 @@ pub async fn create(
     } else {
         PostStatus::Pending
     };
-    let row = repo::insert(&s.db, me.id, content, &body.media_urls, &body.tags, status).await?;
+    let post_topics = topics::infer_topics(content, &body.tags, &body.topics);
+    let row = repo::insert(
+        &s.db,
+        me.id,
+        content,
+        &body.media_urls,
+        &body.tags,
+        &post_topics,
+        status,
+    )
+    .await?;
     let env = Envelope::new(
         "content.created",
         "content-service",
