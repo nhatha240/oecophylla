@@ -1,12 +1,9 @@
 use axum::{
-    Router,
     routing::{delete, get, post},
+    Router,
 };
 use common::{
-    config::SharedConfig,
-    db::pg_pool,
-    kafka::Producer,
-    middleware::trace::init_tracing,
+    config::SharedConfig, db::pg_pool, kafka::Producer, middleware::trace::init_tracing,
     redis::redis_pool,
 };
 use std::{net::SocketAddr, sync::Arc};
@@ -27,7 +24,12 @@ async fn main() -> anyhow::Result<()> {
     let db = pg_pool(&cfg.database_url, 10).await?;
     let redis = redis_pool(&cfg.redis_url)?;
     let kafka = Producer::new(&cfg.kafka_brokers)?;
-    let state = AppState { db, redis, kafka, cfg: Arc::new(cfg.clone()) };
+    let state = AppState {
+        db,
+        redis,
+        kafka,
+        cfg: Arc::new(cfg.clone()),
+    };
 
     let app = Router::new()
         .route("/health", get(|| async { "ok" }))
@@ -48,6 +50,7 @@ async fn main() -> anyhow::Result<()> {
             post(handlers::hide_post).delete(handlers::unhide_post),
         )
         .route("/api/v1/posts/:id/report", post(handlers::report_post))
+        .route("/api/v1/interactions/me/batch", post(handlers::batch_me))
         .route(
             "/api/v1/posts/:id/comments",
             get(handlers::list_comments).post(handlers::create_comment),

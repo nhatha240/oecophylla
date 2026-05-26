@@ -33,6 +33,8 @@ static_resources:
                           route:  { cluster: user_cluster, prefix_rewrite: "/api/v1/users/" }
                         - match: { prefix: "/api/v1/users" }
                           route:  { cluster: user_cluster }
+                        - match: { prefix: "/api/v1/interactions/me/batch" }
+                          route:  { cluster: interaction_cluster }
                         - match:
                             safe_regex:
                               regex: '^/api/v1/(posts/[^/]+/(like|save|share|hide|report|comments(?:/.*)?|me)/?|comments/[^/]+(?:/.*)?)$'
