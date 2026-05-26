@@ -33,6 +33,10 @@ static_resources:
                           route:  { cluster: user_cluster, prefix_rewrite: "/api/v1/users/" }
                         - match: { prefix: "/api/v1/users" }
                           route:  { cluster: user_cluster }
+                        - match:
+                            safe_regex:
+                              regex: '^/api/v1/(posts/[^/]+/(like|save|share|hide|report|comments(?:/.*)?|me)/?|comments/[^/]+(?:/.*)?)$'
+                          route: { cluster: interaction_cluster }
                         - match: { prefix: "/api/v1/posts/" }
                           route:  { cluster: content_cluster, prefix_rewrite: "/api/v1/posts/" }
                         - match: { prefix: "/api/v1/posts" }
@@ -99,6 +103,21 @@ static_resources:
         endpoints:
           - lb_endpoints:
               - endpoint: { address: { socket_address: { address: content-service, port_value: 8003 } } }
+      health_checks:
+        - timeout: 1s
+          interval: 5s
+          unhealthy_threshold: 3
+          healthy_threshold: 1
+          http_health_check: { path: "/health" }
+    - name: interaction_cluster
+      type: STRICT_DNS
+      connect_timeout: 1s
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: interaction_cluster
+        endpoints:
+          - lb_endpoints:
+              - endpoint: { address: { socket_address: { address: interaction-service, port_value: 8004 } } }
       health_checks:
         - timeout: 1s
           interval: 5s

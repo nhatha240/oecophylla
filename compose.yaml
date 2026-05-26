@@ -67,7 +67,8 @@ services:
     command:
       - |
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic oecophylla.content.created --partitions 1 --replication-factor 1 && \
-        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic oecophylla.user.followed  --partitions 1 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic oecophylla.user.followed  --partitions 1 --replication-factor 1 && \
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic oecophylla.interactions    --partitions 1 --replication-factor 1
     restart: "no"
 
   migrate:
@@ -92,9 +93,10 @@ services:
     <<: *restart
     image: envoyproxy/envoy:v1.32-latest
     depends_on:
-      auth-service:    { condition: service_started }
-      user-service:    { condition: service_started }
-      content-service: { condition: service_started }
+      auth-service:        { condition: service_started }
+      user-service:        { condition: service_started }
+      content-service:     { condition: service_started }
+      interaction-service: { condition: service_started }
     volumes:
       - ./envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro
     ports:
@@ -143,6 +145,19 @@ services:
     build:
       context: ./backend
       dockerfile: services/content-service/Dockerfile
+    depends_on:
+      postgres:  { condition: service_healthy }
+      redis:     { condition: service_healthy }
+      kafka:     { condition: service_healthy }
+      migrate:   { condition: service_completed_successfully }
+    environment:
+      <<: *svc_env
+
+  interaction-service:
+    <<: *restart
+    build:
+      context: ./backend
+      dockerfile: services/interaction-service/Dockerfile
     depends_on:
       postgres:  { condition: service_healthy }
       redis:     { condition: service_healthy }
