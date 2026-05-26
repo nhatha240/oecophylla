@@ -22,5 +22,6 @@
   {/if}
 </section>
 
+<!-- Phase 2A: profile posts do not hydrate /me; counters show but heart/bookmark start unset. Phase 2B will add a bulk /me endpoint. -->
 {#each data.posts as p (p.id)}<PostCard post={p} />{/each}
 {#if data.posts.length === 0}<p class="text-ink-500">Chưa có bài viết.</p>{/if}
