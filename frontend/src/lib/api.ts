@@ -1,4 +1,4 @@
-import type { ApiError } from './types';
+import type { ApiError, BatchMeResponse, FeedResponse } from './types';
 
 export class ApiException extends Error {
   constructor(public status: number, public code: string, public details?: unknown) {
@@ -25,4 +25,17 @@ export async function apiFetch<T>(fetchImpl: Fetch, path: string, init: RequestI
   }
   if (res.status === 204) return undefined as T;
   return await res.json() as T;
+}
+
+export async function getFeed(fetcher: Fetch, cursor?: string, limit = 20): Promise<FeedResponse> {
+  const qs = new URLSearchParams({ limit: String(limit) });
+  if (cursor) qs.set('cursor', cursor);
+  return apiFetch<FeedResponse>(fetcher, `/feed?${qs}`);
+}
+
+export async function getMyInteractionsBatch(fetcher: Fetch, postIds: string[]): Promise<BatchMeResponse> {
+  return apiFetch<BatchMeResponse>(fetcher, '/interactions/me/batch', {
+    method: 'POST',
+    body: JSON.stringify({ post_ids: postIds }),
+  });
 }
