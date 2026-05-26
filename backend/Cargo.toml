@@ -6,6 +6,8 @@ members = [
     "services/user-service",
     "services/content-service",
     "services/interaction-service",
+    "services/feed-service",
+    "services/cache-invalidator",
 ]
 
 [workspace.package]
@@ -58,4 +60,3 @@ reqwest      = { version = "0.12", default-features = false, features = ["rustls
 
 # Local crates
 common       = { path = "crates/common" }
-
