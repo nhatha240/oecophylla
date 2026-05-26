@@ -281,3 +281,40 @@ async fn kafka_emits_liked_event() {
     let body = String::from_utf8_lossy(&out.stdout);
     assert!(body.contains("\"event_type\":\"liked\""), "stdout: {body}");
 }
+
+/// Per-route rate limit. Run only when the `report` bucket is throttled to a
+/// tiny ceiling for the duration of this test:
+///
+/// ```
+/// docker compose stop interaction-service
+/// RATE_LIMIT_REPORT=2 docker compose up -d interaction-service
+/// cargo test -p interaction-service --test smoke -- --ignored \
+///   report_route_returns_429_under_low_limit
+/// docker compose up -d interaction-service   # restore default limit
+/// ```
+#[tokio::test]
+#[ignore = "requires RATE_LIMIT_REPORT=2 env on interaction-service"]
+async fn report_route_returns_429_under_low_limit() {
+    let reporter = cli();
+    let _ = register_user(&reporter).await;
+
+    let author = cli();
+    let _ = register_user(&author).await;
+    let post = create_post(&author, "for rate limit smoke").await;
+    let pid = post["id"].as_str().unwrap();
+
+    let mut statuses = Vec::new();
+    for _ in 0..5 {
+        let r = reporter
+            .post(format!("{ENVOY}/api/v1/posts/{pid}/report"))
+            .json(&json!({ "reason": "spam" }))
+            .send()
+            .await
+            .unwrap();
+        statuses.push(r.status());
+    }
+    assert!(
+        statuses.iter().any(|s| *s == StatusCode::TOO_MANY_REQUESTS),
+        "expected 429 in statuses {statuses:?}"
+    );
+}
