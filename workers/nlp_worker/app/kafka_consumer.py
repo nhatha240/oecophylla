@@ -1,9 +1,10 @@
-import asyncio
 import json
 import logging
-import unicodedata
+import time
+
 from aiokafka import AIOKafkaConsumer
 import asyncpg
+
 from .settings import Settings
 from .infer import infer_topics
 
@@ -27,16 +28,26 @@ async def run_consumer(cfg: Settings) -> None:
     )
     await consumer.start()
     logger.info("nlp-worker consumer started")
+    batch = []
+    last_flush = time.monotonic()
+    timeout_ms = max(1, int(cfg.flush_interval_seconds * 1000))
     try:
-        batch = []
-        last_flush = asyncio.get_event_loop().time()
-        async for msg in consumer:
-            batch.append(msg)
-            elapsed = asyncio.get_event_loop().time() - last_flush
-            if len(batch) >= cfg.flush_batch_size or elapsed >= cfg.flush_interval_seconds:
+        while True:
+            messages = await consumer.getmany(
+                timeout_ms=timeout_ms,
+                max_records=cfg.flush_batch_size,
+            )
+            for topic_partition_messages in messages.values():
+                batch.extend(topic_partition_messages)
+
+            elapsed = time.monotonic() - last_flush
+            if batch and (
+                len(batch) >= cfg.flush_batch_size
+                or elapsed >= cfg.flush_interval_seconds
+            ):
                 await _process_batch(conn, batch)
                 batch.clear()
-                last_flush = asyncio.get_event_loop().time()
+                last_flush = time.monotonic()
     finally:
         if batch:
             await _process_batch(conn, batch)

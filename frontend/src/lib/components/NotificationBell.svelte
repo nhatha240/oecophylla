@@ -16,9 +16,20 @@
 
   onMount(() => {
     if (!enabled) return;
-    initNotifications(fetch);
-    const unsubscribe = subscribeSSE();
-    return unsubscribe;
+    let unsubscribe = () => {};
+    let disposed = false;
+
+    void (async () => {
+      await initNotifications(fetch);
+      if (!disposed) {
+        unsubscribe = subscribeSSE(fetch);
+      }
+    })();
+
+    return () => {
+      disposed = true;
+      unsubscribe();
+    };
   });
 
   async function readAll(): Promise<void> {

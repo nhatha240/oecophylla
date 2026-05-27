@@ -24,4 +24,48 @@ describe('apiFetch', () => {
     const v = await apiFetch(fetchMock as any, '/logout', { method: 'DELETE' });
     expect(v).toBeUndefined();
   });
+
+  it('refreshes the session once and retries the original request on 401', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: { code: 'UNAUTHORIZED' } }), {
+          status: 401,
+          headers: { 'content-type': 'application/json' }
+        })
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ user: { id: 'u1' } }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        })
+      );
+
+    await expect(apiFetch(fetchMock as any, '/auth/me')).resolves.toEqual({ user: { id: 'u1' } });
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/v1/auth/refresh');
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
+      method: 'POST',
+      credentials: 'include'
+    });
+    expect(fetchMock.mock.calls[2]?.[0]).toBe('/api/v1/auth/me');
+  });
+
+  it('does not recurse on refresh endpoint failures', async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ error: { code: 'UNAUTHORIZED' } }), {
+        status: 401,
+        headers: { 'content-type': 'application/json' }
+      })
+    );
+
+    await expect(apiFetch(fetchMock as any, '/auth/refresh', { method: 'POST' })).rejects.toMatchObject({
+      status: 401,
+      code: 'UNAUTHORIZED'
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });

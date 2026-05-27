@@ -29,6 +29,8 @@ let initialized = false;
 let stream: EventSource | null = null;
 let reconnectTimer: number | null = null;
 let reconnectDelay = 1000;
+let active = false;
+let recovering = false;
 
 function dedupe(items: Notification[]): Notification[] {
   const seen = new Set<string>();
@@ -43,11 +45,22 @@ function setDisconnected(unavailable = false): void {
   store.update((state) => ({ ...state, connected: false, unavailable }));
 }
 
-function scheduleReconnect(): void {
-  if (!browser || reconnectTimer !== null) return;
+function isServiceUnavailable(error: unknown): boolean {
+  return error instanceof ApiException && [404, 500, 502, 503].includes(error.status);
+}
+
+function clearReconnectTimer(): void {
+  if (reconnectTimer !== null) {
+    window.clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+}
+
+function scheduleReconnect(fetchImpl: typeof fetch): void {
+  if (!browser || reconnectTimer !== null || !active) return;
   reconnectTimer = window.setTimeout(() => {
     reconnectTimer = null;
-    subscribeSSE();
+    void openStream(fetchImpl);
   }, reconnectDelay);
   reconnectDelay = reconnectDelay === 1000 ? 2000 : reconnectDelay === 2000 ? 5000 : 10000;
 }
@@ -81,7 +94,7 @@ export async function initNotifications(fetchImpl: typeof fetch = fetch): Promis
       unavailable: false
     });
   } catch (error) {
-    const unavailable = error instanceof ApiException && [404, 500, 502, 503].includes(error.status);
+    const unavailable = isServiceUnavailable(error);
     store.set({
       items: [],
       unread: 0,
@@ -92,15 +105,46 @@ export async function initNotifications(fetchImpl: typeof fetch = fetch): Promis
   }
 }
 
-export function subscribeSSE(): () => void {
-  if (!browser || stream) return () => closeStream();
+async function probeNotifications(fetchImpl: typeof fetch): Promise<boolean> {
+  try {
+    await getNotificationUnreadCount(fetchImpl);
+    store.update((state) => ({ ...state, unavailable: false }));
+    return true;
+  } catch (error) {
+    if (isServiceUnavailable(error)) {
+      setDisconnected(true);
+      return false;
+    }
+
+    throw error;
+  }
+}
+
+async function recoverStream(fetchImpl: typeof fetch): Promise<void> {
+  if (recovering || !active) return;
+  recovering = true;
+
+  try {
+    const ready = await probeNotifications(fetchImpl);
+    if (!active || !ready) return;
+    scheduleReconnect(fetchImpl);
+  } catch {
+    if (!active) return;
+    scheduleReconnect(fetchImpl);
+  } finally {
+    recovering = false;
+  }
+}
+
+async function openStream(fetchImpl: typeof fetch): Promise<void> {
+  if (!browser || stream || !active) return;
 
   closeStream();
   stream = new EventSource('/api/v1/notifications/stream', { withCredentials: true } as EventSourceInit);
 
   stream.addEventListener('open', () => {
     reconnectDelay = 1000;
-    store.update((state) => ({ ...state, connected: true }));
+    store.update((state) => ({ ...state, connected: true, unavailable: false }));
   });
 
   stream.addEventListener('heartbeat', () => {});
@@ -121,16 +165,35 @@ export function subscribeSSE(): () => void {
   stream.addEventListener('error', () => {
     closeStream();
     setDisconnected(get(store).unavailable);
-    scheduleReconnect();
+    void recoverStream(fetchImpl);
   });
+}
+
+function resetNotifications(): void {
+  initialized = false;
+  store.set({
+    items: [],
+    unread: 0,
+    connected: false,
+    loading: false,
+    unavailable: false
+  });
+}
+
+export function subscribeSSE(fetchImpl: typeof fetch = fetch): () => void {
+  if (!browser || stream) return () => closeStream();
+  active = true;
+
+  if (!get(store).unavailable) {
+    void openStream(fetchImpl);
+  }
 
   return () => {
-    if (reconnectTimer !== null) {
-      window.clearTimeout(reconnectTimer);
-      reconnectTimer = null;
-    }
+    active = false;
+    recovering = false;
+    clearReconnectTimer();
     closeStream();
-    setDisconnected(get(store).unavailable);
+    resetNotifications();
   };
 }
 
@@ -138,7 +201,7 @@ export async function markNotificationAsRead(id: string, fetchImpl: typeof fetch
   try {
     await markNotificationRead(fetchImpl, id);
   } catch (error) {
-    if (!(error instanceof ApiException) || ![404, 500, 502, 503].includes(error.status)) {
+    if (!isServiceUnavailable(error)) {
       throw error;
     }
   }
@@ -154,7 +217,7 @@ export async function markAllNotificationsAsRead(fetchImpl: typeof fetch = fetch
   try {
     await markAllNotificationsRead(fetchImpl);
   } catch (error) {
-    if (!(error instanceof ApiException) || ![404, 500, 502, 503].includes(error.status)) {
+    if (!isServiceUnavailable(error)) {
       throw error;
     }
   }

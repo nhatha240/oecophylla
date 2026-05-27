@@ -13,10 +13,25 @@ PSQL=(docker compose exec -T postgres psql -U "${POSTGRES_USER:-oecophylla}" -d 
 cleanup() { rm -f "$CK_A" "$CK_B" "$CK_C"; }
 trap cleanup EXIT
 
-rand_user() { uuidgen | tr '[:upper:]' '[:lower:]' | tr -d '-' | tail -c 22; }
+wait_for_envoy() {
+  local status
+  for _ in $(seq 1 30); do
+    status=$(curl -s -o /dev/null -w "%{http_code}" "$ENVOY/api/v1/feed?limit=1" || true)
+    if [[ "$status" == "401" ]]; then
+      return 0
+    fi
+    sleep 1
+  done
+  echo "FAIL: envoy/feed stack not ready at $ENVOY"
+  return 1
+}
+
+rand_user_suffix() {
+  uuidgen | tr '[:upper:]' '[:lower:]' | tr -d '-' | cut -c23-32
+}
 
 register() {
-  # $1 = cookie jar, $2 = username, $3 = email suffix
+  # $1 = cookie jar, $2 = username
   curl -fsS -c "$1" -b "$1" -X POST "$ENVOY/api/v1/auth/register" \
     -H 'content-type: application/json' \
     -d "{\"username\":\"$2\",\"email\":\"$2@e.com\",\"password\":\"Password!123\"}" >/dev/null
@@ -29,9 +44,11 @@ login() {
     -d "{\"email_or_username\":\"$2\",\"password\":\"Password!123\"}" >/dev/null
 }
 
-UA="a$(rand_user)"; UA="${UA:0:20}"
-UB="b$(rand_user)"; UB="${UB:0:20}"
-UC="c$(rand_user)"; UC="${UC:0:20}"
+wait_for_envoy
+
+UA="a$(rand_user_suffix)"
+UB="b$(rand_user_suffix)"
+UC="c$(rand_user_suffix)"
 
 echo "1. Register reporter ($UA), author ($UB), admin ($UC)."
 register "$CK_A" "$UA"

@@ -1,13 +1,13 @@
 import type { RequestEvent } from '@sveltejs/kit';
-
-const ENVOY = process.env.ENVOY_URL ?? 'http://envoy:8080';
+import { env } from '$env/dynamic/private';
 
 function withBody(method: string): boolean {
   return !['GET', 'HEAD'].includes(method.toUpperCase());
 }
 
 export async function proxyToEnvoy(event: RequestEvent, upstreamPath: string): Promise<Response> {
-  const upstreamUrl = new URL(upstreamPath + event.url.search, ENVOY);
+  const envoy = env.ENVOY_URL ?? 'http://localhost:8080';
+  const upstreamUrl = new URL(upstreamPath + event.url.search, envoy);
   const headers = new Headers(event.request.headers);
   const cookie = event.request.headers.get('cookie');
 
