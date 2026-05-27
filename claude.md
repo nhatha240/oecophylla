@@ -13,6 +13,74 @@ Oecophylla is a social networking platform with intelligent news feed recommenda
 
 ---
 
+## ⚡ Current State (2026-05-26, post-2B ship)
+
+> The rest of this document is the original product spec. The sections below describe what is actually shipped today vs. what is still planned. **Read this section before doing any work** — it overrides spec details that have drifted.
+
+### Phases shipped
+
+| Phase | Status | Git tag | Spec | Plan |
+|---|---|---|---|---|
+| Phase 0+1 (infra + auth/user/content + frontend) | ✅ Complete | `phase-0-1-complete` | `docs/superpowers/specs/2026-05-25-foundation-identity-content-design.md` | `docs/superpowers/plans/2026-05-25-foundation-identity-content-plan.md` |
+| Phase 2A (interactions + comments + reports) | ✅ Complete | `phase-2a-complete` | `docs/superpowers/specs/2026-05-25-phase-2a-interactions-design.md` | `docs/superpowers/plans/2026-05-25-phase-2a-interactions-plan.md` |
+| Phase 2B (feed + recommendation + workers) | ✅ Complete | `phase-2b-complete` | `docs/superpowers/specs/2026-05-26-phase-2b-feed-recommendation-design.md` | `docs/superpowers/plans/2026-05-26-phase-2b-feed-recommendation-plan.md` |
+| Phase 3 (moderation + notifications + NLP) | 📝 Spec+plan in progress | — | `docs/superpowers/specs/2026-05-26-phase-3-moderation-notifications-nlp-design.md` | `docs/superpowers/plans/2026-05-26-phase-3-moderation-notifications-nlp-plan.md` |
+| Phase 4 (analytics + evaluation + observability) | ⏳ Not started | — | — | — |
+
+### What is actually in the repo today (running)
+
+- **Backend** — Cargo workspace `backend/` with `crates/common` + 6 binaries: `auth-service` (:8001), `user-service` (:8002), `content-service` (:8003), `interaction-service` (:8004), `feed-service` (:8005), `cache-invalidator` (Kafka consumer, no HTTP).
+- **Python services** outside the workspace: `recommendation-api` (FastAPI :8090) and `workers/feature_store_worker` (Kafka consumer).
+- **Frontend** — SvelteKit (adapter-node, Tailwind) at `frontend/`. Routes shipped: `/`, `/login`, `/register`, `/logout`, `/profile/[id]`, `/post/new`, `/post/[id]`, `/admin` (mock), `/m` (mock). Live feed root pages via cursor + IntersectionObserver view tracker.
+- **Infra** — `compose.yaml` with `postgres:18-trixie`, `redis:8-trixie`, `apache/kafka:4.0.0` (KRaft, no Zookeeper), `envoyproxy/envoy:v1.32-latest`, `prom/prometheus:v3.0.0`, `grafana/grafana:11.4.0`, plus the 6 Rust services + 2 Python services + frontend + 2 one-shot jobs (`migrate`, `init-topics`). `compose.dev.yaml` exposes backend ports.
+- **Migrations** — 9 sqlx migrations applied: enums, users, follows, posts, posts_counters, interactions, comments, reports, user_preference_vectors.
+- **Kafka topics** — `oecophylla.content.created`, `oecophylla.user.followed`, `oecophylla.interactions`. Consumers wired: `feature-store-worker` (updates `user_preference_vectors`) and `cache-invalidator` (clears `feed:{user_id}` on interaction).
+
+### Locked technical decisions (must respect in any future work)
+
+These decisions are encoded in `/Users/nhathaminh/.claude/projects/-Users-nhathaminh-oecophylla/memory/` — auto-load each session. Summary:
+
+| Decision | Detail |
+|---|---|
+| API gateway | **Envoy v1.32**, not Nginx (CLAUDE.md mentions Nginx — outdated) |
+| Postgres | **18** with built-in `uuidv7()` for every PK (NOT `gen_random_uuid()`). Volume mount at `/var/lib/postgresql` (parent), NOT legacy `/data` subpath |
+| Kafka | **KRaft mode** single-node `apache/kafka:4.0.0` — no Zookeeper container |
+| Redis | `redis:8-trixie` (no Trixie variant of Redis 7 exists on Docker Hub) |
+| Base images | `debian:trixie-slim` for all long-running containers; one-shot jobs may use stock |
+| Rust toolchain | **1.85.0** (NOT 1.83) — required for `edition=2024` manifests in 2026 dep ecosystem |
+| Rust Docker builder | `rust:1.85` (Debian bookworm-based, no `1.85-trixie` tag exists) → runtime `debian:trixie-slim`. Builder needs `apt-get install cmake pkg-config libssl-dev ca-certificates` for rdkafka |
+| `jsonwebtoken` | `default-features = false` — only HS256, avoids pulling time/simple_asn1 chain requiring Rust 1.88 |
+| Frontend styling | **Tailwind-first** — inline utilities; extract a named class only when pattern repeats across 3+ components (e.g. `.glass-surface`, `.glass-chip`, `.glass-pill`, `.glass-button-primary`, `.text-display-serif`, `.text-mono-meta`) |
+| Smoke test username | Use UUIDv7 **random suffix `&u[22..]`**, NOT timestamp prefix `&u[..10]` (prefix collides in fast loops) |
+| Kafka from host | macOS host cannot resolve `kafka:9092` — run smoke tests inside compose network OR use `docker compose exec kafka kafka-console-consumer.sh ...` |
+| Auth cookies | `oec_access` (Path=/, 15m, SameSite=Lax) + `oec_refresh` (Path=/api/v1/auth, 7d, SameSite=Strict). HttpOnly always. argon2id password hashing |
+| Workflow | Independent tasks dispatched in parallel via single message with multiple `Agent` tool calls. "Let run" / "ngủ" mode = skip approval gates, dispatch end-to-end |
+
+### Known follow-ups (still open)
+
+- **Counter drift recompute job** — periodic SQL `UPDATE posts SET like_count = (SELECT count(*) ...)` to heal drift from out-of-band deletes.
+- **Toast component** replacing `alert()` rollbacks in `PostActionBar`.
+- **ESLint config** for frontend so `pnpm lint` passes (currently no `eslint.config.js`).
+- **Pre-bake `sqlx-cli`** in a custom migrate image (currently first boot installs from source ~6-8 min).
+- **Host-accessible Kafka listener** (second listener on `:29092` advertised as `localhost:29092`) so smoke tests can run from host without compose network.
+- **Tag push for earlier phases** — `phase-0-1-complete` and `phase-2a-complete` exist locally but were never pushed to origin.
+
+### Phase 2B closeout notes
+
+- `feature-store-worker` requires `cramjam>=2.8` (not the pip `lz4` package) so aiokafka 0.12 can decode the LZ4-compressed batches Kafka 4.0 produces. Without it, the worker dies on first fetch and `user_preference_vectors` silently stays empty.
+- Python service tests require `pythonpath = .` in `pytest.ini` because tests import the package as `from app.X import Y`. Without that line `make test-python` fails with `ModuleNotFoundError`.
+- After bringing the stack up with `docker compose up -d --build`, restart envoy (`docker compose restart envoy`) if envoy was already running before new clusters were added — compose does not detect bind-mount config changes.
+
+### How to start a new session efficiently
+
+1. Memory files at `/Users/nhathaminh/.claude/projects/-Users-nhathaminh-oecophylla/memory/` auto-load — locked decisions arrive for free.
+2. This `CLAUDE.md` auto-loads — current state arrives for free.
+3. To work on Phase 3: read its spec + plan in `docs/superpowers/{specs,plans}/2026-05-26-phase-3-*`.
+4. To work on a specific bug or small change: skim the relevant spec section + `docs/superpowers/plans/` for the most recent plan touching that area.
+5. **Do not** re-decide locked items from memory. Override only with explicit user instruction.
+
+---
+
 ## Monorepo Structure
 
 ```

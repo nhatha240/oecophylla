@@ -43,5 +43,16 @@ pub struct UserFollowed {
     pub followed_at: DateTime<Utc>,
 }
 
+#[derive(Serialize)]
+pub struct ModerationAction {
+    pub actor_id: Uuid,
+    pub target_user_id: Uuid,
+    pub target_post_id: Option<Uuid>,
+    pub report_id: Option<Uuid>,
+    pub note: Option<String>,
+}
+
 pub const TOPIC_CONTENT_CREATED: &str = "oecophylla.content.created";
 pub const TOPIC_USER_FOLLOWED: &str = "oecophylla.user.followed";
+pub const TOPIC_INTERACTIONS: &str = "oecophylla.interactions";
+pub const TOPIC_MODERATION_ACTION: &str = "oecophylla.moderation.action";

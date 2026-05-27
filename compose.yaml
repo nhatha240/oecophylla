@@ -66,9 +66,10 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
-        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic oecophylla.content.created --partitions 1 --replication-factor 1 && \
-        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic oecophylla.user.followed  --partitions 1 --replication-factor 1 && \
-        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic oecophylla.interactions    --partitions 1 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic oecophylla.content.created   --partitions 1 --replication-factor 1 && \
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic oecophylla.user.followed    --partitions 1 --replication-factor 1 && \
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic oecophylla.interactions     --partitions 1 --replication-factor 1 && \
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic oecophylla.moderation.action --partitions 1 --replication-factor 1 --config retention.ms=604800000
     restart: "no"
 
   migrate:
@@ -184,6 +185,20 @@ services:
       FEED_RECOMMENDATION_TIMEOUT_MS: "500"
       FEED_RESULT_SIZE: "50"
       FEED_CANDIDATE_POOL_SIZE: "300"
+
+  moderation-service:
+    <<: *restart
+    build:
+      context: ./backend
+      dockerfile: services/moderation-service/Dockerfile
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+      kafka:    { condition: service_healthy }
+      migrate:  { condition: service_completed_successfully }
+      init-topics: { condition: service_completed_successfully }
+    environment:
+      <<: *svc_env
 
   recommendation-api:
     <<: *restart

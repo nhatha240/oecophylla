@@ -1,0 +1,85 @@
+<script lang="ts">
+  export let name = 'Dot';
+  export let size = 18;
+  export let className = '';
+  export let style = '';
+
+  const icons: Record<string, { d: string; fill?: string; sw?: number }> = {
+    Home: { d: '<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/>' },
+    Compass: { d: '<circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5 5-2z"/>' },
+    Bookmark: { d: '<path d="M6 3h12v18l-6-4-6 4V3z"/>' },
+    Bell: { d: '<path d="M6 8a6 6 0 1112 0c0 5 2 7 2 7H4s2-2 2-7z"/><path d="M10 19a2 2 0 004 0"/>' },
+    Users: { d: '<circle cx="9" cy="8" r="3"/><path d="M3 19c0-3 3-5 6-5s6 2 6 5"/><circle cx="17" cy="9" r="2.5"/><path d="M15 19c0-2 2-4 5-4"/>' },
+    User: { d: '<circle cx="12" cy="8" r="3.5"/><path d="M4 20c0-3.5 3.5-6 8-6s8 2.5 8 6"/>' },
+    Heart: { d: '<path d="M12 20s-7-4.5-7-10a4 4 0 017-2.5A4 4 0 0119 10c0 5.5-7 10-7 10z"/>' },
+    HeartFill: { d: '<path d="M12 20s-7-4.5-7-10a4 4 0 017-2.5A4 4 0 0119 10c0 5.5-7 10-7 10z"/>', fill: 'currentColor', sw: 0 },
+    Comment: { d: '<path d="M21 12c0 4-4 7-9 7-1.4 0-2.7-.2-4-.6L4 20l1-3.5C3.7 15.3 3 13.7 3 12c0-4 4-7 9-7s9 3 9 7z"/>' },
+    Share: { d: '<circle cx="6" cy="12" r="2.2"/><circle cx="18" cy="6" r="2.2"/><circle cx="18" cy="18" r="2.2"/><path d="M8 11l8-4M8 13l8 4"/>' },
+    BookmarkFill: { d: '<path d="M6 3h12v18l-6-4-6 4V3z"/>', fill: 'currentColor', sw: 0 },
+    Eye: { d: '<path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="2.5"/>' },
+    EyeOff: { d: '<path d="M3 3l18 18M10.6 6.1A10 10 0 0112 6c6.5 0 10 6 10 6a16 16 0 01-3.4 4M6.6 6.6A16 16 0 002 12s3.5 6 10 6c1.6 0 3-.3 4.2-.8"/>' },
+    Flag: { d: '<path d="M5 21V4M5 4h14l-3 5 3 5H5"/>' },
+    More: { d: '<circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/>' },
+    Search: { d: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>' },
+    Image: { d: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="M3 17l5-5 4 4 3-3 6 6"/>' },
+    Link: { d: '<path d="M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1-1"/>' },
+    Tag: { d: '<path d="M3 12L12 3h8v8l-9 9z"/><circle cx="15.5" cy="8.5" r="1.2"/>' },
+    Group: { d: '<circle cx="12" cy="7" r="3"/><path d="M5 21c0-4 3-7 7-7s7 3 7 7"/>' },
+    Settings: { d: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1L7 17M17 7l2.1-2.1"/>' },
+    Check: { d: '<path d="M5 12l5 5 9-11"/>' },
+    Plus: { d: '<path d="M12 5v14M5 12h14"/>' },
+    ArrowUp: { d: '<path d="M12 19V5M5 12l7-7 7 7"/>' },
+    ArrowRight: { d: '<path d="M5 12h14M13 5l7 7-7 7"/>' },
+    ArrowLeft: { d: '<path d="M19 12H5M11 19l-7-7 7-7"/>' },
+    Verified: { d: '<path d="M12 2l2.4 2 3 .2.8 3 2.2 2.2L19.6 12l.8 2.6-2.2 2.2-.8 3-3 .2L12 22l-2.4-2-3-.2-.8-3L3.6 14.6 4.4 12l-.8-2.6L5.8 7.2l.8-3 3-.2L12 2zm-1 13l5-6-1.3-1L11 12.5l-1.7-1.7L8 12l3 3z"/>', fill: 'currentColor', sw: 0 },
+    Sparkle: { d: '<path d="M12 3l1.8 4.2L18 9l-4.2 1.8L12 15l-1.8-4.2L6 9l4.2-1.8L12 3z"/><path d="M19 16l.8 1.8L21.5 18l-1.7.7L19 20.5l-.8-1.8L16.5 18l1.7-.7L19 16z"/>' },
+    TrendUp: { d: '<path d="M3 17l6-6 4 4 8-9"/><path d="M14 6h7v7"/>' },
+    Globe: { d: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 010 18M12 3a14 14 0 000 18"/>' },
+    Shield: { d: '<path d="M12 3l8 3v6c0 4.5-3.5 8-8 9-4.5-1-8-4.5-8-9V6l8-3z"/><path d="M9 12l2 2 4-4"/>' },
+    Filter: { d: '<path d="M3 5h18M6 12h12M10 19h4"/>' },
+    Sun: { d: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M4.9 4.9L6.3 6.3M17.7 17.7l1.4 1.4M4.9 19.1L6.3 17.7M17.7 6.3l1.4-1.4"/>' },
+    Moon: { d: '<path d="M21 14A9 9 0 1110 3a7 7 0 1011 11z"/>' },
+    X: { d: '<path d="M6 6l12 12M6 18L18 6"/>' },
+    Edit: { d: '<path d="M4 20h4l11-11-4-4L4 16v4z"/><path d="M14 5l4 4"/>' },
+    Chevron: { d: '<path d="M9 6l6 6-6 6"/>' },
+    Clock: { d: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>' },
+    Activity: { d: '<path d="M3 12h4l3-8 4 16 3-8h4"/>' },
+    Cpu: { d: '<rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/>' },
+    Briefcase: { d: '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a2 2 0 012-2h2a2 2 0 012 2v2"/>' },
+    Book: { d: '<path d="M4 4h11a3 3 0 013 3v13H7a3 3 0 01-3-3V4z"/><path d="M4 17a3 3 0 013-3h11"/>' },
+    Music: { d: '<path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/>' },
+    Heart2: { d: '<path d="M12 21s-7-4.5-7-10a4 4 0 017-2.5A4 4 0 0119 11c0 5.5-7 10-7 10z"/>' },
+    Atom: { d: '<circle cx="12" cy="12" r="2"/><ellipse cx="12" cy="12" rx="9" ry="3.5"/><ellipse cx="12" cy="12" rx="9" ry="3.5" transform="rotate(60 12 12)"/><ellipse cx="12" cy="12" rx="9" ry="3.5" transform="rotate(120 12 12)"/>' },
+    Rocket: { d: '<path d="M14 4c4 0 6 2 6 6l-9 9-5-5 9-9 -1-1z"/><path d="M9 15l-3 3 1 2 2 1 3-3"/>' },
+    Code: { d: '<path d="M8 8l-5 4 5 4M16 8l5 4-5 4M14 4l-4 16"/>' },
+    Refresh: { d: '<path d="M3 12a9 9 0 0115-6.7L21 8M21 4v4h-4"/><path d="M21 12a9 9 0 01-15 6.7L3 16M3 20v-4h4"/>' },
+    Flame: { d: '<path d="M12 21c4 0 7-3 7-7 0-3-2-5-3-6 0 2-2 3-3 2-1-1 0-3-1-5-2 1-7 5-7 10 0 4 3 6 7 6z"/>' },
+    Trophy: { d: '<path d="M8 21h8M12 17v4M6 4h12v4a6 6 0 01-12 0V4z"/><path d="M6 6H4v2a3 3 0 003 3M18 6h2v2a3 3 0 01-3 3"/>' },
+    Layers: { d: '<path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5M3 17l9 5 9-5"/>' },
+    Database: { d: '<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/>' },
+    FileText: { d: '<path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9l-6-6z"/><path d="M14 3v6h6M8 13h8M8 17h8M8 9h2"/>' },
+    AlertTriangle: { d: '<path d="M12 3l10 18H2L12 3z"/><path d="M12 10v4M12 17h.01"/>' },
+    AlertCircle: { d: '<circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/>' },
+    ExternalLink: { d: '<path d="M14 3h7v7M21 3l-9 9M19 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h6"/>' },
+    Send: { d: '<path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>' },
+    ChartBar: { d: '<path d="M3 20h18M6 20V10M12 20V4M18 20v-7"/>' },
+    Save: { d: '<path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/>' },
+    Dot: { d: '<circle cx="12" cy="12" r="1.4"/>' }
+  };
+
+  $: icon = icons[name] ?? icons.Dot;
+</script>
+
+<svg
+  width={size}
+  height={size}
+  viewBox="0 0 24 24"
+  fill={icon.fill ?? 'none'}
+  stroke="currentColor"
+  stroke-width={icon.sw ?? 1.6}
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  class={className}
+  {style}
+  aria-hidden="true"
+>{@html icon.d}</svg>

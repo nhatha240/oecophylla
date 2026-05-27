@@ -1,0 +1,28 @@
+[package]
+name = "notification-service"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+axum.workspace = true
+base64 = "0.22"
+chrono.workspace = true
+common.workspace = true
+deadpool-redis.workspace = true
+rdkafka.workspace = true
+redis = "0.27"
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-stream = { version = "0.1", features = ["sync"] }
+tracing.workspace = true
+uuid.workspace = true
+futures-util = "0.3"
+
+[dev-dependencies]
+reqwest.workspace = true
+serde_json.workspace = true

@@ -8,6 +8,8 @@ members = [
     "services/interaction-service",
     "services/feed-service",
     "services/cache-invalidator",
+    "services/moderation-service",
+    "services/notification-service",
 ]
 
 [workspace.package]

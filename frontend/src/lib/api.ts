@@ -21,6 +21,7 @@ export async function apiFetch<T>(fetchImpl: Fetch, path: string, init: RequestI
   if (!res.ok) {
     let body: ApiError | null = null;
     try { body = await res.json(); } catch { /* ignore parse errors */ }
+    console.error('API error', { path, status: res.status, body });
     throw new ApiException(res.status, body?.error.code ?? 'UNKNOWN', body?.error.details);
   }
   if (res.status === 204) return undefined as T;

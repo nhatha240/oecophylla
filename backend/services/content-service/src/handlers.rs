@@ -13,7 +13,7 @@ use common::{
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::{repo, state::AppState, topics};
+use crate::{repo, state::AppState};
 
 #[derive(Deserialize)]
 pub struct CreatePostReq {
@@ -80,7 +80,7 @@ pub async fn create(
     } else {
         PostStatus::Pending
     };
-    let post_topics = topics::infer_topics(content, &body.tags, &body.topics);
+    let post_topics = body.topics.clone();
     let row = repo::insert(
         &s.db,
         me.id,
