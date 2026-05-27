@@ -54,7 +54,7 @@ pub async fn bump_counter(
     // `column` is from a closed enum {"like_count","save_count","share_count","comment_count"}
     // so it is safe to interpolate into the SQL string.
     let sql = format!("UPDATE posts SET {column} = {column} + $1 WHERE id=$2");
-    sqlx::query(&sql)
+    sqlx::query(sqlx::AssertSqlSafe(sql))
         .bind(delta)
         .bind(post_id)
         .execute(&mut **tx)

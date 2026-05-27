@@ -83,7 +83,7 @@ pub async fn list(
                  ORDER BY n.created_at DESC, n.id DESC \
                  LIMIT $2"
             );
-            sqlx::query(&q)
+            sqlx::query(sqlx::AssertSqlSafe(q))
                 .bind(user_id)
                 .bind(limit)
                 .fetch_all(db)
@@ -96,7 +96,7 @@ pub async fn list(
                  ORDER BY n.created_at DESC, n.id DESC \
                  LIMIT $4"
             );
-            sqlx::query(&q)
+            sqlx::query(sqlx::AssertSqlSafe(q))
                 .bind(user_id)
                 .bind(ts)
                 .bind(id)
@@ -110,7 +110,7 @@ pub async fn list(
                  ORDER BY n.created_at DESC, n.id DESC \
                  LIMIT $2"
             );
-            sqlx::query(&q)
+            sqlx::query(sqlx::AssertSqlSafe(q))
                 .bind(user_id)
                 .bind(limit)
                 .fetch_all(db)
@@ -123,7 +123,7 @@ pub async fn list(
                  ORDER BY n.created_at DESC, n.id DESC \
                  LIMIT $4"
             );
-            sqlx::query(&q)
+            sqlx::query(sqlx::AssertSqlSafe(q))
                 .bind(user_id)
                 .bind(ts)
                 .bind(id)
@@ -209,7 +209,7 @@ pub async fn insert(
     // Re-fetch with JOINs to produce a fully hydrated DTO.
     let base = base_select();
     let q = format!("{base} WHERE n.id = $1");
-    let full_row = sqlx::query(&q)
+    let full_row = sqlx::query(sqlx::AssertSqlSafe(q))
         .bind(id)
         .fetch_one(db)
         .await

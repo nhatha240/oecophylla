@@ -70,7 +70,7 @@ pub async fn list_reports(
                  ORDER BY r.created_at DESC, r.id DESC \
                  LIMIT $4"
             );
-            sqlx::query(&q)
+            sqlx::query(sqlx::AssertSqlSafe(q))
                 .bind(s)
                 .bind(ts)
                 .bind(id)
@@ -84,7 +84,7 @@ pub async fn list_reports(
                  ORDER BY r.created_at DESC, r.id DESC \
                  LIMIT $2"
             );
-            sqlx::query(&q).bind(s).bind(limit).fetch_all(db).await?
+            sqlx::query(sqlx::AssertSqlSafe(q)).bind(s).bind(limit).fetch_all(db).await?
         }
         (None, Some((ts, id))) => {
             let q = format!(
@@ -92,7 +92,7 @@ pub async fn list_reports(
                  ORDER BY r.created_at DESC, r.id DESC \
                  LIMIT $3"
             );
-            sqlx::query(&q)
+            sqlx::query(sqlx::AssertSqlSafe(q))
                 .bind(ts)
                 .bind(id)
                 .bind(limit)
@@ -101,7 +101,7 @@ pub async fn list_reports(
         }
         (None, None) => {
             let q = format!("{base} ORDER BY r.created_at DESC, r.id DESC LIMIT $1");
-            sqlx::query(&q).bind(limit).fetch_all(db).await?
+            sqlx::query(sqlx::AssertSqlSafe(q)).bind(limit).fetch_all(db).await?
         }
     };
 
@@ -207,7 +207,7 @@ pub async fn list_audit_logs(
            LIMIT ${limit_pos}"#
     );
 
-    let mut query = sqlx::query(&q);
+    let mut query = sqlx::query(sqlx::AssertSqlSafe(q));
     if actor_pos > 0 {
         query = query.bind(actor_id.unwrap());
     }

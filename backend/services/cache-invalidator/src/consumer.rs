@@ -5,7 +5,7 @@ use rdkafka::{
     consumer::{Consumer, StreamConsumer},
     Message,
 };
-use redis::AsyncCommands;
+use deadpool_redis::redis::AsyncCommands;
 use serde::Deserialize;
 
 const TOPIC: &str = "oecophylla.interactions";

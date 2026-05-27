@@ -1,5 +1,5 @@
 use deadpool_redis::Pool as RedisPool;
-use redis::AsyncCommands;
+use deadpool_redis::redis::AsyncCommands;
 use uuid::Uuid;
 
 const UNREAD_TTL_SECONDS: usize = 1800;

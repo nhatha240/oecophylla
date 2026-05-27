@@ -1,6 +1,6 @@
 use anyhow::Context;
 use deadpool_redis::Pool as RedisPool;
-use redis::AsyncCommands;
+use deadpool_redis::redis::AsyncCommands;
 use uuid::Uuid;
 
 use crate::types::CachedFeed;

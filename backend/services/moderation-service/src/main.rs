@@ -49,10 +49,10 @@ async fn main() -> anyhow::Result<()> {
 
     let admin_routes = Router::new()
         .route("/admin/reports", get(handlers::list_reports))
-        .route("/admin/reports/:id", get(handlers::get_report))
-        .route("/admin/reports/:id/resolve", post(handlers::resolve_report))
+        .route("/admin/reports/{id}", get(handlers::get_report))
+        .route("/admin/reports/{id}/resolve", post(handlers::resolve_report))
         .route("/admin/audit-logs", get(handlers::list_audit_logs))
-        .route("/admin/users/:id/history", get(handlers::user_history))
+        .route("/admin/users/{id}/history", get(handlers::user_history))
         .layer(from_fn_with_state(auth_state, require_admin));
 
     let app = Router::new()

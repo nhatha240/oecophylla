@@ -34,15 +34,15 @@ async fn main() -> anyhow::Result<()> {
         .route("/health", get(|| async { "ok" }))
         .route("/api/v1/users", get(handlers::search_users))
         .route(
-            "/api/v1/users/:id",
+            "/api/v1/users/{id}",
             get(handlers::get).put(handlers::update),
         )
         .route(
-            "/api/v1/users/:id/follow",
+            "/api/v1/users/{id}/follow",
             post(handlers::follow).delete(handlers::unfollow),
         )
-        .route("/api/v1/users/:id/followers", get(handlers::followers))
-        .route("/api/v1/users/:id/following", get(handlers::following))
+        .route("/api/v1/users/{id}/followers", get(handlers::followers))
+        .route("/api/v1/users/{id}/following", get(handlers::following))
         .with_state(state);
 
     let addr: SocketAddr = cfg.bind.parse()?;

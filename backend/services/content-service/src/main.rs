@@ -34,10 +34,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/health", get(|| async { "ok" }))
         .route("/api/v1/posts", post(handlers::create).get(handlers::list))
         .route(
-            "/api/v1/posts/:id",
+            "/api/v1/posts/{id}",
             get(handlers::get_one).delete(handlers::delete_post),
         )
-        .route("/api/v1/posts/:id/view", post(handlers::view))
+        .route("/api/v1/posts/{id}/view", post(handlers::view))
         .with_state(state);
 
     let addr: SocketAddr = cfg.bind.parse()?;

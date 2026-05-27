@@ -47,19 +47,19 @@ async fn main() -> anyhow::Result<()> {
 
     let toggles = Router::new()
         .route(
-            "/api/v1/posts/:id/like",
+            "/api/v1/posts/{id}/like",
             post(handlers::like_post).delete(handlers::unlike_post),
         )
         .route(
-            "/api/v1/posts/:id/save",
+            "/api/v1/posts/{id}/save",
             post(handlers::save_post).delete(handlers::unsave_post),
         )
         .route(
-            "/api/v1/posts/:id/share",
+            "/api/v1/posts/{id}/share",
             post(handlers::share_post).delete(handlers::unshare_post),
         )
         .route(
-            "/api/v1/posts/:id/hide",
+            "/api/v1/posts/{id}/hide",
             post(handlers::hide_post).delete(handlers::unhide_post),
         )
         .layer(from_fn_with_state(
@@ -68,23 +68,23 @@ async fn main() -> anyhow::Result<()> {
         ));
 
     let report = Router::new()
-        .route("/api/v1/posts/:id/report", post(handlers::report_post))
+        .route("/api/v1/posts/{id}/report", post(handlers::report_post))
         .layer(from_fn_with_state(rl("report", 10), enforce_rate_limit));
 
     let comments = Router::new()
         .route(
-            "/api/v1/posts/:id/comments",
+            "/api/v1/posts/{id}/comments",
             get(handlers::list_comments).post(handlers::create_comment),
         )
         .route(
-            "/api/v1/comments/:id/replies",
+            "/api/v1/comments/{id}/replies",
             get(handlers::list_comment_replies),
         )
-        .route("/api/v1/comments/:id", delete(handlers::delete_comment))
+        .route("/api/v1/comments/{id}", delete(handlers::delete_comment))
         .layer(from_fn_with_state(rl("comments", 20), enforce_rate_limit));
 
     let me_routes = Router::new()
-        .route("/api/v1/posts/:id/me", get(handlers::my_post_interactions))
+        .route("/api/v1/posts/{id}/me", get(handlers::my_post_interactions))
         .route("/api/v1/interactions/me/batch", post(handlers::batch_me))
         .layer(from_fn_with_state(
             rl("interactions_me", 200),

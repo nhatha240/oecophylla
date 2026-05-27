@@ -9,7 +9,6 @@ anyhow.workspace = true
 common.workspace = true
 deadpool-redis.workspace = true
 rdkafka.workspace = true
-redis = "0.27"
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
