@@ -8,7 +8,7 @@ RUN cargo build --release -p moderation-service
 
 FROM debian:trixie-slim AS runtime
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates libssl3 libpq5 && rm -rf /var/lib/apt/lists/*
+      ca-certificates libssl3 libpq5 curl && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /app/target/release/moderation-service /usr/local/bin/moderation-service
 EXPOSE 8006
 ENTRYPOINT ["/usr/local/bin/moderation-service"]

@@ -14,12 +14,7 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(
-        db: PgPool,
-        cfg: SharedConfig,
-        mod_cfg: ModerationConfig,
-        kafka: Producer,
-    ) -> Self {
+    pub fn new(db: PgPool, cfg: SharedConfig, mod_cfg: ModerationConfig, kafka: Producer) -> Self {
         Self {
             db,
             cfg: Arc::new(cfg),

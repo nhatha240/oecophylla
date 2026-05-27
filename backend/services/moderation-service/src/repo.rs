@@ -84,11 +84,7 @@ pub async fn list_reports(
                  ORDER BY r.created_at DESC, r.id DESC \
                  LIMIT $2"
             );
-            sqlx::query(&q)
-                .bind(s)
-                .bind(limit)
-                .fetch_all(db)
-                .await?
+            sqlx::query(&q).bind(s).bind(limit).fetch_all(db).await?
         }
         (None, Some((ts, id))) => {
             let q = format!(
@@ -104,13 +100,8 @@ pub async fn list_reports(
                 .await?
         }
         (None, None) => {
-            let q = format!(
-                "{base} ORDER BY r.created_at DESC, r.id DESC LIMIT $1"
-            );
-            sqlx::query(&q)
-                .bind(limit)
-                .fetch_all(db)
-                .await?
+            let q = format!("{base} ORDER BY r.created_at DESC, r.id DESC LIMIT $1");
+            sqlx::query(&q).bind(limit).fetch_all(db).await?
         }
     };
 

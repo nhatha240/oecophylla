@@ -83,7 +83,12 @@ async fn submit_report(c: &Client, post_id: &str) {
         .send()
         .await
         .unwrap();
-    assert_eq!(r.status(), StatusCode::CREATED, "report: {:?}", r.text().await.unwrap());
+    assert_eq!(
+        r.status(),
+        StatusCode::CREATED,
+        "report: {:?}",
+        r.text().await.unwrap()
+    );
 }
 
 /// Runs `psql` inside the postgres container. We use this rather than wiring an
