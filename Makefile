@@ -1,4 +1,4 @@
-.PHONY: up down logs ps test test-python test-phase-2b fmt lint sqlx-prepare seed clean
+.PHONY: up down logs ps test test-python test-phase-2b test-phase-3 fmt lint sqlx-prepare seed clean
 
 up:
 	docker compose -f compose.yaml -f compose.dev.yaml up -d --build
@@ -19,11 +19,18 @@ test:
 test-python:
 	cd recommendation_api && pytest
 	cd workers/feature_store_worker && pytest
+	cd workers/nlp_worker && pytest
 
 test-phase-2b:
 	cd backend && cargo test --workspace --no-fail-fast
 	cd frontend && pnpm run check && pnpm run build
 	$(MAKE) test-python
+
+test-phase-3:
+	cd backend && cargo test --workspace --no-fail-fast
+	cd frontend && pnpm run check && pnpm run build
+	$(MAKE) test-python
+	bash scripts/smoke_phase3.sh
 
 fmt:
 	cd backend && cargo fmt
