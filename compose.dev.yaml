@@ -7,5 +7,6 @@ services:
   content-service:     { ports: ["8003:8003"] }
   interaction-service: { ports: ["8004:8004"] }
   feed-service:        { ports: ["8005:8005"] }
-  moderation-service:  { ports: ["8006:8006"] }
-  recommendation-api:  { ports: ["8090:8090"] }
+  moderation-service:   { ports: ["8006:8006"] }
+  notification-service: { ports: ["8007:8007"] }
+  recommendation-api:   { ports: ["8090:8090"] }

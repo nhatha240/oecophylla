@@ -27,6 +27,20 @@ static_resources:
                         allow_credentials: true
                         max_age: "1728000"
                       routes:
+                        # SSE stream first (most specific) — disable response buffering + long idle timeout
+                        - match: { path: "/api/v1/notifications/stream" }
+                          route:
+                            cluster: notification_cluster
+                            timeout: 0s
+                            idle_timeout: 3600s
+                        - match: { prefix: "/api/v1/notifications/" }
+                          route:  { cluster: notification_cluster }
+                        - match: { prefix: "/api/v1/notifications" }
+                          route:  { cluster: notification_cluster }
+                        - match: { prefix: "/admin/" }
+                          route:  { cluster: moderation_cluster }
+                        - match: { prefix: "/admin" }
+                          route:  { cluster: moderation_cluster }
                         - match: { prefix: "/api/v1/auth/" }
                           route:  { cluster: auth_cluster, prefix_rewrite: "/api/v1/auth/" }
                         - match: { prefix: "/api/v1/users/" }
@@ -137,6 +151,36 @@ static_resources:
         endpoints:
           - lb_endpoints:
               - endpoint: { address: { socket_address: { address: feed-service, port_value: 8005 } } }
+      health_checks:
+        - timeout: 1s
+          interval: 5s
+          unhealthy_threshold: 3
+          healthy_threshold: 1
+          http_health_check: { path: "/health" }
+    - name: moderation_cluster
+      type: STRICT_DNS
+      connect_timeout: 1s
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: moderation_cluster
+        endpoints:
+          - lb_endpoints:
+              - endpoint: { address: { socket_address: { address: moderation-service, port_value: 8006 } } }
+      health_checks:
+        - timeout: 1s
+          interval: 5s
+          unhealthy_threshold: 3
+          healthy_threshold: 1
+          http_health_check: { path: "/health" }
+    - name: notification_cluster
+      type: STRICT_DNS
+      connect_timeout: 1s
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: notification_cluster
+        endpoints:
+          - lb_endpoints:
+              - endpoint: { address: { socket_address: { address: notification-service, port_value: 8007 } } }
       health_checks:
         - timeout: 1s
           interval: 5s

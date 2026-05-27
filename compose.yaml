@@ -94,11 +94,13 @@ services:
     <<: *restart
     image: envoyproxy/envoy:v1.32-latest
     depends_on:
-      auth-service:        { condition: service_started }
-      user-service:        { condition: service_started }
-      content-service:     { condition: service_started }
-      interaction-service: { condition: service_started }
-      feed-service:        { condition: service_started }
+      auth-service:         { condition: service_started }
+      user-service:         { condition: service_started }
+      content-service:      { condition: service_started }
+      interaction-service:  { condition: service_started }
+      feed-service:         { condition: service_started }
+      moderation-service:   { condition: service_started }
+      notification-service: { condition: service_started }
     volumes:
       - ./envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro
     ports:
@@ -199,6 +201,37 @@ services:
       init-topics: { condition: service_completed_successfully }
     environment:
       <<: *svc_env
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8006/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  notification-service:
+    <<: *restart
+    build:
+      context: ./backend
+      dockerfile: services/notification-service/Dockerfile
+    # Single replica: SSE fan-out state is in-process (Mutex<HashMap<UserId, Sender>>).
+    # A notification produced for user U only reaches the replica U is connected to.
+    # Phase 4 moves fan-out to Redis pub/sub for horizontal scale.
+    deploy:
+      replicas: 1
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+      kafka:    { condition: service_healthy }
+      migrate:  { condition: service_completed_successfully }
+      init-topics: { condition: service_completed_successfully }
+    environment:
+      <<: *svc_env
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8007/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   recommendation-api:
     <<: *restart
@@ -227,6 +260,20 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: ${REDIS_URL}
+      KAFKA_BROKERS: ${KAFKA_BROKERS}
+
+  nlp-worker:
+    <<: *restart
+    build:
+      context: .
+      dockerfile: workers/nlp_worker/Dockerfile
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka:    { condition: service_healthy }
+      migrate:  { condition: service_completed_successfully }
+      init-topics: { condition: service_completed_successfully }
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
       KAFKA_BROKERS: ${KAFKA_BROKERS}
 
   cache-invalidator:
