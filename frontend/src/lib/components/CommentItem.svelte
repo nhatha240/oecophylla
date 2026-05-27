@@ -4,9 +4,11 @@
   import CommentForm from './CommentForm.svelte';
   import { apiFetch } from '$lib/api';
   import { user } from '$lib/stores/auth';
+  import { showToast } from '$lib/stores/toast';
   export let c: Comment;
   export let post_id: string;
   let showReply = false;
+  let showDeleteConfirm = false;
   let allReplies: Comment[] = [...(c.replies ?? [])];
   let hasMore = c.has_more_replies ?? false;
 
@@ -16,11 +18,12 @@
     hasMore = false;
   }
   async function del() {
-    if (!confirm('Xóa bình luận này?')) return;
     try {
       await apiFetch(fetch, `/comments/${c.id}`, { method: 'DELETE' });
       c = { ...c, is_deleted: true, content: '[đã xóa]' };
-    } catch (e) { alert('Không xóa được'); }
+      showDeleteConfirm = false;
+      showToast('Đã xóa bình luận.');
+    } catch (e) { showToast('Không xóa được bình luận.'); }
   }
 </script>
 
@@ -33,9 +36,21 @@
     </div>
     <p class="c-body whitespace-pre-wrap">{c.content}</p>
     <div class="c-acts">
-      {#if $user && !c.parent_comment_id}<button on:click={() => (showReply = !showReply)}><Icon name="ArrowRight" size={13} /> Phản hồi</button>{/if}
-      {#if $user && $user.id === c.author_id && !c.is_deleted}<button on:click={del}><Icon name="X" size={13} /> Xóa</button>{/if}
+      {#if $user && !c.parent_comment_id}<button type="button" on:click={() => (showReply = !showReply)}><Icon name="ArrowRight" size={13} /> Phản hồi</button>{/if}
+      {#if $user && $user.id === c.author_id && !c.is_deleted}
+        <button type="button" on:click={() => (showDeleteConfirm = !showDeleteConfirm)}><Icon name="X" size={13} /> Xóa</button>
+      {/if}
     </div>
+
+    {#if showDeleteConfirm}
+      <div class="glass-surface mt-3 flex items-center justify-between gap-3 rounded-[20px] px-4 py-3 text-sm text-slate-600">
+        <span>Xóa bình luận này?</span>
+        <span class="flex gap-2">
+          <button class="glass-chip" type="button" on:click={() => (showDeleteConfirm = false)}>Giữ lại</button>
+          <button class="glass-button-primary" type="button" on:click={del}>Xóa</button>
+        </span>
+      </div>
+    {/if}
 
     {#if showReply}
       <div class="replies" style="margin-top: 12px;">
@@ -58,7 +73,7 @@
           </li>
         {/each}
       </ul>
-      {#if hasMore}<button class="btn ghost sm" style="margin-top: 8px;" on:click={loadMore}>Xem thêm phản hồi…</button>{/if}
+      {#if hasMore}<button class="btn ghost sm" type="button" style="margin-top: 8px;" on:click={loadMore}>Xem thêm phản hồi…</button>{/if}
     {/if}
   </div>
 </li>

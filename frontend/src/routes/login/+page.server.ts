@@ -27,11 +27,6 @@ export const actions: Actions = {
       }
     } catch (e) {
       if (e instanceof ApiException && e.status === 401) return fail(401, { error: 'Sai thông tin đăng nhập' });
-      console.error('[login action error]', {
-        email_or_username: String(data.get('email_or_username') ?? ''),
-        password: String(data.get('password') ?? ''),
-        error: e,
-      });
       return fail(500, { error: 'Lỗi máy chủ' });
     }
     throw redirect(303, '/');

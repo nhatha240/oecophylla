@@ -1,59 +1,62 @@
 <script lang="ts">
-  import AdminShell from '$lib/apple-glass/admin/AdminShell.svelte';
   import Icon from '$lib/apple-glass/components/Icon.svelte';
-  import { mockReports, mockMetrics } from '$lib/mock/admin';
+  import AdminReportsTable from '$lib/components/AdminReportsTable.svelte';
+  import AdminAuditTable from '$lib/components/AdminAuditTable.svelte';
+  import type { AdminAuditLog, AdminReport, CursorPage } from '$lib/types';
 
-  let adminPage = 'overview';
+  export let data: {
+    reports: CursorPage<AdminReport>;
+    reportsAvailable: boolean;
+    audit: CursorPage<AdminAuditLog>;
+    auditAvailable: boolean;
+    filters: {
+      actorId: string;
+      action: string;
+      limit: number;
+    };
+  };
+
+  let tab: 'reports' | 'audit' = data.filters.action || data.audit.items.length ? 'audit' : 'reports';
 </script>
 
-<AdminShell page={adminPage} onNav={(page) => (adminPage = page)} onExit={() => history.back()}>
-  <section class="admin-h">
+<svelte:head>
+  <title>Oecophylla — Admin</title>
+</svelte:head>
+
+<div class="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-6 md:px-6">
+  <section class="glass-surface flex flex-col gap-5 rounded-[40px] px-6 py-6 md:flex-row md:items-end md:justify-between">
     <div>
-      <h2>Trung tâm quản trị</h2>
-      <div class="sub">Bản admin mock hiện đang dùng dữ liệu cục bộ nhưng đã bám layout Apple Glass.</div>
+      <p class="text-mono-meta text-xs uppercase tracking-[0.32em] text-slate-400">Moderation Center</p>
+      <h1 class="text-display-serif mt-2 text-4xl text-slate-900">Admin Console</h1>
+      <p class="mt-3 max-w-2xl text-sm leading-6 text-slate-500">
+        Dùng giao diện thật của Oecophylla để xử lý báo cáo và đọc audit log. Nếu backend Phase 3 chưa sẵn sàng, trang vẫn render trạng thái rỗng an toàn.
+      </p>
     </div>
-    <div class="admin-h-actions">
-      <div class="date-range"><Icon name="Clock" size={14} /> 7 ngày qua</div>
+    <div class="flex flex-wrap items-center gap-2">
+      <button class={`glass-chip ${tab === 'reports' ? 'bg-white text-slate-900' : ''}`} type="button" on:click={() => (tab = 'reports')}>
+        <Icon name="Flag" size={14} /> Reports
+      </button>
+      <button class={`glass-chip ${tab === 'audit' ? 'bg-white text-slate-900' : ''}`} type="button" on:click={() => (tab = 'audit')}>
+        <Icon name="ChartBar" size={14} /> Audit
+      </button>
     </div>
   </section>
 
-  <section class="kpi-grid">
-    {#each Object.entries(mockMetrics) as [k, v]}
-      <div class="kpi">
-        <div class="label">
-          <span>{k}</span>
-          <Icon name="ChartBar" size={14} />
-        </div>
-        <div class="value">{v}</div>
-        <div class="delta up"><Icon name="TrendUp" size={12} /> cập nhật ổn định</div>
-      </div>
-    {/each}
-  </section>
-
-  <section class="chart-card">
-    <div class="head">
-      <div>
-        <h4>Báo cáo đang chờ</h4>
-        <div class="sub">Ưu tiên kiểm duyệt các bài có trạng thái nhạy cảm và cần xử lý sớm.</div>
-      </div>
-    </div>
-    <table class="admin-table">
-      <thead>
-        <tr>
-          <th>Lý do</th>
-          <th>Post</th>
-          <th>Trạng thái</th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each mockReports as r (r.id)}
-          <tr>
-            <td>{r.reason}</td>
-            <td>{r.post_id}</td>
-            <td>{r.status}</td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
-  </section>
-</AdminShell>
+  {#if tab === 'reports'}
+    <AdminReportsTable
+      items={data.reports.items}
+      nextCursor={data.reports.next_cursor}
+      available={data.reportsAvailable}
+      limit={data.filters.limit}
+    />
+  {:else}
+    <AdminAuditTable
+      items={data.audit.items}
+      nextCursor={data.audit.next_cursor}
+      available={data.auditAvailable}
+      actorId={data.filters.actorId}
+      action={data.filters.action}
+      limit={data.filters.limit}
+    />
+  {/if}
+</div>

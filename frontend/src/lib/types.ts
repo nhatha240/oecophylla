@@ -24,3 +24,68 @@ export interface FeedResponse {
   generated_at: string;
 }
 export interface BatchMeResponse { items: Record<string, MyInteractions>; }
+
+export type NotificationType =
+  | 'liked'
+  | 'commented'
+  | 'comment_replied'
+  | 'followed'
+  | 'post_hidden'
+  | 'author_warned'
+  | 'author_banned'
+  | 'report_dismissed';
+
+export interface Notification {
+  id: string;
+  user_id: string;
+  type: NotificationType;
+  actor_id: string;
+  post_id?: string | null;
+  comment_id?: string | null;
+  is_read: boolean;
+  created_at: string;
+  actor_username: string;
+  actor_display_name: string | null;
+  snippet?: string | null;
+}
+
+export interface NotificationListResponse {
+  items: Notification[];
+  next_cursor: string | null;
+}
+
+export type ModerationAction = 'dismiss' | 'hide_post' | 'warn_author' | 'ban_author';
+
+export interface AdminReport {
+  id: string;
+  post_id: string;
+  reporter_id: string;
+  reason: ReportReason;
+  detail?: string | null;
+  status: string;
+  created_at: string;
+  updated_at?: string;
+  post_snippet?: string | null;
+  reporter_username?: string | null;
+  reporter_display_name?: string | null;
+  author_id?: string | null;
+  author_username?: string | null;
+  author_display_name?: string | null;
+}
+
+export interface AdminAuditLog {
+  id: string;
+  actor_id: string;
+  action: string;
+  target_type?: string | null;
+  target_id?: string | null;
+  metadata?: Record<string, unknown> | null;
+  created_at: string;
+  actor_username?: string | null;
+  actor_display_name?: string | null;
+}
+
+export interface CursorPage<T> {
+  items: T[];
+  next_cursor: string | null;
+}

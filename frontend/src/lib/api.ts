@@ -7,9 +7,13 @@ export class ApiException extends Error {
 }
 
 export type Fetch = typeof fetch;
+export type ApiFetchInit = RequestInit & { quiet?: boolean };
 
-export async function apiFetch<T>(fetchImpl: Fetch, path: string, init: RequestInit = {}): Promise<T> {
-  const res = await fetchImpl(`/api/v1${path}`, {
+export async function apiFetch<T>(fetchImpl: Fetch, path: string, init: ApiFetchInit = {}): Promise<T> {
+  const target = path.startsWith('/admin')
+    ? `/api/v1/admin${path.slice('/admin'.length)}`
+    : `/api/v1${path}`;
+  const res = await fetchImpl(target, {
     credentials: 'include',
     headers: {
       'content-type': 'application/json',
@@ -21,7 +25,7 @@ export async function apiFetch<T>(fetchImpl: Fetch, path: string, init: RequestI
   if (!res.ok) {
     let body: ApiError | null = null;
     try { body = await res.json(); } catch { /* ignore parse errors */ }
-    console.error('API error', { path, status: res.status, body });
+    if (!init.quiet) console.error('API error', { path, status: res.status, body });
     throw new ApiException(res.status, body?.error.code ?? 'UNKNOWN', body?.error.details);
   }
   if (res.status === 204) return undefined as T;

@@ -41,11 +41,11 @@
       {#if mode === 'register'}
         <div class="field">
           <label for="username">Username</label>
-          <input id="username" class="input" name="username" placeholder="quynhanh" required />
+          <input id="username" class="input" name="username" placeholder="quynhanh" autocomplete="username" required />
         </div>
         <div class="field">
           <label for="display_name">Tên hiển thị</label>
-          <input id="display_name" class="input" name="display_name" placeholder="Nguyễn Quỳnh Anh" />
+          <input id="display_name" class="input" name="display_name" placeholder="Nguyễn Quỳnh Anh" autocomplete="name" />
         </div>
       {/if}
 
@@ -57,13 +57,22 @@
           type={mode === 'login' ? 'text' : 'email'}
           name={mode === 'login' ? 'email_or_username' : 'email'}
           placeholder={mode === 'login' ? 'ban@vidu.com hoặc username' : 'ban@vidu.com'}
+          autocomplete={mode === 'login' ? 'username' : 'email'}
           required
         />
       </div>
 
       <div class:err={!!error} class="field">
         <label for="password">Mật khẩu</label>
-        <input id="password" class="input" type="password" name="password" placeholder="Tối thiểu 8 ký tự" required />
+        <input
+          id="password"
+          class="input"
+          type="password"
+          name="password"
+          placeholder="Tối thiểu 8 ký tự"
+          autocomplete={mode === 'login' ? 'current-password' : 'new-password'}
+          required
+        />
         {#if error}
           <span class="err-msg"><Icon name="AlertCircle" size={12} /> {error}</span>
         {:else if mode === 'login'}

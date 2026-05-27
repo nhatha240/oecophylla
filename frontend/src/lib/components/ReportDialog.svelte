@@ -2,6 +2,7 @@
   import { apiFetch, ApiException } from '$lib/api';
   import Icon from '$lib/apple-glass/components/Icon.svelte';
   import { createEventDispatcher } from 'svelte';
+  import { showToast } from '$lib/stores/toast';
   export let post_id: string;
   const dispatch = createEventDispatcher();
   let reason: 'spam'|'misinformation'|'harassment'|'nsfw'|'other' = 'spam';
@@ -13,7 +14,7 @@
         method: 'POST', body: JSON.stringify({ reason, detail: detail || undefined })
       });
       dispatch('close');
-      alert('Đã ghi nhận báo cáo. Cảm ơn bạn!');
+      showToast('Đã ghi nhận báo cáo.');
     } catch (e) {
       if (e instanceof ApiException && e.status === 409) err = 'Bạn đã có báo cáo đang xử lý.';
       else err = 'Lỗi máy chủ';
@@ -34,8 +35,8 @@
               bind:value={detail} placeholder="Chi tiết (tùy chọn)"></textarea>
     {#if err}<p class="field err-msg" style="margin-top: 12px;"><Icon name="AlertCircle" size={12} /> {err}</p>{/if}
     <div style="margin-top: 18px; display: flex; justify-content: flex-end; gap: 8px;">
-      <button class="btn ghost sm" on:click={() => dispatch('close')}>Hủy</button>
-      <button class="btn emerald sm" on:click={submit} disabled={busy}>Gửi báo cáo</button>
+      <button class="btn ghost sm" type="button" on:click={() => dispatch('close')}>Hủy</button>
+      <button class="btn emerald sm" type="button" on:click={submit} disabled={busy}>Gửi báo cáo</button>
     </div>
   </div>
 </div>

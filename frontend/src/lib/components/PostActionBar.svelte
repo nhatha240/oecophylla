@@ -1,6 +1,7 @@
 <script lang="ts">
   import { apiFetch, ApiException } from '$lib/api';
   import Icon from '$lib/apple-glass/components/Icon.svelte';
+  import { showToast } from '$lib/stores/toast';
   import type { Post, MyInteractions } from '$lib/types';
   export let post: Post;
   export let me: MyInteractions | null = null;
@@ -22,8 +23,8 @@
       // rollback
       if (kind === 'like') { liked = wasOn; likeCount = counter; }
       else                 { saved = wasOn; saveCount = counter; }
-      if (e instanceof ApiException && e.status === 401) alert('Vui lòng đăng nhập');
-      else alert('Có lỗi xảy ra');
+      if (e instanceof ApiException && e.status === 401) showToast('Vui lòng đăng nhập để tiếp tục.');
+      else showToast('Không cập nhật được tương tác.');
     }
   }
 </script>

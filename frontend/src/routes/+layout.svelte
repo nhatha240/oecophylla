@@ -3,7 +3,10 @@
   import { page } from '$app/stores';
   import '../app.css';
   import Icon from '$lib/apple-glass/components/Icon.svelte';
+  import Toast from '$lib/apple-glass/components/Toast.svelte';
+  import NotificationBell from '$lib/components/NotificationBell.svelte';
   import { user } from '$lib/stores/auth';
+  import { clearToast, toast } from '$lib/stores/toast';
   export let data: { user: import('$lib/types').User | null };
   $: user.set(data.user);
 
@@ -146,9 +149,7 @@
           <button class="icon-btn" title="Đổi giao diện" on:click={() => (theme = theme === 'dark' ? 'light' : 'dark')}>
             <Icon name={theme === 'dark' ? 'Sun' : 'Moon'} size={18} />
           </button>
-          <button class="icon-btn" title="Thông báo">
-            <Icon name="Bell" size={18} />
-          </button>
+          <NotificationBell enabled={Boolean(currentUser)} />
         </div>
       </header>
 
@@ -157,4 +158,8 @@
   </div>
 {:else}
   <slot />
+{/if}
+
+{#if $toast}
+  <Toast message={$toast.message} onClose={clearToast} />
 {/if}

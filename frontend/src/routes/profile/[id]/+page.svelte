@@ -3,6 +3,7 @@
   import PostCard from '$lib/components/PostCard.svelte';
   import { user } from '$lib/stores/auth';
   import { ApiException, apiFetch } from '$lib/api';
+  import { showToast } from '$lib/stores/toast';
   export let data: { profile: import('$lib/types').Profile; posts: import('$lib/types').Post[] };
   let following = false;
   async function toggleFollow() {
@@ -10,7 +11,10 @@
       if (following) await apiFetch(fetch, `/users/${data.profile.id}/follow`, { method: 'DELETE' });
       else           await apiFetch(fetch, `/users/${data.profile.id}/follow`, { method: 'POST' });
       following = !following;
-    } catch (e) { if (e instanceof ApiException && e.status === 400) alert('Không thể follow chính mình'); }
+    } catch (e) {
+      if (e instanceof ApiException && e.status === 400) showToast('Không thể theo dõi chính mình.');
+      else showToast('Không cập nhật được trạng thái theo dõi.');
+    }
   }
 </script>
 
