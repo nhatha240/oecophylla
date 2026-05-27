@@ -1,5 +1,6 @@
 <script lang="ts">
   import { apiFetch, ApiException } from '$lib/api';
+  import Icon from '$lib/apple-glass/components/Icon.svelte';
   import type { Post, MyInteractions } from '$lib/types';
   export let post: Post;
   export let me: MyInteractions | null = null;
@@ -27,13 +28,13 @@
   }
 </script>
 
-<div class="mt-3 flex items-center gap-2 text-mono-meta">
-  <button class="glass-chip" on:click={() => toggle('like')} aria-pressed={liked}>
-    {liked ? '♥' : '♡'} {likeCount}
+<div class="post-actions">
+  <button class={`post-action like ${liked ? 'active' : ''}`} on:click={() => toggle('like')} aria-pressed={liked}>
+    <Icon name={liked ? 'HeartFill' : 'Heart'} size={16} /> {likeCount}
   </button>
-  <button class="glass-chip" on:click={() => toggle('save')} aria-pressed={saved}>
-    {saved ? '★' : '☆'} {saveCount}
+  <button class={`post-action save ${saved ? 'active' : ''}`} on:click={() => toggle('save')} aria-pressed={saved}>
+    <Icon name={saved ? 'BookmarkFill' : 'Bookmark'} size={16} /> {saveCount}
   </button>
-  <a class="glass-chip" href={`/post/${post.id}`}>💬 {post.comment_count}</a>
-  <span class="glass-chip">↗ {post.share_count}</span>
+  <a class="post-action" href={`/post/${post.id}`}><Icon name="Comment" size={16} /> {post.comment_count}</a>
+  <span class="post-action"><Icon name="Share" size={16} /> {post.share_count}</span>
 </div>

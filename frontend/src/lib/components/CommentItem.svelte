@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Comment } from '$lib/types';
+  import Icon from '$lib/apple-glass/components/Icon.svelte';
   import CommentForm from './CommentForm.svelte';
   import { apiFetch } from '$lib/api';
   import { user } from '$lib/stores/auth';
@@ -22,25 +23,42 @@
     } catch (e) { alert('Không xóa được'); }
   }
 </script>
-<li class="glass-surface p-4">
-  <div class="text-mono-meta">@{c.author_username} · {new Date(c.created_at).toLocaleString('vi-VN')}</div>
-  <p class="mt-1 whitespace-pre-wrap">{c.content}</p>
-  <div class="mt-2 flex gap-2 text-sm">
-    {#if $user && !c.parent_comment_id}<button class="glass-chip" on:click={() => (showReply = !showReply)}>Phản hồi</button>{/if}
-    {#if $user && $user.id === c.author_id && !c.is_deleted}<button class="glass-chip" on:click={del}>Xóa</button>{/if}
+
+<li class="comment">
+  <div class="avatar s40">{(c.author_display_name ?? c.author_username).slice(0, 1).toUpperCase()}</div>
+  <div style="flex: 1;">
+    <div class="c-meta">
+      <span class="name">{c.author_display_name ?? c.author_username}</span>
+      <span class="time">@{c.author_username} · {new Date(c.created_at).toLocaleString('vi-VN')}</span>
+    </div>
+    <p class="c-body whitespace-pre-wrap">{c.content}</p>
+    <div class="c-acts">
+      {#if $user && !c.parent_comment_id}<button on:click={() => (showReply = !showReply)}><Icon name="ArrowRight" size={13} /> Phản hồi</button>{/if}
+      {#if $user && $user.id === c.author_id && !c.is_deleted}<button on:click={del}><Icon name="X" size={13} /> Xóa</button>{/if}
+    </div>
+
+    {#if showReply}
+      <div class="replies" style="margin-top: 12px;">
+        <CommentForm post_id={post_id} parent_comment_id={c.id} />
+      </div>
+    {/if}
+
+    {#if allReplies.length > 0}
+      <ul class="replies">
+        {#each allReplies as r (r.id)}
+          <li class="comment reply">
+            <div class="avatar s32">{(r.author_display_name ?? r.author_username).slice(0, 1).toUpperCase()}</div>
+            <div>
+              <div class="c-meta">
+                <span class="name">{r.author_display_name ?? r.author_username}</span>
+                <span class="time">@{r.author_username} · {new Date(r.created_at).toLocaleString('vi-VN')}</span>
+              </div>
+              <p class="c-body whitespace-pre-wrap">{r.content}</p>
+            </div>
+          </li>
+        {/each}
+      </ul>
+      {#if hasMore}<button class="btn ghost sm" style="margin-top: 8px;" on:click={loadMore}>Xem thêm phản hồi…</button>{/if}
+    {/if}
   </div>
-  {#if showReply}
-    <div class="mt-2"><CommentForm post_id={post_id} parent_comment_id={c.id} /></div>
-  {/if}
-  {#if allReplies.length > 0}
-    <ul class="mt-3 ml-6 space-y-2">
-      {#each allReplies as r (r.id)}
-        <li class="glass-surface p-3">
-          <div class="text-mono-meta">@{r.author_username} · {new Date(r.created_at).toLocaleString('vi-VN')}</div>
-          <p class="mt-1 whitespace-pre-wrap">{r.content}</p>
-        </li>
-      {/each}
-    </ul>
-    {#if hasMore}<button class="glass-chip mt-2 ml-6" on:click={loadMore}>Xem thêm phản hồi…</button>{/if}
-  {/if}
 </li>

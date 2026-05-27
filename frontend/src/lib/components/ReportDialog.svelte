@@ -1,5 +1,6 @@
 <script lang="ts">
   import { apiFetch, ApiException } from '$lib/api';
+  import Icon from '$lib/apple-glass/components/Icon.svelte';
   import { createEventDispatcher } from 'svelte';
   export let post_id: string;
   const dispatch = createEventDispatcher();
@@ -19,20 +20,22 @@
     } finally { busy = false; }
   }
 </script>
-<div class="fixed inset-0 bg-ink-900/40 flex items-center justify-center z-50">
-  <div class="glass-surface p-6 max-w-md w-full">
-    <h3 class="text-display-serif text-xl mb-3">Báo cáo bài viết</h3>
-    <div class="flex flex-col gap-2 text-sm">
+<div class="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50 px-4">
+  <div class="card card-pad" style="max-width: 560px; width: 100%;">
+    <h3 class="serif" style="font-size: 24px; margin: 0 0 12px;">Báo cáo bài viết</h3>
+    <div class="field" style="gap: 10px;">
       {#each ['spam','misinformation','harassment','nsfw','other'] as r}
-        <label><input type="radio" bind:group={reason} value={r} /> {r}</label>
+        <label class="chip outline" style="justify-content: flex-start; padding: 10px 14px;">
+          <input type="radio" bind:group={reason} value={r} /> {r}
+        </label>
       {/each}
     </div>
-    <textarea class="block w-full mt-3 px-3 py-2 rounded-xl bg-white/60 border border-white/60" rows="2"
+    <textarea class="input" style="margin-top: 14px;" rows="3"
               bind:value={detail} placeholder="Chi tiết (tùy chọn)"></textarea>
-    {#if err}<p class="text-red-700 text-sm mt-2">{err}</p>{/if}
-    <div class="mt-4 flex justify-end gap-2">
-      <button class="glass-chip" on:click={() => dispatch('close')}>Hủy</button>
-      <button class="glass-button-primary" on:click={submit} disabled={busy}>Gửi</button>
+    {#if err}<p class="field err-msg" style="margin-top: 12px;"><Icon name="AlertCircle" size={12} /> {err}</p>{/if}
+    <div style="margin-top: 18px; display: flex; justify-content: flex-end; gap: 8px;">
+      <button class="btn ghost sm" on:click={() => dispatch('close')}>Hủy</button>
+      <button class="btn emerald sm" on:click={submit} disabled={busy}>Gửi báo cáo</button>
     </div>
   </div>
 </div>
