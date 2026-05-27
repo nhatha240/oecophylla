@@ -24,17 +24,17 @@ Oecophylla is a social networking platform with intelligent news feed recommenda
 | Phase 0+1 (infra + auth/user/content + frontend) | ✅ Complete | `phase-0-1-complete` | `docs/superpowers/specs/2026-05-25-foundation-identity-content-design.md` | `docs/superpowers/plans/2026-05-25-foundation-identity-content-plan.md` |
 | Phase 2A (interactions + comments + reports) | ✅ Complete | `phase-2a-complete` | `docs/superpowers/specs/2026-05-25-phase-2a-interactions-design.md` | `docs/superpowers/plans/2026-05-25-phase-2a-interactions-plan.md` |
 | Phase 2B (feed + recommendation + workers) | ✅ Complete | `phase-2b-complete` | `docs/superpowers/specs/2026-05-26-phase-2b-feed-recommendation-design.md` | `docs/superpowers/plans/2026-05-26-phase-2b-feed-recommendation-plan.md` |
-| Phase 3 (moderation + notifications + NLP) | 📝 Spec+plan in progress | — | `docs/superpowers/specs/2026-05-26-phase-3-moderation-notifications-nlp-design.md` | `docs/superpowers/plans/2026-05-26-phase-3-moderation-notifications-nlp-plan.md` |
+| Phase 3 (moderation + notifications + NLP) | ✅ Complete | `phase-3-complete` | `docs/superpowers/specs/2026-05-26-phase-3-moderation-notifications-nlp-design.md` | `docs/superpowers/plans/2026-05-26-phase-3-moderation-notifications-nlp-plan.md` |
 | Phase 4 (analytics + evaluation + observability) | ⏳ Not started | — | — | — |
 
 ### What is actually in the repo today (running)
 
-- **Backend** — Cargo workspace `backend/` with `crates/common` + 6 binaries: `auth-service` (:8001), `user-service` (:8002), `content-service` (:8003), `interaction-service` (:8004), `feed-service` (:8005), `cache-invalidator` (Kafka consumer, no HTTP).
-- **Python services** outside the workspace: `recommendation-api` (FastAPI :8090) and `workers/feature_store_worker` (Kafka consumer).
+- **Backend** — Cargo workspace `backend/` with `crates/common` + 8 binaries: `auth-service` (:8001), `user-service` (:8002), `content-service` (:8003), `interaction-service` (:8004), `feed-service` (:8005), `moderation-service` (:8006), `notification-service` (:8007), `cache-invalidator` (Kafka consumer, no HTTP).
+- **Python services** outside the workspace: `recommendation-api` (FastAPI :8090), `workers/feature_store_worker` (Kafka consumer), `workers/nlp_worker` (Kafka consumer for topic tagging + safety scoring).
 - **Frontend** — SvelteKit (adapter-node, Tailwind) at `frontend/`. Routes shipped: `/`, `/login`, `/register`, `/logout`, `/profile/[id]`, `/post/new`, `/post/[id]`, `/admin` (mock), `/m` (mock). Live feed root pages via cursor + IntersectionObserver view tracker.
-- **Infra** — `compose.yaml` with `postgres:18-trixie`, `redis:8-trixie`, `apache/kafka:4.0.0` (KRaft, no Zookeeper), `envoyproxy/envoy:v1.32-latest`, `prom/prometheus:v3.0.0`, `grafana/grafana:11.4.0`, plus the 6 Rust services + 2 Python services + frontend + 2 one-shot jobs (`migrate`, `init-topics`). `compose.dev.yaml` exposes backend ports.
-- **Migrations** — 9 sqlx migrations applied: enums, users, follows, posts, posts_counters, interactions, comments, reports, user_preference_vectors.
-- **Kafka topics** — `oecophylla.content.created`, `oecophylla.user.followed`, `oecophylla.interactions`. Consumers wired: `feature-store-worker` (updates `user_preference_vectors`) and `cache-invalidator` (clears `feed:{user_id}` on interaction).
+- **Infra** — `compose.yaml` with `postgres:18-trixie`, `redis:8-trixie`, `apache/kafka:4.0.0` (KRaft, no Zookeeper), `envoyproxy/envoy:v1.32-latest`, `prom/prometheus:v3.0.0`, `grafana/grafana:11.4.0`, plus the 8 Rust services + 3 Python services + frontend + 2 one-shot jobs (`migrate`, `init-topics`). `compose.dev.yaml` exposes backend ports.
+- **Migrations** — 11 sqlx migrations applied: enums, users, follows, posts, posts_counters, interactions, comments, reports, user_preference_vectors, audit_logs, notifications.
+- **Kafka topics** — `oecophylla.content.created`, `oecophylla.user.followed`, `oecophylla.interactions`, `oecophylla.moderation.action`. Consumers wired: `feature-store-worker` (updates `user_preference_vectors`), `cache-invalidator` (clears `feed:{user_id}` on interaction), `nlp-worker` (enriches posts with topics + safety_score), `notification-service` (creates in-app notifications from events).
 
 ### Locked technical decisions (must respect in any future work)
 
