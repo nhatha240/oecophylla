@@ -60,10 +60,7 @@ async fn main() -> anyhow::Result<()> {
             "/api/v1/notifications/read-all",
             post(handlers::mark_all_read),
         )
-        .route(
-            "/api/v1/notifications/:id/read",
-            post(handlers::mark_read),
-        )
+        .route("/api/v1/notifications/:id/read", post(handlers::mark_read))
         .route("/api/v1/notifications/stream", get(handlers::sse_stream))
         .layer(from_fn_with_state(auth_state, require_auth));
 

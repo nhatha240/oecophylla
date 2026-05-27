@@ -8,7 +8,7 @@ RUN cargo build --release -p notification-service
 
 FROM debian:trixie-slim AS runtime
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates libssl3 libpq5 && rm -rf /var/lib/apt/lists/*
+      ca-certificates libssl3 libpq5 curl && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /app/target/release/notification-service /usr/local/bin/notification-service
 EXPOSE 8007
 ENTRYPOINT ["/usr/local/bin/notification-service"]

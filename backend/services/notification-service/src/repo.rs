@@ -20,7 +20,9 @@ fn map_row(row: &PgRow) -> NotificationDto {
 
     let post_id: Option<Uuid> = row.get("post_id");
     let post_snippet: Option<String> = row.get("post_snippet");
-    let post = post_id.zip(post_snippet).map(|(id, snippet)| PostSnippet { id, snippet });
+    let post = post_id
+        .zip(post_snippet)
+        .map(|(id, snippet)| PostSnippet { id, snippet });
 
     let read_at: Option<DateTime<Utc>> = row.get("read_at");
 
@@ -81,7 +83,11 @@ pub async fn list(
                  ORDER BY n.created_at DESC, n.id DESC \
                  LIMIT $2"
             );
-            sqlx::query(&q).bind(user_id).bind(limit).fetch_all(db).await?
+            sqlx::query(&q)
+                .bind(user_id)
+                .bind(limit)
+                .fetch_all(db)
+                .await?
         }
         (false, Some((ts, id))) => {
             let q = format!(
@@ -104,7 +110,11 @@ pub async fn list(
                  ORDER BY n.created_at DESC, n.id DESC \
                  LIMIT $2"
             );
-            sqlx::query(&q).bind(user_id).bind(limit).fetch_all(db).await?
+            sqlx::query(&q)
+                .bind(user_id)
+                .bind(limit)
+                .fetch_all(db)
+                .await?
         }
         (true, Some((ts, id))) => {
             let q = format!(

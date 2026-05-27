@@ -8,8 +8,7 @@ pub struct NotificationConfig {
 impl NotificationConfig {
     pub fn from_env() -> Self {
         Self {
-            kafka_brokers: std::env::var("KAFKA_BROKERS")
-                .unwrap_or_else(|_| "kafka:9092".into()),
+            kafka_brokers: std::env::var("KAFKA_BROKERS").unwrap_or_else(|_| "kafka:9092".into()),
             unread_cache_ttl_seconds: std::env::var("NOTIF_UNREAD_CACHE_TTL_SECONDS")
                 .ok()
                 .and_then(|v| v.parse().ok())

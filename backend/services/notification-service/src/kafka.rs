@@ -92,8 +92,13 @@ pub fn spawn_consumers(state: AppState) {
     {
         let state = state.clone();
         tokio::spawn(async move {
-            run_consumer_loop(&brokers, TOPIC_MODERATION_ACTION, state, handle_moderation_action)
-                .await;
+            run_consumer_loop(
+                &brokers,
+                TOPIC_MODERATION_ACTION,
+                state,
+                handle_moderation_action,
+            )
+            .await;
         });
     }
 }
@@ -206,12 +211,11 @@ async fn handle_interaction(state: AppState, env: InboundEnvelope) -> anyhow::Re
                 }
             };
 
-            let parent_author: Option<Uuid> = sqlx::query_scalar(
-                "SELECT author_id FROM comments WHERE id = $1",
-            )
-            .bind(parent_id)
-            .fetch_optional(&state.db)
-            .await?;
+            let parent_author: Option<Uuid> =
+                sqlx::query_scalar("SELECT author_id FROM comments WHERE id = $1")
+                    .bind(parent_id)
+                    .fetch_optional(&state.db)
+                    .await?;
 
             let recipient = match parent_author {
                 Some(id) => id,
@@ -237,7 +241,10 @@ async fn handle_interaction(state: AppState, env: InboundEnvelope) -> anyhow::Re
         // Intentionally ignored event types.
         "saved" | "shared" | "hidden" | "reported" | "viewed" => Ok(()),
         other => {
-            tracing::debug!(event_type = other, "unrecognised interaction event — skipping");
+            tracing::debug!(
+                event_type = other,
+                "unrecognised interaction event — skipping"
+            );
             Ok(())
         }
     }
@@ -268,7 +275,10 @@ async fn handle_moderation_action(state: AppState, env: InboundEnvelope) -> anyh
         // These do not generate user-visible notifications.
         "report_dismissed" | "post_unhidden" | "author_unbanned" => return Ok(()),
         other => {
-            tracing::debug!(event_type = other, "unrecognised moderation event — skipping");
+            tracing::debug!(
+                event_type = other,
+                "unrecognised moderation event — skipping"
+            );
             return Ok(());
         }
     };

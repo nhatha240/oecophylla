@@ -16,11 +16,7 @@ pub async fn unread_count(redis: &RedisPool, user_id: Uuid) -> anyhow::Result<Op
 }
 
 /// Write (or refresh) the cached unread count with a fixed TTL.
-pub async fn set_unread_count(
-    redis: &RedisPool,
-    user_id: Uuid,
-    count: i64,
-) -> anyhow::Result<()> {
+pub async fn set_unread_count(redis: &RedisPool, user_id: Uuid, count: i64) -> anyhow::Result<()> {
     let mut conn = redis.get().await?;
     let _: () = conn
         .set_ex(unread_key(user_id), count, UNREAD_TTL_SECONDS as u64)

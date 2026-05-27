@@ -15,10 +15,12 @@ use tokio_stream::wrappers::{BroadcastStream, IntervalStream};
 use uuid::Uuid;
 
 use crate::{
-    cache, cursor,
-    repo,
+    cache, cursor, repo,
     state::AppState,
-    types::{ListQuery, MarkAllReadResponse, NotificationDto, NotificationListResponse, UnreadCountResponse},
+    types::{
+        ListQuery, MarkAllReadResponse, NotificationDto, NotificationListResponse,
+        UnreadCountResponse,
+    },
 };
 
 // ── GET /api/v1/notifications ─────────────────────────────────────────────────
@@ -28,19 +30,14 @@ pub async fn list_notifications(
     Extension(user): Extension<AuthUser>,
     Query(q): Query<ListQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let cursor_pair = q
-        .cursor
-        .as_deref()
-        .and_then(cursor::decode);
+    let cursor_pair = q.cursor.as_deref().and_then(cursor::decode);
 
     let limit = q.limit.clamp(1, 100);
 
     let items = repo::list(&state.db, user.id, cursor_pair, limit, q.unread_only).await?;
 
     let next_cursor = if items.len() as i64 == limit {
-        items
-            .last()
-            .map(|n| cursor::encode(n.created_at, n.id))
+        items.last().map(|n| cursor::encode(n.created_at, n.id))
     } else {
         None
     };
@@ -110,13 +107,11 @@ pub async fn sse_stream(
     Extension(user): Extension<AuthUser>,
 ) -> impl IntoResponse {
     let rx = state.fanout.subscribe(user.id);
-    let heartbeat_interval =
-        Duration::from_secs(state.notif_cfg.sse_heartbeat_seconds);
+    let heartbeat_interval = Duration::from_secs(state.notif_cfg.sse_heartbeat_seconds);
 
     // Turn the broadcast receiver into a Stream of SSE events.
-    let notification_stream = futures_util::StreamExt::filter_map(
-        BroadcastStream::new(rx),
-        |result| async move {
+    let notification_stream =
+        futures_util::StreamExt::filter_map(BroadcastStream::new(rx), |result| async move {
             match result {
                 Ok(dto) => {
                     let data = serde_json::to_string(&dto).unwrap_or_default();
@@ -127,8 +122,7 @@ pub async fn sse_stream(
                 // Receiver lagged (missed messages) — skip silently.
                 Err(_) => None,
             }
-        },
-    );
+        });
 
     // Heartbeat stream using tokio interval — skip the first immediate tick.
     let heartbeat_stream = futures_util::StreamExt::map(
@@ -141,11 +135,8 @@ pub async fn sse_stream(
 
     let merged = futures_util::stream::select(notification_stream, heartbeat_stream);
 
-    let sse = Sse::new(merged).keep_alive(
-        KeepAlive::new()
-            .interval(heartbeat_interval)
-            .text("ping"),
-    );
+    let sse =
+        Sse::new(merged).keep_alive(KeepAlive::new().interval(heartbeat_interval).text("ping"));
 
     // Attach cache-control and proxy-buffering headers to the response.
     (
@@ -173,8 +164,10 @@ pub async fn dispatch_notification(
     comment_id: Option<Uuid>,
     payload: serde_json::Value,
 ) -> anyhow::Result<()> {
-    let dto: NotificationDto =
-        repo::insert(&state.db, user_id, kind, actor_id, post_id, comment_id, payload).await?;
+    let dto: NotificationDto = repo::insert(
+        &state.db, user_id, kind, actor_id, post_id, comment_id, payload,
+    )
+    .await?;
 
     state.fanout.publish(user_id, dto);
 
