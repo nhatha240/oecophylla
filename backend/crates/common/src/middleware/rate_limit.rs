@@ -6,8 +6,7 @@ use axum::{
     middleware::Next,
     response::Response,
 };
-use deadpool_redis::Pool;
-use redis::AsyncCommands;
+use deadpool_redis::{redis::AsyncCommands, Pool};
 
 use crate::{auth::verify_access, error::AppError, models::AuthUser};
 

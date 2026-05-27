@@ -1,11 +1,11 @@
 use argon2::{
-    password_hash::{rand_core::OsRng, PasswordHash, SaltString},
+    password_hash::{PasswordHash, SaltString},
     Argon2, PasswordHasher, PasswordVerifier,
 };
 use axum::http::HeaderValue;
 use chrono::{Duration, Utc};
 use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
-use rand::RngCore;
+use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
@@ -52,7 +52,7 @@ pub fn verify_access(secret: &[u8], token: &str) -> anyhow::Result<Claims> {
 /// Returns `(token_for_cookie, sha256_hex_for_redis_key)`.
 pub fn new_refresh_token() -> (String, String) {
     let mut bytes = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut bytes);
+    rand::rng().fill(&mut bytes);
     use base64::Engine;
     let token = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
     let hash = sha256_hex(&token);
@@ -66,7 +66,13 @@ pub fn sha256_hex(s: &str) -> String {
 }
 
 pub fn hash_password(plain: &str, m_cost: u32, t_cost: u32, p_cost: u32) -> anyhow::Result<String> {
-    let salt = SaltString::generate(&mut OsRng);
+    let mut salt_bytes = [0u8; 16];
+    rand::rng().fill(&mut salt_bytes);
+    use base64::Engine;
+    let mut b64 = base64::engine::general_purpose::STANDARD_NO_PAD.encode(salt_bytes);
+    b64 = b64.replace('+', ".").replace('/', "/");
+    let salt = SaltString::from_b64(&b64)
+        .map_err(|e| anyhow::anyhow!("salt encoding: {e}"))?;
     let params = argon2::Params::new(m_cost, t_cost, p_cost, None)
         .map_err(|e| anyhow::anyhow!("argon2 params: {e}"))?;
     let argon = Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params);
