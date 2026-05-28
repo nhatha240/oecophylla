@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     consumer_group: str = "oecophylla.feature-store.v1"
 
     pref_ttl_seconds: int = 1800
-    trending_ttl_seconds: int = 300
+    trending_ttl_seconds: int = 86400
     flush_interval_seconds: float = 5.0
     flush_batch_size: int = 100
 

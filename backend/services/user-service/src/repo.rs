@@ -207,6 +207,26 @@ pub async fn get_suggestions(
     .await?)
 }
 
+#[derive(sqlx::FromRow, serde::Serialize, Clone)]
+pub struct UserPreferenceRow {
+    pub user_id: Uuid,
+    pub topic_weights: serde_json::Value,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+pub async fn get_user_preferences(
+    db: &PgPool,
+    user_id: Uuid,
+) -> Result<Option<UserPreferenceRow>, AppError> {
+    Ok(sqlx::query_as::<_, UserPreferenceRow>(
+        "SELECT user_id, topic_weights, updated_at
+         FROM user_preference_vectors WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .fetch_optional(db)
+    .await?)
+}
+
 pub async fn fallback_suggestions(
     db: &PgPool,
     user_id: Uuid,

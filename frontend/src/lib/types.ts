@@ -137,3 +137,9 @@ export interface SavedPostResponse {
   items: SavedPostItem[];
   next_cursor: string | null;
 }
+
+export interface UserPreferences {
+  user_id: string;
+  topic_weights: Record<string, number>;
+  updated_at: string;
+}

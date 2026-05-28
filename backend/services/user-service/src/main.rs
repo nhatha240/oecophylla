@@ -45,6 +45,7 @@ async fn main() -> anyhow::Result<()> {
             "/api/v1/users/{id}/follow",
             post(handlers::follow).delete(handlers::unfollow),
         )
+        .route("/api/v1/users/{id}/preferences", get(handlers::get_preferences))
         .route("/api/v1/users/{id}/followers", get(handlers::followers))
         .route("/api/v1/users/{id}/following", get(handlers::following))
         .layer(from_fn(common::middleware::metrics_layer::track_metrics))

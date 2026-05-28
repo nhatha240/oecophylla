@@ -1,7 +1,8 @@
 import type { PageServerLoad } from './$types';
-import { getFeed, getMyInteractionsBatch } from '$lib/api';
+import { getFeed, getMyInteractionsBatch, getUserPreferences } from '$lib/api';
+import type { UserPreferences } from '$lib/types';
 
-export const load: PageServerLoad = async ({ fetch, url }) => {
+export const load: PageServerLoad = async ({ fetch, url, parent }) => {
   const feedParam = url.searchParams.get('feed');
   const feedMode: 'foryou' | 'following' = feedParam === 'following' ? 'following' : 'foryou';
 
@@ -12,9 +13,16 @@ export const load: PageServerLoad = async ({ fetch, url }) => {
     const me = postIds.length
       ? await getMyInteractionsBatch(fetch, postIds).catch(() => ({ items: {} }))
       : { items: {} };
-    return { feed, me: me.items, feedMode };
+
+    const layout = await parent();
+    const userId = layout.user?.id;
+    const prefs: UserPreferences | null = userId
+      ? await getUserPreferences(fetch, userId).catch(() => null)
+      : null;
+
+    return { feed, me: me.items, feedMode, prefs };
   } catch {
     // Unauthenticated visit or feed-service down — render empty page.
-    return { feed: null, me: {}, feedMode };
+    return { feed: null, me: {}, feedMode, prefs: null };
   }
 };

@@ -42,29 +42,33 @@
   text-align: center;
 }
 
-/* Sticky sidebars: cuộn nội bộ khi nội dung dài hơn viewport, không kéo scrollbar trang. */
+/* Sticky sidebars: cuộn nội bộ, scrollbar ẩn để tránh double-scrollbar với trang. */
 .sidebar {
   overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-gutter: stable;
+  scrollbar-width: none;
 }
+.sidebar::-webkit-scrollbar { display: none; }
+
 .feed-grid > .rail,
 .profile-grid > .profile-aside {
   max-height: calc(100vh - 88px);
   overflow-y: auto;
-  scrollbar-width: thin;
+  scrollbar-width: none;
 }
-.sidebar::-webkit-scrollbar,
-.rail::-webkit-scrollbar,
-.profile-aside::-webkit-scrollbar {
-  width: 6px;
+.feed-grid > .rail::-webkit-scrollbar,
+.profile-grid > .profile-aside::-webkit-scrollbar { display: none; }
+
+/* Tabs: chiếm full width cột, cuộn ngang ẩn thanh scroll. */
+.tabs {
+  display: flex !important;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto !important;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  flex-wrap: nowrap;
 }
-.sidebar::-webkit-scrollbar-thumb,
-.rail::-webkit-scrollbar-thumb,
-.profile-aside::-webkit-scrollbar-thumb {
-  background: var(--hairline-strong);
-  border-radius: 3px;
-}
+.tabs::-webkit-scrollbar { display: none; }
 
 @layer components {
   .glass-surface {

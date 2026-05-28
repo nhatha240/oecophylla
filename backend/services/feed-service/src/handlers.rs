@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::convert::Infallible;
 use std::time::Duration;
 
@@ -16,6 +17,7 @@ use common::{
     error::{AppError, AppResult},
     models::AuthUser,
 };
+use serde::Serialize;
 use tokio_stream::wrappers::IntervalStream;
 use uuid::Uuid;
 
@@ -57,6 +59,10 @@ pub async fn get_feed(
 
     if q.mode.as_deref() == Some("following") {
         return following_feed_handler(&s, me.id, q.cursor.as_deref(), limit).await;
+    }
+
+    if q.mode.as_deref() == Some("trending") {
+        return trending_feed_handler(&s, q.cursor.as_deref(), limit).await;
     }
 
     let cursor_offset = parse_cursor(q.cursor.as_deref());
@@ -152,6 +158,71 @@ async fn following_feed_handler(
 }
 
 /// Fallback ladder: cache → recommendation-api → Redis trending → recent published.
+async fn trending_feed_handler(
+    s: &AppState,
+    cursor: Option<&str>,
+    limit: usize,
+) -> AppResult<Json<FeedResponse>> {
+    let offset = parse_cursor(cursor);
+    // Fetch a generous pool of trending IDs so we can paginate.
+    let pool_size = offset + limit + 50;
+    let scored = trending_ids(&s.redis, pool_size)
+        .await
+        .map_err(AppError::Other)?;
+
+    if scored.is_empty() {
+        return Ok(Json(FeedResponse {
+            items: vec![],
+            next_cursor: None,
+            source: "trending".into(),
+            generated_at: Utc::now(),
+        }));
+    }
+
+    let total = scored.len();
+    let slice_end = (offset + limit).min(total);
+    let slice = if offset >= total {
+        &[][..]
+    } else {
+        &scored[offset..slice_end]
+    };
+
+    let ids: Vec<Uuid> = slice.iter().map(|(id, _)| *id).collect();
+    let posts = repo::hydrate_posts(&s.db, &ids)
+        .await
+        .map_err(AppError::Other)?;
+
+    let score_map: HashMap<Uuid, f64> = slice.iter().cloned().collect();
+    let items = posts
+        .into_iter()
+        .filter_map(|post| {
+            let score = score_map.get(&post.id).copied().unwrap_or(0.0);
+            Some(FeedItem {
+                rank: FeedRank {
+                    score: score as f32,
+                    source: "trending".into(),
+                    reason: "redis-zset".into(),
+                },
+                post,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    let next_cursor = if slice_end < total {
+        Some(slice_end.to_string())
+    } else {
+        None
+    };
+
+    Ok(Json(FeedResponse {
+        items,
+        next_cursor,
+        source: "trending".into(),
+        generated_at: Utc::now(),
+    }))
+}
+
+/// Fallback ladder: cache → recommendation-api → Redis trending → recent published.
 /// Returns (cached_payload, response_source). The response source distinguishes
 /// `cache` (already in Redis) from the freshly built sources so clients can
 /// observe fallback cleanly.
@@ -190,13 +261,13 @@ async fn load_or_build_feed(s: &AppState, user_id: Uuid) -> (CachedFeed, String)
 
 async fn fallback_feed(s: &AppState, user_id: Uuid) -> (CachedFeed, String) {
     let cfg = s.feed_cfg.as_ref();
-    if let Ok(ids) = trending_ids(&s.redis, cfg.feed_result_size).await {
-        if !ids.is_empty() {
-            let items = ids
+    if let Ok(scored) = trending_ids(&s.redis, cfg.feed_result_size).await {
+        if !scored.is_empty() {
+            let items = scored
                 .into_iter()
-                .map(|post_id| RecommendationItem {
+                .map(|(post_id, score)| RecommendationItem {
                     post_id,
-                    score: 0.0,
+                    score: score as f32,
                     source: "trending".into(),
                     reason: "redis-zset".into(),
                 })
@@ -273,7 +344,7 @@ pub async fn trending_stream(State(s): State<AppState>) -> impl IntoResponse {
         let redis = redis.clone();
         async move {
             let ids = match cache::trending_ids(&redis, 20).await {
-                Ok(ids) => ids.iter().map(|id| id.to_string()).collect::<Vec<_>>(),
+                Ok(scored) => scored.iter().map(|(id, _)| id.to_string()).collect::<Vec<_>>(),
                 Err(err) => {
                     tracing::warn!(error = %err, "trending stream: redis read failed, sending empty");
                     vec![]
@@ -307,4 +378,69 @@ pub async fn trending_stream(State(s): State<AppState>) -> impl IntoResponse {
         sse,
     )
         .into_response()
+}
+
+// ── GET /api/v1/feed/trending/topics ─────────────────────────────────────────
+
+const TOPIC_LABELS: &[(&str, &str)] = &[
+    ("tech", "Công nghệ"),
+    ("science", "Khoa học"),
+    ("sports", "Thể thao"),
+    ("politics", "Chính trị"),
+    ("entertainment", "Giải trí"),
+    ("health", "Sức khoẻ"),
+    ("business", "Kinh doanh"),
+    ("culture", "Văn hoá"),
+    ("education", "Giáo dục"),
+    ("environment", "Môi trường"),
+    ("ai", "AI & Học máy"),
+    ("news", "Tin tức"),
+];
+
+#[derive(Serialize)]
+pub struct TrendingTopic {
+    pub slug: String,
+    pub label: String,
+    pub count: usize,
+}
+
+/// Aggregate the most frequent topics from the current top trending posts.
+pub async fn trending_topics(State(s): State<AppState>) -> AppResult<Json<Vec<TrendingTopic>>> {
+    let scored = trending_ids(&s.redis, 50)
+        .await
+        .map_err(AppError::Other)?;
+
+    if scored.is_empty() {
+        return Ok(Json(vec![]));
+    }
+
+    let ids: Vec<Uuid> = scored.iter().map(|(id, _)| *id).collect();
+    let posts = repo::hydrate_posts(&s.db, &ids)
+        .await
+        .map_err(AppError::Other)?;
+
+    let label_map: HashMap<&str, &str> = TOPIC_LABELS.iter().cloned().collect();
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    for post in &posts {
+        for topic in &post.topics {
+            *counts.entry(topic.clone()).or_insert(0) += 1;
+        }
+    }
+
+    let mut topics: Vec<TrendingTopic> = counts
+        .into_iter()
+        .filter(|(slug, _)| slug != "general")
+        .map(|(slug, count)| {
+            let label = label_map
+                .get(slug.as_str())
+                .map(|s| s.to_string())
+                .clone()
+                .unwrap_or_else(|| slug.clone());
+            TrendingTopic { slug, label, count }
+        })
+        .collect();
+
+    topics.sort_by(|a, b| b.count.cmp(&a.count));
+    topics.truncate(5);
+    Ok(Json(topics))
 }

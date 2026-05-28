@@ -1,4 +1,4 @@
-import type { AdminAuditLog, AdminReport, ApiError, BatchMeResponse, CursorPage, DashboardMetrics, FeedResponse, ModerationAction, PostListResponse, ResolveResponse, SavedPostResponse, SearchPostResponse, SearchUserResponse } from './types';
+import type { AdminAuditLog, AdminReport, ApiError, BatchMeResponse, CursorPage, DashboardMetrics, FeedResponse, ModerationAction, PostListResponse, ResolveResponse, SavedPostResponse, SearchPostResponse, SearchUserResponse, UserPreferences } from './types';
 
 export class ApiException extends Error {
   constructor(public status: number, public code: string, public details?: unknown) {
@@ -176,8 +176,26 @@ export async function getAdminMetrics(fetcher: Fetch): Promise<DashboardMetrics>
   return apiFetch<DashboardMetrics>(fetcher, '/admin/metrics');
 }
 
+export async function getUserPreferences(fetcher: Fetch, userId: string): Promise<UserPreferences | null> {
+  try {
+    return await apiFetch<UserPreferences>(fetcher, `/users/${userId}/preferences`, { quiet: true });
+  } catch {
+    return null;
+  }
+}
+
 export async function changePassword(fetcher: Fetch, body: { current_password: string; new_password: string }): Promise<void> {
   return apiFetch(fetcher, '/auth/password', { method: 'PUT', body: JSON.stringify(body) });
+}
+
+export interface TrendingTopic {
+  slug: string;
+  label: string;
+  count: number;
+}
+
+export async function getTrendingTopics(fetcher: Fetch): Promise<TrendingTopic[]> {
+  return apiFetch<TrendingTopic[]>(fetcher, '/feed/trending/topics', { quiet: true });
 }
 
 export async function deleteAccount(fetcher: Fetch, body: { password: string }): Promise<void> {

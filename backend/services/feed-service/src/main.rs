@@ -59,7 +59,8 @@ async fn main() -> anyhow::Result<()> {
         .layer(from_fn_with_state(rl_feed, enforce_rate_limit));
 
     let trending_sse = Router::new()
-        .route("/api/v1/feed/trending/stream", get(handlers::trending_stream));
+        .route("/api/v1/feed/trending/stream", get(handlers::trending_stream))
+        .route("/api/v1/feed/trending/topics", get(handlers::trending_topics));
 
     let app = Router::new()
         .route("/health", get(|| async { "ok" }))

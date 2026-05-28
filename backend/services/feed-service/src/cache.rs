@@ -44,18 +44,18 @@ pub async fn set_cached_feed(
     Ok(())
 }
 
-/// Top trending post IDs from the worker-maintained sorted set. Returns an
-/// empty Vec when the set is missing — callers must handle that.
-pub async fn trending_ids(redis: &RedisPool, limit: usize) -> anyhow::Result<Vec<Uuid>> {
+/// Top trending post IDs with scores from the worker-maintained sorted set.
+/// Returns an empty Vec when the set is missing — callers must handle that.
+pub async fn trending_ids(redis: &RedisPool, limit: usize) -> anyhow::Result<Vec<(Uuid, f64)>> {
     let mut conn = redis.get().await.context("redis get conn")?;
-    let raw: Vec<String> = conn
-        .zrevrange(TRENDING_24H_KEY, 0, (limit as isize).saturating_sub(1))
+    let raw: Vec<(String, f64)> = conn
+        .zrevrange_withscores(TRENDING_24H_KEY, 0, (limit as isize).saturating_sub(1))
         .await
         .context("redis ZREVRANGE trending")?;
     let mut out = Vec::with_capacity(raw.len());
-    for s in raw {
+    for (s, score) in raw {
         if let Ok(uuid) = Uuid::parse_str(&s) {
-            out.push(uuid);
+            out.push((uuid, score));
         }
     }
     Ok(out)

@@ -190,6 +190,18 @@ pub async fn search_users(
     }))
 }
 
+pub async fn get_preferences(
+    State(s): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> AppResult<Json<repo::UserPreferenceRow>> {
+    repo::get_user_preferences(&s.db, id)
+        .await?
+        .map(Json)
+        .ok_or(AppError::NotFound {
+            kind: "preferences".into(),
+        })
+}
+
 pub async fn suggestions(
     State(s): State<AppState>,
     h: axum::http::HeaderMap,

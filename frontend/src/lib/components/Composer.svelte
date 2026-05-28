@@ -4,7 +4,7 @@
   export let error: string | null = null;
 
   let content = '';
-  let tags = '';
+  let tagsRaw = '';
   let mediaUrls: string[] = [];
   let showPreview = false;
   let showImageInput = false;
@@ -14,6 +14,83 @@
   $: charsLeft = MAX_CHARS - content.length;
   $: charsClass = charsLeft < 0 ? 'text-red-500' : charsLeft < 100 ? 'text-orange-500' : 'text-slate-400';
 
+  // ── tag management ────────────────────────────────────────────────
+  // Normalise a single tag: lowercase, strip leading #, trim spaces
+  function normalise(t: string): string {
+    return t.replace(/^#/, '').trim().toLowerCase();
+  }
+
+  $: selectedTags = tagsRaw
+    .split(',')
+    .map(normalise)
+    .filter(Boolean);
+
+  function tagsFromArray(arr: string[]): string {
+    return arr.join(', ');
+  }
+
+  function toggleTag(tag: string): void {
+    const norm = normalise(tag);
+    if (selectedTags.includes(norm)) {
+      tagsRaw = tagsFromArray(selectedTags.filter((t) => t !== norm));
+    } else {
+      tagsRaw = tagsFromArray([...selectedTags, norm]);
+    }
+  }
+
+  // ── auto-detection ────────────────────────────────────────────────
+  // keyword → canonical topic slug
+  const KEYWORD_MAP: Record<string, string[]> = {
+    tech: ['tech','technology','software','code','coding','programming','developer','lập trình','phần mềm','công nghệ','digital'],
+    ai: ['ai','artificial intelligence','machine learning','deep learning','gpt','llm','neural','chatgpt','trí tuệ nhân tạo','học máy'],
+    science: ['science','research','study','experiment','biology','physics','chemistry','khoa học','nghiên cứu','thí nghiệm'],
+    sports: ['sports','football','soccer','basketball','tennis','running','thể thao','bóng đá','bóng rổ'],
+    politics: ['politics','government','election','policy','parliament','chính trị','bầu cử','chính phủ','chính sách'],
+    entertainment: ['entertainment','movie','film','music','concert','series','giải trí','phim','âm nhạc','ca nhạc'],
+    health: ['health','fitness','workout','nutrition','mental health','sức khỏe','y tế','tập luyện','dinh dưỡng'],
+    business: ['business','startup','finance','economy','market','investment','kinh doanh','khởi nghiệp','tài chính','thị trường'],
+    culture: ['culture','art','history','tradition','heritage','văn hóa','nghệ thuật','lịch sử','truyền thống'],
+    education: ['education','school','university','learning','student','giáo dục','trường học','học sinh','sinh viên','đại học'],
+    environment: ['environment','climate','green','renewable','eco','môi trường','khí hậu','sinh thái','tái tạo'],
+    news: ['news','breaking','report','update','tin tức','báo chí','tin nóng','thời sự'],
+  };
+
+  const TOPIC_LABELS: Record<string, string> = {
+    tech: 'Công nghệ', science: 'Khoa học', sports: 'Thể thao',
+    politics: 'Chính trị', entertainment: 'Giải trí', health: 'Sức khoẻ',
+    business: 'Kinh doanh', culture: 'Văn hoá', education: 'Giáo dục',
+    environment: 'Môi trường', ai: 'AI', news: 'Tin tức',
+  };
+
+  // Extract #hashtags typed inside the content body
+  function extractHashtags(text: string): string[] {
+    const matches = text.match(/#([\wÀ-ỹ]+)/gu) ?? [];
+    return matches.map((m) => m.replace(/^#/, '').toLowerCase());
+  }
+
+  // Match content text against keyword map → set of topic slugs
+  function detectTopics(text: string): string[] {
+    const lower = text.toLowerCase();
+    const found: string[] = [];
+    for (const [slug, keywords] of Object.entries(KEYWORD_MAP)) {
+      if (keywords.some((kw) => lower.includes(kw))) {
+        found.push(slug);
+      }
+    }
+    return found;
+  }
+
+  // Combine hashtags + detected topics, deduplicate, exclude already-selected
+  $: suggestedTags = (() => {
+    if (!content.trim()) return [];
+    const hashtags = extractHashtags(content);
+    const topics = detectTopics(content);
+    const all = [...new Set([...hashtags, ...topics])];
+    // Keep up to 6 suggestions; show even if already selected (chip will be highlighted)
+    return all.slice(0, 6);
+  })();
+
+  // ── preview & media ───────────────────────────────────────────────
   function escapeHtml(text: string): string {
     const div = document.createElement('div');
     div.textContent = text;
@@ -32,7 +109,7 @@
     return html;
   }
 
-  function addImageUrl() {
+  function addImageUrl(): void {
     const url = imageUrl.trim();
     if (url && mediaUrls.length < 4) {
       mediaUrls = [...mediaUrls, url];
@@ -41,7 +118,7 @@
     }
   }
 
-  function removeImage(idx: number) {
+  function removeImage(idx: number): void {
     mediaUrls = mediaUrls.filter((_, i) => i !== idx);
   }
 </script>
@@ -76,9 +153,7 @@
               type="button"
               class="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity"
               on:click={() => removeImage(i)}
-            >
-              ×
-            </button>
+            >×</button>
           </div>
         {/each}
       </div>
@@ -98,16 +173,38 @@
       </div>
     {/if}
 
-    <div class="composer-suggest">
-      <span class="chip outline">#Công nghệ</span>
-      <span class="chip outline">#AI</span>
-      <span class="chip outline">#Báo chí số</span>
-    </div>
-    <input name="tags" bind:value={tags} placeholder="thẻ, ngăn cách bởi dấu phẩy" class="input" />
-    {#each mediaUrls as url, i}
+    <!-- Auto-suggested tags — only shown when content has detectable tags -->
+    {#if suggestedTags.length > 0}
+      <div class="composer-suggest">
+        {#each suggestedTags as tag}
+          {@const label = TOPIC_LABELS[tag] ?? tag}
+          {@const active = selectedTags.includes(tag)}
+          <button
+            type="button"
+            class="chip {active ? 'active' : 'outline'}"
+            style="font-size:12px;cursor:pointer;"
+            title={active ? 'Bỏ thẻ này' : 'Thêm thẻ này'}
+            on:click={() => toggleTag(tag)}
+          >
+            {#if active}<span style="margin-right:3px;">✓</span>{/if}#{label}
+          </button>
+        {/each}
+      </div>
+    {/if}
+
+    <!-- Hidden input carries the final comma-separated tags to the server action -->
+    <input name="tags" bind:value={tagsRaw} placeholder="thẻ, ngăn cách bởi dấu phẩy" class="input" />
+
+    {#each mediaUrls as url}
       <input type="hidden" name="media_urls[]" value={url} />
     {/each}
-    {#if error}<p class="field err-msg" style="margin-top: 10px;"><Icon name="AlertCircle" size={12} /> {error}</p>{/if}
+
+    {#if error}
+      <p class="field err-msg" style="margin-top:10px;">
+        <Icon name="AlertCircle" size={12} /> {error}
+      </p>
+    {/if}
+
     <div class="composer-foot">
       <div class="composer-actions">
         <button
@@ -131,8 +228,10 @@
         <button class="icon-btn" type="button" title="Thêm chủ đề"><Icon name="Tag" size={16} /></button>
       </div>
       <span class="text-xs {charsClass} tabular-nums">{charsLeft}</span>
-      <span class="t-meta" style="margin-left: auto;">Hiển thị công khai · có kiểm duyệt</span>
-      <button class="btn emerald sm" type="submit" data-testid="composer-submit">Đăng <Icon name="Send" size={12} /></button>
+      <span class="t-meta" style="margin-left:auto;">Hiển thị công khai · có kiểm duyệt</span>
+      <button class="btn emerald sm" type="submit" data-testid="composer-submit">
+        Đăng <Icon name="Send" size={12} />
+      </button>
     </div>
   </div>
 </form>

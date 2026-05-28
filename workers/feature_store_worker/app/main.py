@@ -131,15 +131,21 @@ class Worker:
 
             post_ids = {env.get("data", {}).get("post_id") for env in events}
             post_ids = {p for p in post_ids if p}
-            topics_by_post = {}
+            topics_by_post: dict[str, list[str]] = {}
             if post_ids:
                 rows = await conn.fetch(
-                    "SELECT id, topics FROM posts WHERE id = ANY($1::uuid[])",
+                    "SELECT id, topics, tags FROM posts WHERE id = ANY($1::uuid[])",
                     list(post_ids),
                 )
-                topics_by_post = {
-                    str(r["id"]): list(r["topics"] or []) for r in rows
-                }
+                for r in rows:
+                    raw_topics: list[str] = list(r["topics"] or [])
+                    meaningful = [t for t in raw_topics if t and t != "general"]
+                    if meaningful:
+                        resolved = raw_topics
+                    else:
+                        tags: list[str] = list(r["tags"] or [])
+                        resolved = tags if tags else raw_topics
+                    topics_by_post[str(r["id"])] = resolved
 
             for env in events:
                 etype = env.get("event_type") or env.get("type") or ""

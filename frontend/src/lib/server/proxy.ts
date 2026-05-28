@@ -5,6 +5,19 @@ function withBody(method: string): boolean {
   return !['GET', 'HEAD'].includes(method.toUpperCase());
 }
 
+// Hop-by-hop headers must not be forwarded via fetch() — they are connection-level
+// and Node.js fetch will throw TypeError if they're present.
+const HOP_BY_HOP = [
+  'connection',
+  'keep-alive',
+  'transfer-encoding',
+  'upgrade',
+  'proxy-authorization',
+  'proxy-authenticate',
+  'te',
+  'trailer',
+];
+
 export async function proxyToEnvoy(event: RequestEvent, upstreamPath: string): Promise<Response> {
   const envoy = env.ENVOY_URL ?? 'http://localhost:8080';
   const upstreamUrl = new URL(upstreamPath + event.url.search, envoy);
@@ -12,6 +25,7 @@ export async function proxyToEnvoy(event: RequestEvent, upstreamPath: string): P
   const cookie = event.request.headers.get('cookie');
 
   headers.delete('host');
+  for (const h of HOP_BY_HOP) headers.delete(h);
   if (cookie) headers.set('cookie', cookie);
   headers.set('x-requested-with', 'oec-web');
 
