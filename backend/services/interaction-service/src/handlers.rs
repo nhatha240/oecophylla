@@ -1,7 +1,7 @@
 use axum::{
     extract::{Path, Query, State},
-    http::{HeaderMap, StatusCode},
-    response::IntoResponse,
+    http::{header, HeaderMap, HeaderValue, StatusCode},
+    response::{sse::Event, IntoResponse, Response, Sse},
     Json,
 };
 use common::{
@@ -11,7 +11,8 @@ use common::{
     models::AuthUser,
 };
 use serde::Deserialize;
-use std::collections::HashMap;
+use std::{collections::HashMap, convert::Infallible, time::Duration};
+use tokio_stream::wrappers::{BroadcastStream, IntervalStream};
 use uuid::Uuid;
 
 use crate::{events::*, repo, state::AppState};
@@ -265,6 +266,10 @@ pub async fn create_comment(
     s.kafka
         .produce_json(TOPIC_INTERACTIONS, post_id.to_string().as_str(), &env)
         .await;
+    // Fan out to live SSE subscribers for this post.
+    if let Some(dto) = repo::fetch_comment_dto(&s.db, comment_id).await? {
+        s.comment_fanout.publish(post_id, dto);
+    }
     Ok(Json(
         serde_json::json!({ "id": comment_id, "parent_comment_id": body.parent_comment_id }),
     ))
@@ -321,6 +326,99 @@ pub async fn delete_comment(
     }
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+// --- GET /api/v1/posts/{id}/comments/stream (SSE) ---
+
+const SSE_HEARTBEAT_SECS: u64 = 30;
+
+pub async fn comments_sse_stream(
+    State(state): State<AppState>,
+    Path(post_id): Path<Uuid>,
+    h: HeaderMap,
+) -> Result<Response, AppError> {
+    let _me = current(&state, &h).ok_or(AppError::Unauthorized)?;
+    let rx = state.comment_fanout.subscribe(post_id);
+    let heartbeat_interval = Duration::from_secs(SSE_HEARTBEAT_SECS);
+
+    let comment_stream =
+        futures_util::StreamExt::filter_map(BroadcastStream::new(rx), |result| async move {
+            match result {
+                Ok(dto) => {
+                    let data = serde_json::to_string(&dto).unwrap_or_default();
+                    Some(Ok::<Event, Infallible>(
+                        Event::default().event("comment").data(data),
+                    ))
+                }
+                Err(_) => None,
+            }
+        });
+
+    let heartbeat_stream = futures_util::StreamExt::map(
+        futures_util::StreamExt::skip(
+            IntervalStream::new(tokio::time::interval(heartbeat_interval)),
+            1,
+        ),
+        |_| Ok::<Event, Infallible>(Event::default().event("heartbeat").data("ping")),
+    );
+
+    let merged = futures_util::stream::select(comment_stream, heartbeat_stream);
+
+    let sse =
+        Sse::new(merged).keep_alive(axum::response::sse::KeepAlive::new().interval(heartbeat_interval).text("ping"));
+
+    Ok((
+        [
+            (header::CACHE_CONTROL, HeaderValue::from_static("no-store")),
+            (
+                header::HeaderName::from_static("x-accel-buffering"),
+                HeaderValue::from_static("no"),
+            ),
+        ],
+        sse,
+    )
+        .into_response())
+}
+
+// --- saved posts ---
+
+#[derive(Deserialize)]
+pub struct SavedQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<i64>,
+}
+
+#[derive(serde::Serialize)]
+pub struct SavedResponse {
+    pub items: Vec<repo::SavedPostRow>,
+    pub next_cursor: Option<String>,
+}
+
+pub async fn list_saved_posts(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Query(q): Query<SavedQuery>,
+) -> AppResult<Json<SavedResponse>> {
+    let me = current(&s, &h).ok_or(AppError::Unauthorized)?;
+    let limit = q.limit.unwrap_or(20).clamp(1, 100);
+    let cursor_pair = q.cursor.as_deref().and_then(|c| {
+        let mut parts = c.splitn(2, '|');
+        let ts = parts.next()?;
+        let id = parts.next()?;
+        let dt = chrono::DateTime::parse_from_rfc3339(ts).ok()?.with_timezone(&chrono::Utc);
+        let uuid = Uuid::parse_str(id).ok()?;
+        Some((dt, uuid))
+    });
+    let rows = repo::list_saved_posts(&s.db, me.id, cursor_pair, limit).await?;
+    let next = if rows.len() as i64 == limit {
+        rows.last().map(|r| format!("{}|{}", r.saved_at.to_rfc3339(), r.id))
+    } else {
+        None
+    };
+    Ok(Json(SavedResponse {
+        items: rows,
+        next_cursor: next,
+    }))
 }
 
 // --- my interactions ---

@@ -25,6 +25,12 @@ describe('apiFetch', () => {
     expect(v).toBeUndefined();
   });
 
+  it('returns undefined on empty successful responses', async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 201 }));
+    const v = await apiFetch(fetchMock as any, '/users/u2/follow', { method: 'POST' });
+    expect(v).toBeUndefined();
+  });
+
   it('refreshes the session once and retries the original request on 401', async () => {
     const fetchMock = vi
       .fn()

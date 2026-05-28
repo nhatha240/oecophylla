@@ -246,6 +246,25 @@ services:
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: ${REDIS_URL}
 
+  analytics-service:
+    <<: *restart
+    build:
+      context: ./services/analytics-service
+      dockerfile: Dockerfile
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+      migrate:  { condition: service_completed_successfully }
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8091/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
   feature-store-worker:
     <<: *restart
     build:

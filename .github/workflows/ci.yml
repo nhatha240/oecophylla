@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_VERSION: "1.94.0"
+
+jobs:
+  build-and-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: backend
+      - name: Install system deps
+        run: sudo apt-get update && sudo apt-get install -y cmake pkg-config libssl-dev
+      - name: Build
+        run: cargo build --workspace --all-targets
+        working-directory: backend
+      - name: Test
+        run: cargo test --workspace --no-fail-fast
+        working-directory: backend
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: backend
+      - name: Install system deps
+        run: sudo apt-get update && sudo apt-get install -y cmake pkg-config libssl-dev
+      - name: Format check
+        run: cargo fmt --all -- --check
+        working-directory: backend
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+        working-directory: backend
+
+  deny:
+    name: Deny (CVE + Licenses)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked
+      - name: Check advisories
+        run: cargo deny check advisories
+        working-directory: backend
+      - name: Check licenses
+        run: cargo deny check licenses
+        working-directory: backend
+      - name: Check bans
+        run: cargo deny check bans
+        working-directory: backend
+      - name: Check sources
+        run: cargo deny check sources
+        working-directory: backend
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+        working-directory: frontend
+      - name: Type check
+        run: pnpm run check
+        working-directory: frontend
+      - name: Build
+        run: pnpm run build
+        working-directory: frontend

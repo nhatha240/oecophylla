@@ -37,6 +37,9 @@ static_resources:
                           route:  { cluster: notification_cluster }
                         - match: { prefix: "/api/v1/notifications" }
                           route:  { cluster: notification_cluster }
+                        # Post full-text search → content-service. User search uses /api/v1/users?type=user.
+                        - match: { prefix: "/api/v1/search" }
+                          route:  { cluster: content_cluster }
                         - match: { prefix: "/admin/" }
                           route:  { cluster: moderation_cluster }
                         - match: { prefix: "/admin" }
@@ -49,11 +52,27 @@ static_resources:
                           route:  { cluster: user_cluster }
                         - match: { prefix: "/api/v1/interactions/me/batch" }
                           route:  { cluster: interaction_cluster }
+                        # SSE trending stream — disable response buffering + long idle timeout
+                        - match: { path: "/api/v1/feed/trending/stream" }
+                          route:
+                            cluster: feed_cluster
+                            timeout: 0s
+                            idle_timeout: 3600s
                         - match: { prefix: "/api/v1/feed" }
                           route:  { cluster: feed_cluster }
+                        # SSE comments stream — disable response buffering + long idle timeout
+                        - match:
+                            safe_regex:
+                              regex: '^/api/v1/posts/[^/]+/comments/stream$'
+                          route:
+                            cluster: interaction_cluster
+                            timeout: 0s
+                            idle_timeout: 3600s
                         - match:
                             safe_regex:
                               regex: '^/api/v1/(posts/[^/]+/(like|save|share|hide|report|comments(?:/.*)?|me)/?|comments/[^/]+(?:/.*)?)$'
+                          route: { cluster: interaction_cluster }
+                        - match: { path: "/api/v1/posts/saved" }
                           route: { cluster: interaction_cluster }
                         - match: { prefix: "/api/v1/posts/" }
                           route:  { cluster: content_cluster, prefix_rewrite: "/api/v1/posts/" }

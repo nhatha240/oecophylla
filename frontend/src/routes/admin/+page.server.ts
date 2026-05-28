@@ -1,25 +1,9 @@
 import { error, type ServerLoad } from '@sveltejs/kit';
-import { apiFetch, ApiException } from '$lib/api';
-import type { AdminAuditLog, AdminReport, CursorPage } from '$lib/types';
+import { ApiException, getAdminReports, getAuditLog } from '$lib/api';
 
 function parseLimit(value: string | null): number {
   const parsed = Number(value ?? '20');
   return Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), 50) : 20;
-}
-
-async function safeCursorPage<T>(
-  fetchImpl: typeof fetch,
-  path: string
-): Promise<{ page: CursorPage<T>; available: boolean }> {
-  try {
-    const page = await apiFetch<CursorPage<T>>(fetchImpl, path);
-    return { page, available: true };
-  } catch (err) {
-    if (err instanceof ApiException && [404, 500, 502, 503].includes(err.status)) {
-      return { page: { items: [], next_cursor: null }, available: false };
-    }
-    throw err;
-  }
 }
 
 export const load: ServerLoad = async ({ fetch, parent, url }) => {
@@ -32,28 +16,28 @@ export const load: ServerLoad = async ({ fetch, parent, url }) => {
   const action = url.searchParams.get('action') ?? '';
   const limit = parseLimit(url.searchParams.get('limit'));
 
-  const reportsQuery = new URLSearchParams({ status: 'pending', limit: String(limit) });
-  if (reportsCursor) reportsQuery.set('cursor', reportsCursor);
+  let reports = { items: [], next_cursor: null } as { items: unknown[]; next_cursor: string | null };
+  let audit = { items: [], next_cursor: null } as { items: unknown[]; next_cursor: string | null };
+  let reportsError: string | null = null;
+  let auditError: string | null = null;
 
-  const auditQuery = new URLSearchParams({ limit: String(limit) });
-  if (auditCursor) auditQuery.set('cursor', auditCursor);
-  if (actorId) auditQuery.set('actor_id', actorId);
-  if (action) auditQuery.set('action', action);
+  try {
+    reports = await getAdminReports(fetch, { status: 'pending', cursor: reportsCursor || undefined, limit });
+  } catch (err) {
+    reportsError = err instanceof ApiException ? `${err.status} ${err.code}` : 'Không thể tải danh sách báo cáo.';
+  }
 
-  const [reports, audit] = await Promise.all([
-    safeCursorPage<AdminReport>(fetch, `/admin/reports?${reportsQuery.toString()}`),
-    safeCursorPage<AdminAuditLog>(fetch, `/admin/audit-logs?${auditQuery.toString()}`)
-  ]);
+  try {
+    audit = await getAuditLog(fetch, { cursor: auditCursor || undefined, limit, actor_id: actorId || undefined, action: action || undefined });
+  } catch (err) {
+    auditError = err instanceof ApiException ? `${err.status} ${err.code}` : 'Không thể tải audit log.';
+  }
 
   return {
-    reports: reports.page,
-    reportsAvailable: reports.available,
-    audit: audit.page,
-    auditAvailable: audit.available,
-    filters: {
-      actorId,
-      action,
-      limit
-    }
+    reports,
+    reportsError,
+    audit,
+    auditError,
+    filters: { actorId, action, limit }
   };
 };

@@ -1,13 +1,13 @@
 <script lang="ts">
   import { invalidateAll } from '$app/navigation';
   import Icon from '$lib/apple-glass/components/Icon.svelte';
-  import { apiFetch, ApiException } from '$lib/api';
+  import { resolveReport as apiResolveReport, ApiException } from '$lib/api';
   import { showToast } from '$lib/stores/toast';
   import type { AdminReport, ModerationAction } from '$lib/types';
 
   export let items: AdminReport[] = [];
   export let nextCursor: string | null = null;
-  export let available = true;
+  export let error: string | null = null;
   export let limit = 20;
 
   let notes: Record<string, string> = {};
@@ -21,25 +21,15 @@
     { id: 'ban_author', label: 'Khóa tác giả', tone: 'glass-button-primary' }
   ];
 
-  async function resolveReport(id: string, action: ModerationAction): Promise<void> {
+  async function handleResolve(id: string, action: ModerationAction): Promise<void> {
     resolving = id;
     try {
-      await apiFetch(fetch, `/admin/reports/${id}/resolve`, {
-        method: 'POST',
-        body: JSON.stringify({
-          action,
-          note: notes[id]?.trim() || undefined
-        })
-      });
+      await apiResolveReport(fetch, id, action, notes[id]?.trim());
       showToast('Đã cập nhật báo cáo.');
       confirmBanFor = null;
       await invalidateAll();
-    } catch (error) {
-      if (error instanceof ApiException && [404, 500, 502, 503].includes(error.status)) {
-        showToast('Moderation service chưa sẵn sàng.');
-      } else {
-        showToast('Không xử lý được báo cáo.');
-      }
+    } catch (err) {
+      showToast(err instanceof ApiException ? `Lỗi ${err.status}: ${err.code}` : 'Không xử lý được báo cáo.');
     } finally {
       resolving = null;
     }
@@ -50,16 +40,18 @@
   <div class="mb-4 flex items-center justify-between gap-4">
     <div>
       <h2 class="text-display-serif text-2xl text-slate-900">Reports</h2>
-      <p class="text-sm text-slate-500">
-        {available ? 'Các báo cáo chờ xử lý từ moderation-service.' : 'Service chưa live, giữ layout và fallback ổn định.'}
-      </p>
+      <p class="text-sm text-slate-500">Các báo cáo chờ xử lý từ moderation-service.</p>
     </div>
     <span class="glass-chip text-xs">{items.length} hàng</span>
   </div>
 
-  {#if items.length === 0}
+  {#if error}
+    <div class="rounded-[28px] border border-red-200 bg-red-50 px-4 py-8 text-center text-sm text-red-600">
+      {error}
+    </div>
+  {:else if items.length === 0}
     <div class="glass-surface rounded-[28px] px-4 py-8 text-center text-sm text-slate-500">
-      {available ? 'Không còn báo cáo pending.' : 'Chưa có dữ liệu báo cáo để hiển thị.'}
+      Không còn báo cáo pending.
     </div>
   {:else}
     <div class="space-y-4">
@@ -73,10 +65,7 @@
               </div>
               <p class="mt-3 text-sm font-medium text-slate-800">{report.post_snippet ?? `Post ${report.post_id}`}</p>
               <div class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-500">
-                <span>Reporter: {report.reporter_display_name ?? report.reporter_username ?? report.reporter_id}</span>
-                {#if report.author_display_name || report.author_username}
-                  <span>Author: {report.author_display_name ?? report.author_username}</span>
-                {/if}
+                <span>Reporter: {report.reporter_username ?? report.reporter_id ?? 'ẩn danh'}</span>
               </div>
             </div>
             <a class="glass-chip text-xs" href={`/post/${report.post_id}`}>Xem bài</a>
@@ -94,7 +83,7 @@
                 class={action.tone}
                 type="button"
                 disabled={resolving === report.id}
-                on:click={() => (action.id === 'ban_author' ? (confirmBanFor = report.id) : resolveReport(report.id, action.id))}
+                on:click={() => (action.id === 'ban_author' ? (confirmBanFor = report.id) : handleResolve(report.id, action.id))}
               >
                 {action.label}
               </button>
@@ -106,7 +95,7 @@
               <span>Xác nhận khóa tác giả của báo cáo này?</span>
               <span class="flex gap-2">
                 <button class="glass-chip" type="button" on:click={() => (confirmBanFor = null)}>Huỷ</button>
-                <button class="glass-button-primary" type="button" on:click={() => resolveReport(report.id, 'ban_author')}>
+                <button class="glass-button-primary" type="button" on:click={() => handleResolve(report.id, 'ban_author')}>
                   <Icon name="Shield" size={14} /> Xác nhận khóa
                 </button>
               </span>

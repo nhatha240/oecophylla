@@ -9,6 +9,7 @@ use common::{
     events::{Envelope, ModerationAction, TOPIC_MODERATION_ACTION},
     models::AuthUser,
 };
+use serde::Serialize;
 use uuid::Uuid;
 
 use crate::{
@@ -246,4 +247,67 @@ pub async fn resolve_report(
             action: outcome.event_type.into(),
         }),
     ))
+}
+
+// ---------- GET /admin/metrics ----------
+
+#[derive(Serialize)]
+pub struct DashboardMetrics {
+    pub total_users: i64,
+    pub total_posts: i64,
+    pub total_interactions: i64,
+    pub posts_last_24h: i64,
+    pub posts_last_7d: i64,
+    pub active_users_24h: i64,
+    pub pending_reports: i64,
+}
+
+pub async fn admin_metrics(
+    State(s): State<AppState>,
+) -> AppResult<Json<DashboardMetrics>> {
+    let total_users: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM users")
+            .fetch_one(&s.db)
+            .await
+            .map_err(|e| AppError::Other(e.into()))?;
+    let total_posts: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM posts")
+            .fetch_one(&s.db)
+            .await
+            .map_err(|e| AppError::Other(e.into()))?;
+    let total_interactions: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM interactions")
+            .fetch_one(&s.db)
+            .await
+            .map_err(|e| AppError::Other(e.into()))?;
+    let posts_last_24h: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM posts WHERE created_at > now() - interval '24 hours'")
+            .fetch_one(&s.db)
+            .await
+            .map_err(|e| AppError::Other(e.into()))?;
+    let posts_last_7d: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM posts WHERE created_at > now() - interval '7 days'")
+            .fetch_one(&s.db)
+            .await
+            .map_err(|e| AppError::Other(e.into()))?;
+    let active_users_24h: i64 =
+        sqlx::query_scalar("SELECT count(DISTINCT user_id) FROM interactions WHERE created_at > now() - interval '24 hours'")
+            .fetch_one(&s.db)
+            .await
+            .map_err(|e| AppError::Other(e.into()))?;
+    let pending_reports: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM reports WHERE status = 'pending'")
+            .fetch_one(&s.db)
+            .await
+            .map_err(|e| AppError::Other(e.into()))?;
+
+    Ok(Json(DashboardMetrics {
+        total_users,
+        total_posts,
+        total_interactions,
+        posts_last_24h,
+        posts_last_7d,
+        active_users_24h,
+        pending_reports,
+    }))
 }

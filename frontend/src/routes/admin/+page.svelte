@@ -6,9 +6,9 @@
 
   export let data: {
     reports: CursorPage<AdminReport>;
-    reportsAvailable: boolean;
+    reportsError: string | null;
     audit: CursorPage<AdminAuditLog>;
-    auditAvailable: boolean;
+    auditError: string | null;
     filters: {
       actorId: string;
       action: string;
@@ -29,7 +29,7 @@
       <p class="text-mono-meta text-xs uppercase tracking-[0.32em] text-slate-400">Moderation Center</p>
       <h1 class="text-display-serif mt-2 text-4xl text-slate-900">Admin Console</h1>
       <p class="mt-3 max-w-2xl text-sm leading-6 text-slate-500">
-        Dùng giao diện thật của Oecophylla để xử lý báo cáo và đọc audit log. Nếu backend Phase 3 chưa sẵn sàng, trang vẫn render trạng thái rỗng an toàn.
+        Xử lý báo cáo và đọc audit log từ moderation-service.
       </p>
     </div>
     <div class="flex flex-wrap items-center gap-2">
@@ -46,14 +46,14 @@
     <AdminReportsTable
       items={data.reports.items}
       nextCursor={data.reports.next_cursor}
-      available={data.reportsAvailable}
+      error={data.reportsError}
       limit={data.filters.limit}
     />
   {:else}
     <AdminAuditTable
       items={data.audit.items}
       nextCursor={data.audit.next_cursor}
-      available={data.auditAvailable}
+      error={data.auditError}
       actorId={data.filters.actorId}
       action={data.filters.action}
       limit={data.filters.limit}

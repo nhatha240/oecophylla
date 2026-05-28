@@ -225,3 +225,117 @@ fn extract_cookie(h: &HeaderMap, name: &str) -> Option<String> {
         })
         .map(String::from)
 }
+
+// ---------- PUT /api/v1/auth/password ----------
+
+#[derive(Deserialize)]
+pub struct ChangePasswordReq {
+    pub current_password: String,
+    pub new_password: String,
+}
+
+pub async fn change_password(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<ChangePasswordReq>,
+) -> AppResult<StatusCode> {
+    let token = extract_cookie(&headers, "oec_access").ok_or(AppError::Unauthorized)?;
+    let claims =
+        verify_access(s.cfg.jwt_secret.as_bytes(), &token).map_err(|_| AppError::Unauthorized)?;
+
+    if body.new_password.len() < 8 {
+        return Err(AppError::Validation {
+            field: "new_password".into(),
+            message: "mật khẩu phải có ít nhất 8 ký tự".into(),
+        });
+    }
+
+    let user = repo::find_by_id(&s.db, claims.sub)
+        .await?
+        .ok_or(AppError::Unauthorized)?;
+
+    if !verify_password(&body.current_password, &user.password_hash) {
+        return Err(AppError::Unauthorized);
+    }
+
+    let new_hash = hash_password(
+        &body.new_password,
+        s.cfg.argon2_m_cost,
+        s.cfg.argon2_t_cost,
+        s.cfg.argon2_p_cost,
+    )
+    .map_err(AppError::Other)?;
+
+    repo::update_password(&s.db, user.id, &new_hash).await?;
+
+    // Invalidate all refresh tokens for this user.
+    let mut conn = s
+        .redis
+        .get()
+        .await
+        .map_err(|e| AppError::Other(anyhow::anyhow!(e)))?;
+    let pattern = "session:refresh:*";
+    let keys: Vec<String> = deadpool_redis::redis::cmd("KEYS")
+        .arg(pattern)
+        .query_async(&mut conn)
+        .await
+        .map_err(|e| AppError::Other(anyhow::anyhow!(e)))?;
+    let user_id_str = user.id.to_string();
+    for key in &keys {
+        let val: Option<String> = conn.get(key).await.map_err(|e| AppError::Other(anyhow::anyhow!(e)))?;
+        if val.as_deref() == Some(&user_id_str) {
+            let _: i64 = conn.del(key).await.map_err(|e| AppError::Other(anyhow::anyhow!(e)))?;
+        }
+    }
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// ---------- DELETE /api/v1/auth/account ----------
+
+#[derive(Deserialize)]
+pub struct DeleteAccountReq {
+    pub password: String,
+}
+
+pub async fn delete_account(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<DeleteAccountReq>,
+) -> AppResult<Response> {
+    let token = extract_cookie(&headers, "oec_access").ok_or(AppError::Unauthorized)?;
+    let claims =
+        verify_access(s.cfg.jwt_secret.as_bytes(), &token).map_err(|_| AppError::Unauthorized)?;
+
+    let user = repo::find_by_id(&s.db, claims.sub)
+        .await?
+        .ok_or(AppError::Unauthorized)?;
+
+    if !verify_password(&body.password, &user.password_hash) {
+        return Err(AppError::Unauthorized);
+    }
+
+    repo::deactivate_user(&s.db, user.id).await?;
+
+    // Invalidate refresh token and clear cookies.
+    if let Some(refresh_token) = extract_cookie(&headers, "oec_refresh") {
+        let mut conn = s
+            .redis
+            .get()
+            .await
+            .map_err(|e| AppError::Other(anyhow::anyhow!(e)))?;
+        let _: i64 = conn
+            .del(format!("session:refresh:{}", sha256_hex(&refresh_token)))
+            .await
+            .map_err(|e| AppError::Other(anyhow::anyhow!(e)))?;
+    }
+
+    let mut resp = StatusCode::NO_CONTENT.into_response();
+    resp.headers_mut()
+        .append(SET_COOKIE, clear_cookie_header("oec_access", "/"));
+    resp.headers_mut().append(
+        SET_COOKIE,
+        clear_cookie_header("oec_refresh", "/api/v1/auth"),
+    );
+    Ok(resp)
+}

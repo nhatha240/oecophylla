@@ -1,7 +1,7 @@
 use std::{net::SocketAddr, sync::Arc};
 
 use axum::{
-    middleware::from_fn_with_state,
+    middleware::{from_fn, from_fn_with_state},
     routing::{get, post},
     Router,
 };
@@ -24,15 +24,10 @@ mod types;
 
 use state::AppState;
 
-async fn metrics_stub() -> &'static str {
-    // Phase 3 ships a placeholder; a real exporter lands in Phase 4 alongside
-    // the rest of the observability stack.
-    "# moderation-service metrics not yet implemented\n"
-}
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     init_tracing("moderation-service");
+    common::metrics::init_metrics();
     let mut cfg = SharedConfig::from_env()?;
     cfg.bind = std::env::var("MODERATION_BIND").unwrap_or_else(|_| "0.0.0.0:8006".into());
 
@@ -53,12 +48,14 @@ async fn main() -> anyhow::Result<()> {
         .route("/admin/reports/{id}/resolve", post(handlers::resolve_report))
         .route("/admin/audit-logs", get(handlers::list_audit_logs))
         .route("/admin/users/{id}/history", get(handlers::user_history))
+        .route("/admin/metrics", get(handlers::admin_metrics))
         .layer(from_fn_with_state(auth_state, require_admin));
 
     let app = Router::new()
         .route("/health", get(|| async { "ok" }))
-        .route("/metrics", get(metrics_stub))
+        .route("/metrics", get(common::metrics::metrics_handler))
         .merge(admin_routes)
+        .layer(from_fn(common::middleware::metrics_layer::track_metrics))
         .with_state(state);
 
     let addr: SocketAddr = cfg.bind.parse()?;

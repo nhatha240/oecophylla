@@ -61,3 +61,20 @@ pub async fn find_by_id(db: &PgPool, id: Uuid) -> Result<Option<UserRow>, AppErr
     .fetch_optional(db)
     .await?)
 }
+
+pub async fn update_password(db: &PgPool, user_id: Uuid, new_hash: &str) -> Result<(), AppError> {
+    sqlx::query("UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2")
+        .bind(new_hash)
+        .bind(user_id)
+        .execute(db)
+        .await?;
+    Ok(())
+}
+
+pub async fn deactivate_user(db: &PgPool, user_id: Uuid) -> Result<(), AppError> {
+    sqlx::query("UPDATE users SET is_active = false, updated_at = NOW() WHERE id = $1")
+        .bind(user_id)
+        .execute(db)
+        .await?;
+    Ok(())
+}

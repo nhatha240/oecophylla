@@ -20,6 +20,7 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 anyhow.workspace = true
 thiserror.workspace = true
+base64 = "0.22"
 
 [dev-dependencies]
 reqwest.workspace = true

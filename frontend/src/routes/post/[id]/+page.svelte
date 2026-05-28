@@ -1,11 +1,62 @@
 <script lang="ts">
+  import { onMount, onDestroy } from 'svelte';
   import Icon from '$lib/apple-glass/components/Icon.svelte';
   import CommentItem from '$lib/components/CommentItem.svelte';
   import CommentForm from '$lib/components/CommentForm.svelte';
   import ReportDialog from '$lib/components/ReportDialog.svelte';
   import { user } from '$lib/stores/auth';
+  import type { Comment } from '$lib/types';
+
   export let data: { post: import('$lib/types').Post; me: import('$lib/types').MyInteractions | null; comments: import('$lib/types').Comment[] };
+
   let showReport = false;
+  let comments: Comment[] = [...(data.comments ?? [])];
+  let sseConnected = false;
+  let es: EventSource | null = null;
+
+  function addComment(raw: { id: string; post_id: string; author_id: string; author_username: string; content: string; parent_id: string | null; created_at: string }) {
+    if (comments.some((c) => c.id === raw.id)) return;
+    comments = [
+      ...comments,
+      {
+        id: raw.id,
+        post_id: raw.post_id,
+        author_id: raw.author_id,
+        author_username: raw.author_username,
+        author_display_name: null,
+        parent_comment_id: raw.parent_id,
+        content: raw.content,
+        is_deleted: false,
+        created_at: raw.created_at
+      }
+    ];
+  }
+
+  onMount(() => {
+    es = new EventSource(`/api/v1/posts/${data.post.id}/comments/stream`, { withCredentials: true } as EventSourceInit);
+
+    es.addEventListener('open', () => {
+      sseConnected = true;
+    });
+
+    es.addEventListener('comment', (e) => {
+      try {
+        const raw = JSON.parse((e as MessageEvent).data);
+        addComment(raw);
+      } catch { /* ignore parse errors */ }
+    });
+
+    es.addEventListener('heartbeat', () => {});
+
+    es.addEventListener('error', () => {
+      sseConnected = false;
+    });
+  });
+
+  onDestroy(() => {
+    es?.close();
+    es = null;
+  });
 </script>
 
 <div class="reader">
@@ -46,11 +97,14 @@
       <CommentForm post_id={data.post.id} />
     {/if}
     <ul style="margin-top: 16px; padding: 0; list-style: none;">
-      {#each data.comments as c (c.id)}
+      {#each comments as c (c.id)}
         <CommentItem {c} post_id={data.post.id} />
       {/each}
-      {#if data.comments.length === 0}<p class="muted">Chưa có bình luận.</p>{/if}
+      {#if comments.length === 0}<p class="muted">Chưa có bình luận.</p>{/if}
     </ul>
+    <p class="text-xs text-slate-400 mt-3 px-1">
+      {sseConnected ? '🟢 Đang cập nhật trực tiếp' : '⚪ Chờ kết nối'}
+    </p>
   </section>
 </div>
 

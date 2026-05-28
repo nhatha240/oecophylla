@@ -30,7 +30,22 @@ pub struct PageQ {
 #[derive(Deserialize)]
 pub struct SearchQ {
     pub q: Option<String>,
+    #[serde(rename = "type")]
+    pub _search_type: Option<String>,
+    pub page: Option<i64>,
     pub limit: Option<i64>,
+}
+
+#[derive(Deserialize)]
+pub struct SuggestionsQ {
+    pub limit: Option<i64>,
+}
+
+#[derive(serde::Serialize)]
+pub struct UserSearchResponse {
+    pub items: Vec<repo::ProfileRow>,
+    pub total: Option<i64>,
+    pub page: i64,
 }
 
 fn current_user(s: &AppState, h: &axum::http::HeaderMap) -> Option<common::models::AuthUser> {
@@ -48,13 +63,28 @@ fn current_user(s: &AppState, h: &axum::http::HeaderMap) -> Option<common::model
 pub async fn get(
     State(s): State<AppState>,
     Path(id): Path<Uuid>,
-) -> AppResult<Json<repo::ProfileRow>> {
-    repo::get_profile(&s.db, id)
-        .await?
-        .map(Json)
-        .ok_or(AppError::NotFound {
-            kind: "user".into(),
-        })
+    h: axum::http::HeaderMap,
+) -> AppResult<Json<repo::ProfileResponse>> {
+    let viewer = current_user(&s, &h);
+    match viewer {
+        Some(me) => repo::get_profile_with_following(&s.db, id, me.id)
+            .await?
+            .map(Json)
+            .ok_or(AppError::NotFound {
+                kind: "user".into(),
+            }),
+        None => repo::get_profile(&s.db, id)
+            .await?
+            .map(|profile| {
+                Json(repo::ProfileResponse {
+                    profile,
+                    is_following: false,
+                })
+            })
+            .ok_or(AppError::NotFound {
+                kind: "user".into(),
+            }),
+    }
 }
 
 pub async fn update(
@@ -141,11 +171,36 @@ pub async fn following(
 pub async fn search_users(
     State(s): State<AppState>,
     Query(q): Query<SearchQ>,
-) -> AppResult<Json<Vec<repo::ProfileRow>>> {
+) -> AppResult<Json<UserSearchResponse>> {
     let q_str = q.q.unwrap_or_default();
-    if q_str.trim().is_empty() {
-        return Ok(Json(vec![]));
+    let page = q.page.unwrap_or(0).max(0);
+    if q_str.trim().len() < 2 {
+        return Ok(Json(UserSearchResponse {
+            items: vec![],
+            total: Some(0),
+            page,
+        }));
     }
     let limit = q.limit.unwrap_or(20).clamp(1, 50);
-    Ok(Json(repo::search(&s.db, q_str.trim(), limit).await?))
+    let (items, total) = repo::search_users(&s.db, q_str.trim(), limit, page).await?;
+    Ok(Json(UserSearchResponse {
+        items,
+        total: Some(total),
+        page,
+    }))
+}
+
+pub async fn suggestions(
+    State(s): State<AppState>,
+    h: axum::http::HeaderMap,
+    Query(q): Query<SuggestionsQ>,
+) -> AppResult<Json<Vec<repo::SuggestionRow>>> {
+    let me = current_user(&s, &h).ok_or(AppError::Unauthorized)?;
+    let limit = q.limit.unwrap_or(10).clamp(1, 50);
+    let items = repo::get_suggestions(&s.db, me.id, limit).await?;
+    if items.is_empty() {
+        let fallback = repo::fallback_suggestions(&s.db, me.id, limit).await?;
+        return Ok(Json(fallback));
+    }
+    Ok(Json(items))
 }

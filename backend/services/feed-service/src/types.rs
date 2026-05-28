@@ -49,6 +49,7 @@ pub struct FeedQuery {
     pub cursor: Option<String>,
     #[serde(default)]
     pub limit: Option<usize>,
+    pub mode: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

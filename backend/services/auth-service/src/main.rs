@@ -1,5 +1,6 @@
 use axum::{
-    routing::{delete, get, post},
+    middleware::from_fn,
+    routing::{delete, get, post, put},
     Router,
 };
 use common::{
@@ -15,6 +16,7 @@ use state::AppState;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     init_tracing("auth-service");
+    common::metrics::init_metrics();
     let mut cfg = SharedConfig::from_env()?;
     cfg.bind = std::env::var("AUTH_BIND").unwrap_or_else(|_| "0.0.0.0:8001".into());
 
@@ -28,11 +30,15 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .route("/health", get(|| async { "ok" }))
+        .route("/metrics", get(common::metrics::metrics_handler))
         .route("/api/v1/auth/register", post(handlers::register))
         .route("/api/v1/auth/login", post(handlers::login))
         .route("/api/v1/auth/refresh", post(handlers::refresh))
         .route("/api/v1/auth/logout", delete(handlers::logout))
+        .route("/api/v1/auth/password", put(handlers::change_password))
+        .route("/api/v1/auth/account", delete(handlers::delete_account))
         .route("/api/v1/auth/me", get(handlers::me))
+        .layer(from_fn(common::middleware::metrics_layer::track_metrics))
         .with_state(state);
 
     let addr: SocketAddr = cfg.bind.parse()?;

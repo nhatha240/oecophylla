@@ -7,10 +7,11 @@ export const actions: Actions = {
   default: async ({ request, fetch }) => {
     const f = await request.formData();
     const tags = String(f.get('tags') ?? '').split(',').map(s => s.trim()).filter(Boolean);
+    const media_urls = f.getAll('media_urls[]').map(String).filter(Boolean);
     try {
       const post = await apiFetch<Post>(fetch, '/posts', {
         method: 'POST',
-        body: JSON.stringify({ content: String(f.get('content') ?? ''), tags }),
+        body: JSON.stringify({ content: String(f.get('content') ?? ''), tags, media_urls }),
       });
       throw redirect(303, `/post/${post.id}`);
     } catch (e) {

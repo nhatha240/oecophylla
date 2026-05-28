@@ -12,6 +12,60 @@
 @tailwind components;
 @tailwind utilities;
 
+@keyframes slide-down {
+  from { opacity: 0; transform: translateY(-8px) }
+  to   { opacity: 1; transform: translateY(0) }
+}
+.animate-slide-down {
+  animation: slide-down 0.25s ease-out;
+}
+
+/* Tabs: timestamp "Cập nhật ... trước" ở mép phải */
+.tabs .tab-update {
+  margin-left: auto;
+  align-self: center;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+
+/* Badge cho nav-item (vd Thông báo) */
+.nav-item .nav-badge {
+  margin-left: auto;
+  background: var(--emerald-500);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 3px 7px;
+  border-radius: var(--r-pill);
+  min-width: 18px;
+  text-align: center;
+}
+
+/* Sticky sidebars: cuộn nội bộ khi nội dung dài hơn viewport, không kéo scrollbar trang. */
+.sidebar {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-gutter: stable;
+}
+.feed-grid > .rail,
+.profile-grid > .profile-aside {
+  max-height: calc(100vh - 88px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.sidebar::-webkit-scrollbar,
+.rail::-webkit-scrollbar,
+.profile-aside::-webkit-scrollbar {
+  width: 6px;
+}
+.sidebar::-webkit-scrollbar-thumb,
+.rail::-webkit-scrollbar-thumb,
+.profile-aside::-webkit-scrollbar-thumb {
+  background: var(--hairline-strong);
+  border-radius: 3px;
+}
+
 @layer components {
   .glass-surface {
     @apply bg-canvas-50/65 backdrop-blur-glass border border-white/40

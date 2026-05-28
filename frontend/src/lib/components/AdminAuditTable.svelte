@@ -3,7 +3,7 @@
 
   export let items: AdminAuditLog[] = [];
   export let nextCursor: string | null = null;
-  export let available = true;
+  export let error: string | null = null;
   export let actorId = '';
   export let action = '';
   export let limit = 20;
@@ -13,9 +13,7 @@
   <div class="mb-4 flex items-start justify-between gap-4">
     <div>
       <h2 class="text-display-serif text-2xl text-slate-900">Audit</h2>
-      <p class="text-sm text-slate-500">
-        {available ? 'Cursor feed của các hành động moderation.' : 'Audit log sẽ xuất hiện khi backend Phase 3 xong.'}
-      </p>
+      <p class="text-sm text-slate-500">Cursor feed của các hành động moderation.</p>
     </div>
     <span class="glass-chip text-xs">{items.length} hàng</span>
   </div>
@@ -37,9 +35,13 @@
     <input type="hidden" name="limit" value={limit} />
   </form>
 
-  {#if items.length === 0}
+  {#if error}
+    <div class="rounded-[28px] border border-red-200 bg-red-50 px-4 py-8 text-center text-sm text-red-600">
+      {error}
+    </div>
+  {:else if items.length === 0}
     <div class="glass-surface rounded-[28px] px-4 py-8 text-center text-sm text-slate-500">
-      {available ? 'Không có bản ghi phù hợp.' : 'Chưa có dữ liệu audit để hiển thị.'}
+      Không có bản ghi phù hợp.
     </div>
   {:else}
     <div class="space-y-3">
@@ -49,17 +51,15 @@
             <div>
               <div class="text-sm font-semibold text-slate-800">{entry.action}</div>
               <div class="mt-1 text-sm text-slate-500">
-                {entry.actor_display_name ?? entry.actor_username ?? entry.actor_id}
-                {#if entry.target_type || entry.target_id}
-                  · {entry.target_type ?? 'target'} {entry.target_id ?? ''}
-                {/if}
+                Actor: {entry.actor_id}
+                · {entry.target_type} {entry.target_id}
               </div>
             </div>
             <span class="text-xs uppercase tracking-[0.24em] text-slate-400">{new Date(entry.created_at).toLocaleString('vi-VN')}</span>
           </div>
 
-          {#if entry.metadata}
-            <pre class="mt-3 overflow-x-auto rounded-[22px] bg-[rgba(248,250,252,0.82)] px-3 py-3 text-xs text-slate-500">{JSON.stringify(entry.metadata, null, 2)}</pre>
+          {#if entry.note}
+            <p class="mt-3 rounded-[22px] bg-[rgba(248,250,252,0.82)] px-3 py-3 text-xs text-slate-500">{entry.note}</p>
           {/if}
         </article>
       {/each}

@@ -1,6 +1,13 @@
+use std::convert::Infallible;
+use std::time::Duration;
+
 use axum::{
     extract::{Query, State},
-    http::HeaderMap,
+    http::{header, HeaderMap, HeaderValue},
+    response::{
+        sse::{Event, KeepAlive, Sse},
+        IntoResponse,
+    },
     Json,
 };
 use chrono::Utc;
@@ -9,10 +16,11 @@ use common::{
     error::{AppError, AppResult},
     models::AuthUser,
 };
+use tokio_stream::wrappers::IntervalStream;
 use uuid::Uuid;
 
 use crate::{
-    cache::{get_cached_feed, set_cached_feed, trending_ids},
+    cache::{self, get_cached_feed, set_cached_feed, trending_ids},
     recommendation::{recommend_feed, RecommendFeedRequest, RecommendationItem},
     repo,
     state::AppState,
@@ -46,6 +54,11 @@ pub async fn get_feed(
         .limit
         .unwrap_or(DEFAULT_PAGE_SIZE)
         .clamp(1, MAX_PAGE_SIZE);
+
+    if q.mode.as_deref() == Some("following") {
+        return following_feed_handler(&s, me.id, q.cursor.as_deref(), limit).await;
+    }
+
     let cursor_offset = parse_cursor(q.cursor.as_deref());
 
     let (cached, source) = load_or_build_feed(&s, me.id).await;
@@ -88,6 +101,53 @@ pub async fn get_feed(
         next_cursor,
         source,
         generated_at: cached.generated_at,
+    }))
+}
+
+async fn following_feed_handler(
+    s: &AppState,
+    user_id: Uuid,
+    cursor: Option<&str>,
+    limit: usize,
+) -> AppResult<Json<FeedResponse>> {
+    let cursor_pair = cursor.and_then(|c| {
+        let mut parts = c.splitn(2, '|');
+        let ts = parts.next()?;
+        let id = parts.next()?;
+        let dt = chrono::DateTime::parse_from_rfc3339(ts).ok()?.with_timezone(&Utc);
+        let uuid = Uuid::parse_str(id).ok()?;
+        Some((dt, uuid))
+    });
+
+    let rows = repo::following_feed(&s.db, user_id, cursor_pair, limit as i64)
+        .await
+        .map_err(AppError::Other)?;
+
+    let next = if rows.len() == limit {
+        rows.last().map(|r| {
+            format!("{}|{}", r.created_at.to_rfc3339(), r.id)
+        })
+    } else {
+        None
+    };
+
+    let items = rows
+        .into_iter()
+        .map(|post| FeedItem {
+            rank: FeedRank {
+                score: 0.0,
+                source: "following".into(),
+                reason: "follow-graph".into(),
+            },
+            post,
+        })
+        .collect();
+
+    Ok(Json(FeedResponse {
+        items,
+        next_cursor: next,
+        source: "following".into(),
+        generated_at: Utc::now(),
     }))
 }
 
@@ -193,4 +253,58 @@ async fn persist(s: &AppState, user_id: Uuid, feed: &CachedFeed) {
 
 fn parse_cursor(raw: Option<&str>) -> usize {
     raw.and_then(|s| s.parse::<usize>().ok()).unwrap_or(0)
+}
+
+// ── GET /api/v1/feed/trending/stream (SSE) ────────────────────────────────────
+
+pub async fn trending_stream(State(s): State<AppState>) -> impl IntoResponse {
+    let interval = Duration::from_secs(30);
+
+    // Stream that ticks every 30s, skipping the first immediate tick.
+    let tick_stream = futures_util::StreamExt::skip(
+        IntervalStream::new(tokio::time::interval(interval)),
+        1,
+    );
+
+    let redis = s.redis.clone();
+
+    // `then` resolves each tick's async Redis read into an SSE event.
+    let trending_stream = futures_util::StreamExt::then(tick_stream, move |_| {
+        let redis = redis.clone();
+        async move {
+            let ids = match cache::trending_ids(&redis, 20).await {
+                Ok(ids) => ids.iter().map(|id| id.to_string()).collect::<Vec<_>>(),
+                Err(err) => {
+                    tracing::warn!(error = %err, "trending stream: redis read failed, sending empty");
+                    vec![]
+                }
+            };
+            let data = serde_json::to_string(&ids).unwrap_or_else(|_| "[]".into());
+            Ok::<Event, Infallible>(Event::default().event("trending").data(data))
+        }
+    });
+
+    let heartbeat_stream = futures_util::StreamExt::map(
+        futures_util::StreamExt::skip(
+            IntervalStream::new(tokio::time::interval(interval)),
+            1,
+        ),
+        |_| Ok::<Event, Infallible>(Event::default().event("heartbeat").data("ping")),
+    );
+
+    let merged = futures_util::stream::select(trending_stream, heartbeat_stream);
+
+    let sse = Sse::new(merged).keep_alive(KeepAlive::new().interval(interval).text("ping"));
+
+    (
+        [
+            (header::CACHE_CONTROL, HeaderValue::from_static("no-store")),
+            (
+                header::HeaderName::from_static("x-accel-buffering"),
+                HeaderValue::from_static("no"),
+            ),
+        ],
+        sse,
+    )
+        .into_response()
 }

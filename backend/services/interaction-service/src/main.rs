@@ -1,5 +1,5 @@
 use axum::{
-    middleware::from_fn_with_state,
+    middleware::{from_fn, from_fn_with_state},
     routing::{delete, get, post},
     Router,
 };
@@ -15,16 +15,20 @@ use common::{
 };
 use std::{net::SocketAddr, sync::Arc};
 
+mod comment_dto;
+mod comment_fanout;
 mod events;
 mod handlers;
 mod repo;
 mod state;
 
+use comment_fanout::CommentFanout;
 use state::AppState;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     init_tracing("interaction-service");
+    common::metrics::init_metrics();
     let mut cfg = SharedConfig::from_env()?;
     cfg.bind = std::env::var("INTERACTION_BIND").unwrap_or_else(|_| "0.0.0.0:8004".into());
 
@@ -37,6 +41,7 @@ async fn main() -> anyhow::Result<()> {
         redis: redis.clone(),
         kafka,
         cfg: Arc::new(cfg.clone()),
+        comment_fanout: Arc::new(CommentFanout::new()),
     };
 
     let rl = |key_prefix: &'static str, max: u32| RateLimitState {
@@ -44,6 +49,13 @@ async fn main() -> anyhow::Result<()> {
         policy: RateLimitPolicy::new(key_prefix, max),
         jwt_secret: jwt_secret.clone(),
     };
+
+    let saved = Router::new()
+        .route("/api/v1/posts/saved", get(handlers::list_saved_posts))
+        .layer(from_fn_with_state(
+            rl("saved_posts", 60),
+            enforce_rate_limit,
+        ));
 
     let toggles = Router::new()
         .route(
@@ -77,6 +89,10 @@ async fn main() -> anyhow::Result<()> {
             get(handlers::list_comments).post(handlers::create_comment),
         )
         .route(
+            "/api/v1/posts/{id}/comments/stream",
+            get(handlers::comments_sse_stream),
+        )
+        .route(
             "/api/v1/comments/{id}/replies",
             get(handlers::list_comment_replies),
         )
@@ -93,10 +109,13 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .route("/health", get(|| async { "ok" }))
+        .route("/metrics", get(common::metrics::metrics_handler))
+        .merge(saved)
         .merge(toggles)
         .merge(report)
         .merge(comments)
         .merge(me_routes)
+        .layer(from_fn(common::middleware::metrics_layer::track_metrics))
         .with_state(state);
 
     let addr: SocketAddr = cfg.bind.parse()?;

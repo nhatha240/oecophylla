@@ -1,4 +1,4 @@
-.PHONY: up down logs ps test test-python test-phase-2b test-phase-3 fmt lint sqlx-prepare seed clean
+.PHONY: up down logs ps test test-python test-phase-2b test-phase-3 fmt lint deny audit sqlx-prepare seed clean
 
 up:
 	docker compose -f compose.yaml -f compose.dev.yaml up -d --build
@@ -39,6 +39,12 @@ fmt:
 lint:
 	cd backend && cargo clippy --workspace -- -D warnings
 	cd frontend && pnpm lint
+
+deny:
+	cd backend && cargo deny check
+
+audit:
+	cd backend && cargo audit
 
 sqlx-prepare:
 	cd backend && cargo sqlx prepare --workspace -- --all-targets

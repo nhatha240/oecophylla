@@ -13,7 +13,7 @@ use common::{
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::{repo, state::AppState};
+use crate::{cursor, repo, state::AppState};
 
 #[derive(Deserialize)]
 pub struct CreatePostReq {
@@ -29,6 +29,9 @@ pub struct CreatePostReq {
 #[derive(Deserialize)]
 pub struct ListQ {
     pub author_id: Option<Uuid>,
+    pub tag: Option<String>,
+    pub topic: Option<String>,
+    pub cursor: Option<String>,
     pub limit: Option<i64>,
 }
 
@@ -118,16 +121,54 @@ pub async fn get_one(
     Ok(Json(row))
 }
 
+#[derive(serde::Serialize)]
+pub struct ListResponse {
+    pub items: Vec<repo::PostRow>,
+    pub next_cursor: Option<String>,
+}
+
 pub async fn list(
     State(s): State<AppState>,
     Query(q): Query<ListQ>,
-) -> AppResult<Json<Vec<repo::PostRow>>> {
+) -> AppResult<Json<ListResponse>> {
     let limit = q.limit.unwrap_or(20).clamp(1, 100);
+    let cursor_pair = q.cursor.as_deref().and_then(cursor::decode);
+
+    if let Some(ref tag) = q.tag {
+        let rows = repo::list_by_tag(&s.db, tag, cursor_pair, limit).await?;
+        let next = if rows.len() as i64 == limit {
+            rows.last().map(|r| cursor::encode(r.created_at, r.id))
+        } else {
+            None
+        };
+        return Ok(Json(ListResponse {
+            items: rows,
+            next_cursor: next,
+        }));
+    }
+
+    if let Some(ref topic) = q.topic {
+        let rows = repo::list_by_topic(&s.db, topic, cursor_pair, limit).await?;
+        let next = if rows.len() as i64 == limit {
+            rows.last().map(|r| cursor::encode(r.created_at, r.id))
+        } else {
+            None
+        };
+        return Ok(Json(ListResponse {
+            items: rows,
+            next_cursor: next,
+        }));
+    }
+
     let author = q.author_id.ok_or(AppError::Validation {
         field: "author_id".into(),
-        message: "required".into(),
+        message: "required when no tag or topic filter".into(),
     })?;
-    Ok(Json(repo::list_by_author(&s.db, author, limit).await?))
+    let rows = repo::list_by_author(&s.db, author, limit).await?;
+    Ok(Json(ListResponse {
+        items: rows,
+        next_cursor: None,
+    }))
 }
 
 pub async fn delete_post(
@@ -149,4 +190,63 @@ pub async fn delete_post(
 pub async fn view(State(s): State<AppState>, Path(id): Path<Uuid>) -> AppResult<impl IntoResponse> {
     repo::increment_view(&s.db, id).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+// --- GET /api/v1/search ---
+
+#[derive(Deserialize)]
+pub struct SearchQ {
+    pub q: Option<String>,
+    #[serde(rename = "type")]
+    pub type_: Option<String>,
+    pub cursor: Option<String>,
+    pub limit: Option<i64>,
+}
+
+#[derive(serde::Serialize)]
+pub struct SearchResponse {
+    pub items: Vec<repo::SearchPostRow>,
+    pub next_cursor: Option<String>,
+}
+
+pub async fn search(
+    State(s): State<AppState>,
+    Query(q): Query<SearchQ>,
+) -> AppResult<Json<SearchResponse>> {
+    let query = match q.q.as_deref() {
+        Some(q) if q.trim().len() >= 2 => q.trim(),
+        _ => {
+            return Ok(Json(SearchResponse {
+                items: vec![],
+                next_cursor: None,
+            }))
+        }
+    };
+
+    let type_ = q.type_.as_deref().unwrap_or("post");
+    if type_ != "post" {
+        return Ok(Json(SearchResponse {
+            items: vec![],
+            next_cursor: None,
+        }));
+    }
+
+    let limit = q.limit.unwrap_or(20).clamp(1, 100);
+    let cursor_pair = q.cursor.as_deref().and_then(cursor::decode);
+    let (cursor_ts, cursor_id) = match cursor_pair {
+        Some((ts, id)) => (Some(ts), Some(id)),
+        None => (None, None),
+    };
+
+    let rows = repo::search_posts(&s.db, query, limit, cursor_ts, cursor_id).await?;
+    let next = if rows.len() as i64 == limit {
+        rows.last().map(|r| cursor::encode(r.created_at, r.id))
+    } else {
+        None
+    };
+
+    Ok(Json(SearchResponse {
+        items: rows,
+        next_cursor: next,
+    }))
 }

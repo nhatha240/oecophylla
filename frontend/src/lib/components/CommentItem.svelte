@@ -5,9 +5,12 @@
   import { apiFetch } from '$lib/api';
   import { user } from '$lib/stores/auth';
   import { showToast } from '$lib/stores/toast';
+
   export let c: Comment;
   export let post_id: string;
+
   let showReply = false;
+  let replyingTo: string | null = null;
   let showDeleteConfirm = false;
   let allReplies: Comment[] = [...(c.replies ?? [])];
   let hasMore = c.has_more_replies ?? false;
@@ -17,13 +20,21 @@
     allReplies = next;
     hasMore = false;
   }
+
   async function del() {
     try {
       await apiFetch(fetch, `/comments/${c.id}`, { method: 'DELETE' });
       c = { ...c, is_deleted: true, content: '[đã xóa]' };
       showDeleteConfirm = false;
       showToast('Đã xóa bình luận.');
-    } catch (e) { showToast('Không xóa được bình luận.'); }
+    } catch {
+      showToast('Không xóa được bình luận.');
+    }
+  }
+
+  function handleReplySubmit(reply: Comment) {
+    allReplies = [...allReplies, reply];
+    replyingTo = null;
   }
 </script>
 
@@ -36,7 +47,7 @@
     </div>
     <p class="c-body whitespace-pre-wrap">{c.content}</p>
     <div class="c-acts">
-      {#if $user && !c.parent_comment_id}<button type="button" on:click={() => (showReply = !showReply)}><Icon name="ArrowRight" size={13} /> Phản hồi</button>{/if}
+      {#if $user && !c.parent_comment_id}<button type="button" on:click={() => { showReply = !showReply; replyingTo = null; }}><Icon name="ArrowRight" size={13} /> Phản hồi</button>{/if}
       {#if $user && $user.id === c.author_id && !c.is_deleted}
         <button type="button" on:click={() => (showDeleteConfirm = !showDeleteConfirm)}><Icon name="X" size={13} /> Xóa</button>
       {/if}
@@ -63,12 +74,28 @@
         {#each allReplies as r (r.id)}
           <li class="comment reply">
             <div class="avatar s32">{(r.author_display_name ?? r.author_username).slice(0, 1).toUpperCase()}</div>
-            <div>
+            <div style="flex: 1; min-width: 0;">
               <div class="c-meta">
                 <span class="name">{r.author_display_name ?? r.author_username}</span>
                 <span class="time">@{r.author_username} · {new Date(r.created_at).toLocaleString('vi-VN')}</span>
               </div>
               <p class="c-body whitespace-pre-wrap">{r.content}</p>
+              <div class="c-acts">
+                {#if $user}
+                  <button type="button" on:click={() => (replyingTo = replyingTo === r.id ? null : r.id)}>
+                    <Icon name="ArrowRight" size={13} /> Trả lời
+                  </button>
+                {/if}
+              </div>
+              {#if replyingTo === r.id}
+                <div style="margin-top: 8px;">
+                  <CommentForm
+                    {post_id}
+                    parent_comment_id={r.id}
+                    on:submitted={(e) => handleReplySubmit(e.detail)}
+                  />
+                </div>
+              {/if}
             </div>
           </li>
         {/each}

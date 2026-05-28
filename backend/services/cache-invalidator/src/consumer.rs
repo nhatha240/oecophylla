@@ -111,4 +111,69 @@ mod tests {
             serde_json::from_str(r#"{"event_type":"orphan","data":{"post_id":"xyz"}}"#).unwrap();
         assert!(extract_user_id(&env).is_none());
     }
+
+    #[test]
+    fn extracts_commenter_id_as_third_priority() {
+        let env: Envelope = serde_json::from_str(
+            r#"{"event_type":"commented","data":{"commenter_id":"c1","post_id":"xyz"}}"#,
+        )
+        .unwrap();
+        assert_eq!(extract_user_id(&env).as_deref(), Some("c1"));
+    }
+
+    #[test]
+    fn user_id_takes_priority_over_reporter_and_commenter() {
+        let env: Envelope = serde_json::from_str(
+            r#"{"event_type":"mixed","data":{"user_id":"u1","reporter_id":"r1","commenter_id":"c1"}}"#,
+        )
+        .unwrap();
+        assert_eq!(extract_user_id(&env).as_deref(), Some("u1"));
+    }
+
+    #[test]
+    fn reporter_id_takes_priority_over_commenter() {
+        let env: Envelope = serde_json::from_str(
+            r#"{"event_type":"mixed","data":{"reporter_id":"r1","commenter_id":"c1"}}"#,
+        )
+        .unwrap();
+        assert_eq!(extract_user_id(&env).as_deref(), Some("r1"));
+    }
+
+    #[test]
+    fn non_string_user_id_is_skipped() {
+        let env: Envelope = serde_json::from_str(
+            r#"{"event_type":"bad","data":{"user_id":12345,"reporter_id":"r1"}}"#,
+        )
+        .unwrap();
+        // user_id is a number, not a string → should fall through to reporter_id.
+        assert_eq!(extract_user_id(&env).as_deref(), Some("r1"));
+    }
+
+    #[test]
+    fn empty_data_object_returns_none() {
+        let env: Envelope =
+            serde_json::from_str(r#"{"event_type":"empty","data":{}}"#).unwrap();
+        assert!(extract_user_id(&env).is_none());
+    }
+
+    #[test]
+    fn non_object_data_returns_none() {
+        let env: Envelope =
+            serde_json::from_str(r#"{"event_type":"array","data":[1,2,3]}"#).unwrap();
+        assert!(extract_user_id(&env).is_none());
+    }
+
+    #[test]
+    fn envelope_with_missing_event_type_defaults_to_none() {
+        let env: Envelope =
+            serde_json::from_str(r#"{"data":{"user_id":"u1"}}"#).unwrap();
+        assert!(env.event_type.is_none());
+    }
+
+    #[test]
+    fn envelope_with_null_data_returns_none() {
+        let env: Envelope =
+            serde_json::from_str(r#"{"event_type":"test","data":null}"#).unwrap();
+        assert!(extract_user_id(&env).is_none());
+    }
 }

@@ -1,6 +1,10 @@
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
-use axum::{middleware::from_fn_with_state, routing::get, Router};
+use axum::{
+    middleware::{from_fn, from_fn_with_state},
+    routing::get,
+    Router,
+};
 use common::{
     config::SharedConfig,
     db::pg_pool,
@@ -20,14 +24,10 @@ mod types;
 
 use state::{AppState, FeedConfig};
 
-async fn metrics_stub() -> &'static str {
-    // Phase 2B ships only a placeholder; real exporter is part of Phase 4.
-    "# feed-service metrics not yet implemented\n"
-}
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     init_tracing("feed-service");
+    common::metrics::init_metrics();
     let mut cfg = SharedConfig::from_env()?;
     cfg.bind = std::env::var("FEED_BIND").unwrap_or_else(|_| "0.0.0.0:8005".into());
 
@@ -58,10 +58,15 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/feed", get(handlers::get_feed))
         .layer(from_fn_with_state(rl_feed, enforce_rate_limit));
 
+    let trending_sse = Router::new()
+        .route("/api/v1/feed/trending/stream", get(handlers::trending_stream));
+
     let app = Router::new()
         .route("/health", get(|| async { "ok" }))
-        .route("/metrics", get(metrics_stub))
+        .route("/metrics", get(common::metrics::metrics_handler))
+        .merge(trending_sse)
         .merge(feed_routes)
+        .layer(from_fn(common::middleware::metrics_layer::track_metrics))
         .with_state(state);
 
     let addr: SocketAddr = cfg.bind.parse()?;

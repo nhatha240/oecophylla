@@ -1,25 +1,38 @@
 <script lang="ts">
+  import { createEventDispatcher } from 'svelte';
   import { apiFetch, ApiException } from '$lib/api';
   import { invalidateAll } from '$app/navigation';
   import Icon from '$lib/apple-glass/components/Icon.svelte';
+  import type { Comment } from '$lib/types';
+
   export let post_id: string;
   export let parent_comment_id: string | null = null;
-  let content = ''; let busy = false; let err: string | null = null;
+
+  const dispatch = createEventDispatcher<{ submitted: Comment }>();
+
+  let content = '';
+  let busy = false;
+  let err: string | null = null;
+
   async function submit() {
     if (!content.trim()) return;
-    busy = true; err = null;
+    busy = true;
+    err = null;
     try {
-      await apiFetch(fetch, `/posts/${post_id}/comments`, {
+      const result = await apiFetch<Comment>(fetch, `/posts/${post_id}/comments`, {
         method: 'POST',
         body: JSON.stringify({ content, parent_comment_id })
       });
       content = '';
+      dispatch('submitted', result);
       await invalidateAll();
     } catch (e) {
       if (e instanceof ApiException && e.status === 400) err = 'Nội dung không hợp lệ';
       else if (e instanceof ApiException && e.status === 401) err = 'Vui lòng đăng nhập';
       else err = 'Lỗi máy chủ';
-    } finally { busy = false; }
+    } finally {
+      busy = false;
+    }
   }
 </script>
 

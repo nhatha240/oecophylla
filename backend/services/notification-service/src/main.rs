@@ -1,7 +1,7 @@
 use std::{net::SocketAddr, sync::Arc};
 
 use axum::{
-    middleware::from_fn_with_state,
+    middleware::{from_fn, from_fn_with_state},
     routing::{get, post},
     Router,
 };
@@ -27,13 +27,10 @@ mod types;
 
 use state::AppState;
 
-async fn metrics_stub() -> &'static str {
-    "# notification-service metrics not yet implemented\n"
-}
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     init_tracing("notification-service");
+    common::metrics::init_metrics();
     let mut cfg = SharedConfig::from_env()?;
     cfg.bind = std::env::var("NOTIFICATION_BIND").unwrap_or_else(|_| "0.0.0.0:8007".into());
 
@@ -66,8 +63,9 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .route("/health", get(|| async { "ok" }))
-        .route("/metrics", get(metrics_stub))
+        .route("/metrics", get(common::metrics::metrics_handler))
         .merge(notif_routes)
+        .layer(from_fn(common::middleware::metrics_layer::track_metrics))
         .with_state(state);
 
     let addr: SocketAddr = cfg.bind.parse()?;

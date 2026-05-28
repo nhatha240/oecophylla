@@ -10,6 +10,7 @@ pub mod error;
 pub mod events;
 pub mod ids;
 pub mod kafka;
+pub mod metrics;
 pub mod middleware;
 pub mod models;
 pub mod redis;

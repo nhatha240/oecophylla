@@ -89,7 +89,7 @@
         </div>
       {/if}
 
-      <button class="btn emerald lg auth-submit" type="submit">
+      <button class="btn emerald lg auth-submit" type="submit" data-testid={mode === 'login' ? 'login-submit' : 'register-submit'}>
         {mode === 'login' ? 'Đăng nhập' : 'Tạo tài khoản và tiếp tục'}
       </button>
     </form>

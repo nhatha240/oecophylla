@@ -1,4 +1,5 @@
 use axum::{
+    middleware::from_fn,
     routing::{get, post},
     Router,
 };
@@ -17,6 +18,7 @@ use state::AppState;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     init_tracing("user-service");
+    common::metrics::init_metrics();
     let mut cfg = SharedConfig::from_env()?;
     cfg.bind = std::env::var("USER_BIND").unwrap_or_else(|_| "0.0.0.0:8002".into());
 
@@ -32,7 +34,9 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .route("/health", get(|| async { "ok" }))
+        .route("/metrics", get(common::metrics::metrics_handler))
         .route("/api/v1/users", get(handlers::search_users))
+        .route("/api/v1/users/suggestions", get(handlers::suggestions))
         .route(
             "/api/v1/users/{id}",
             get(handlers::get).put(handlers::update),
@@ -43,6 +47,7 @@ async fn main() -> anyhow::Result<()> {
         )
         .route("/api/v1/users/{id}/followers", get(handlers::followers))
         .route("/api/v1/users/{id}/following", get(handlers::following))
+        .layer(from_fn(common::middleware::metrics_layer::track_metrics))
         .with_state(state);
 
     let addr: SocketAddr = cfg.bind.parse()?;

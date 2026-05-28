@@ -35,11 +35,11 @@
 
   <div class="post-meta-row">
     {#each post.tags as t}
-      <span class="chip outline">#{t}</span>
+      <a href="/tag/{t}" class="chip outline">#{t}</a>
     {/each}
     {#if post.topics?.length}
       {#each post.topics.slice(0, 2) as topic}
-        <span class="chip active">{topic}</span>
+        <a href="/topic/{topic}" class="chip active">{topic}</a>
       {/each}
     {/if}
   </div>

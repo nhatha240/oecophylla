@@ -1,7 +1,8 @@
 # Oecophylla
 
 Social network with intelligent news feed recommendation and multi-layer content moderation.
-Phase 0+1 (foundation + identity + content) — see `docs/superpowers/specs/2026-05-25-foundation-identity-content-design.md`.
+Phases 0–4 shipped — see `CLAUDE.md` "Current State" for what is live and what is still open.
+Original foundation spec: `docs/superpowers/specs/2026-05-25-foundation-identity-content-design.md`.
 
 ## Quick start
 
@@ -105,18 +106,52 @@ bash scripts/smoke_phase3.sh
 ## Layout
 
 ```
-backend/  Cargo workspace — auth, user, content services + common crate
-frontend/ SvelteKit (adapter-node) + Tailwind, Apple Glass UI port
-envoy/    Gateway config
-infra/    Prometheus + Grafana provisioning, Kafka init script
-migrations/  sqlx migrations (shared schema)
-scripts/  Seed + utility Python
-docs/superpowers/{specs,plans}/  Design docs + implementation plans
+backend/                 Cargo workspace — 8 Rust services + common crate
+backend/crates/common/   Shared auth, config, Kafka, Redis, metrics, middleware
+backend/services/        auth, user, content, interaction, feed, moderation, notification, cache-invalidator
+frontend/                SvelteKit (adapter-node) + Tailwind
+workers/                 Python — feature-store-worker, nlp-worker
+recommendation-api/      Python FastAPI — ranking, feature store
+analytics-service/       Python FastAPI — dashboard metrics + Prometheus export
+envoy/                   Envoy v1.32 API gateway config
+infra/                   Prometheus + Grafana provisioning
+migrations/              11 sqlx migrations (shared schema)
+scripts/                 Seed, evaluate, smoke tests
+docs/superpowers/        Design specs + implementation plans per phase
 ```
 
-## What is in Phase 0+1 and what is not
+## Current state (Phases 0–4 complete)
 
-Phase 0+1 ships: PG 18 + Redis 7 + Kafka 4 KRaft + Envoy + 3 Rust services + SvelteKit
-frontend. Auth, profile, follow, post-create and post-detail are wired end-to-end.
-Feed, admin, and mobile pages render with mock data. Recommendation, interactions,
-moderation, notifications, analytics belong to Phase 2-4.
+Phases 0 through 4 are shipped. See `CLAUDE.md` "Current State" for the authoritative
+list of what runs in production and what is still open.
+
+**Shipped and running:**
+
+- Auth, profiles, follow graph, post CRUD — fully wired end-to-end.
+- Feed — real recommendation via `recommendation-api` with fallback ladder
+  (cache → personalized → Redis trending → recent published). Supports
+  `?mode=following` for followed-users feed.
+- Interactions — like, comment, share, save, hide, report. Cursor-based
+  comment threads with SSE live updates.
+- Moderation — admin report queue, resolve actions (dismiss/hide/warn/ban),
+  audit log. All admin actions go through `moderation-service` with
+  transactional audit logging.
+- Notifications — in-app list, mark-read, unread-count, SSE live stream.
+  Consumes `interactions`, `user.followed`, and `moderation.action` topics.
+- NLP — async topic tagging + safety scoring via `nlp-worker` on
+  `content.created` events.
+- Observability — Prometheus metrics on all 7 HTTP services, Grafana dashboard
+  with 10 panels (RPS, P95 latency, error rate, cache hit rate, interactions,
+  moderation, notifications, NLP).
+- Analytics — `analytics-service` aggregates dashboard metrics + Prometheus export.
+- Search — full-text post search via `content-service` with `ts_rank`.
+
+**Still mock / not yet finished:**
+
+- `/m` route — mobile preview page, renders placeholder UI.
+- Settings page — password change and account deletion are placeholder, no
+  backend wiring.
+- E2E tests — none exist yet. Unit/integration coverage varies by service.
+- Counter drift recompute job — periodic SQL heal for `like_count` etc. not yet
+  implemented.
+- Toast component — `PostActionBar` still uses `alert()` for rollback feedback.

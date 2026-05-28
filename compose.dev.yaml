@@ -10,3 +10,4 @@ services:
   moderation-service:   { ports: ["8006:8006"] }
   notification-service: { ports: ["8007:8007"] }
   recommendation-api:   { ports: ["8090:8090"] }
+  analytics-service:    { ports: ["8091:8091"] }

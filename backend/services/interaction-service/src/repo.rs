@@ -167,6 +167,23 @@ pub async fn insert_comment(
     Ok(id)
 }
 
+pub async fn fetch_comment_dto(
+    db: &sqlx::PgPool,
+    comment_id: Uuid,
+) -> Result<Option<crate::comment_dto::CommentDto>, AppError> {
+    Ok(sqlx::query_as::<_, crate::comment_dto::CommentDto>(
+        "SELECT c.id, c.post_id, c.author_id,
+                u.username AS author_username,
+                c.content, c.parent_comment_id AS parent_id, c.created_at
+         FROM comments c
+         JOIN users u ON u.id = c.author_id
+         WHERE c.id = $1",
+    )
+    .bind(comment_id)
+    .fetch_optional(db)
+    .await?)
+}
+
 pub async fn list_top_level_comments(
     db: &sqlx::PgPool,
     post_id: Uuid,
@@ -242,6 +259,84 @@ pub async fn soft_delete_comment(
         .execute(&mut **tx)
         .await?;
     Ok((post_id, parent.is_none()))
+}
+
+// === saved posts ===
+
+#[derive(Serialize, sqlx::FromRow)]
+pub struct SavedPostRow {
+    pub id: Uuid,
+    pub author_id: Uuid,
+    pub username: String,
+    pub display_name: Option<String>,
+    pub avatar_url: Option<String>,
+    pub content: String,
+    pub media_urls: Vec<String>,
+    pub tags: Vec<String>,
+    pub topics: Vec<String>,
+    pub safety_score: f32,
+    pub like_count: i32,
+    pub comment_count: i32,
+    pub save_count: i32,
+    pub share_count: i32,
+    pub view_count: i64,
+    pub created_at: DateTime<Utc>,
+    pub saved_at: DateTime<Utc>,
+}
+
+pub async fn list_saved_posts(
+    db: &sqlx::PgPool,
+    user_id: Uuid,
+    cursor: Option<(DateTime<Utc>, Uuid)>,
+    limit: i64,
+) -> Result<Vec<SavedPostRow>, AppError> {
+    Ok(match cursor {
+        Some((ts, id)) => {
+            sqlx::query_as::<_, SavedPostRow>(
+                r#"SELECT
+                    p.id, p.author_id, u.username, u.display_name, u.avatar_url,
+                    p.content, p.media_urls, p.tags, p.topics, p.safety_score,
+                    p.like_count, p.comment_count, p.save_count, p.share_count,
+                    p.view_count, p.created_at, i.created_at AS saved_at
+                FROM interactions i
+                JOIN posts p ON p.id = i.post_id
+                JOIN users u ON u.id = p.author_id
+                WHERE i.user_id = $1
+                  AND i.type = 'save'::interaction_type
+                  AND p.status = 'published'
+                  AND (i.created_at, p.id) < ($2, $3)
+                ORDER BY i.created_at DESC
+                LIMIT $4"#,
+            )
+            .bind(user_id)
+            .bind(ts)
+            .bind(id)
+            .bind(limit)
+            .fetch_all(db)
+            .await?
+        }
+        None => {
+            sqlx::query_as::<_, SavedPostRow>(
+                r#"SELECT
+                    p.id, p.author_id, u.username, u.display_name, u.avatar_url,
+                    p.content, p.media_urls, p.tags, p.topics, p.safety_score,
+                    p.like_count, p.comment_count, p.save_count, p.share_count,
+                    p.view_count, p.created_at, i.created_at AS saved_at
+                FROM interactions i
+                JOIN posts p ON p.id = i.post_id
+                JOIN users u ON u.id = p.author_id
+                WHERE i.user_id = $1
+                  AND i.type = 'save'::interaction_type
+                  AND p.status = 'published'
+                ORDER BY i.created_at DESC
+                LIMIT $2"#,
+            )
+            .bind(user_id)
+            .bind(limit)
+            .fetch_all(db)
+            .await?
+        }
+    })
 }
 
 // === my-interactions ===

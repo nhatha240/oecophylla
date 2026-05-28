@@ -4,6 +4,5 @@
     <a class="glass-chip" href="/">Bảng tin</a>
     <a class="glass-chip" href="/post/new">Viết bài</a>
     <a class="glass-chip" href="/admin">Quản trị</a>
-    <a class="glass-chip" href="/m">Mobile</a>
   </nav>
 </aside>

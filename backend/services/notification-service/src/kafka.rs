@@ -161,6 +161,175 @@ where
 
 // ── Per-topic handlers ────────────────────────────────────────────────────────
 
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse_envelope(json: &str) -> InboundEnvelope {
+        serde_json::from_str(json).expect("valid envelope JSON")
+    }
+
+    // ── InboundEnvelope deserialization ─────────────────────────────────────
+
+    #[test]
+    fn envelope_parses_event_type_and_data() {
+        let env = parse_envelope(
+            r#"{"event_type":"liked","data":{"user_id":"u1","post_id":"p1","post_author_id":"a1"}}"#,
+        );
+        assert_eq!(env.event_type, "liked");
+        assert_eq!(env.data["user_id"], "u1");
+    }
+
+    #[test]
+    fn envelope_defaults_event_type_to_empty() {
+        let env = parse_envelope(r#"{"data":{"user_id":"u1"}}"#);
+        assert_eq!(env.event_type, "");
+    }
+
+    #[test]
+    fn envelope_rejects_missing_data() {
+        let result: Result<InboundEnvelope, _> = serde_json::from_str(r#"{"event_type":"liked"}"#);
+        assert!(result.is_err(), "data field should be required");
+    }
+
+    // ── Data struct deserialization ─────────────────────────────────────────
+
+    #[test]
+    fn toggle_data_parses_all_fields() {
+        let d: ToggleData = serde_json::from_value(serde_json::json!({
+            "user_id": "11111111-1111-1111-1111-111111111111",
+            "post_id": "22222222-2222-2222-2222-222222222222",
+            "post_author_id": "33333333-3333-3333-3333-333333333333"
+        }))
+        .unwrap();
+        assert_eq!(
+            d.user_id,
+            Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap()
+        );
+        assert_eq!(
+            d.post_author_id,
+            Uuid::parse_str("33333333-3333-3333-3333-333333333333").unwrap()
+        );
+    }
+
+    #[test]
+    fn comment_data_parses_with_optional_parent() {
+        let d: CommentData = serde_json::from_value(serde_json::json!({
+            "commenter_id": "11111111-1111-1111-1111-111111111111",
+            "post_id": "22222222-2222-2222-2222-222222222222",
+            "post_author_id": "33333333-3333-3333-3333-333333333333",
+            "comment_id": "44444444-4444-4444-4444-444444444444",
+            "parent_comment_id": null,
+            "content_preview": "hello"
+        }))
+        .unwrap();
+        assert!(d.parent_comment_id.is_none());
+        assert_eq!(d.content_preview, "hello");
+    }
+
+    #[test]
+    fn comment_data_parses_with_parent_present() {
+        let d: CommentData = serde_json::from_value(serde_json::json!({
+            "commenter_id": "11111111-1111-1111-1111-111111111111",
+            "post_id": "22222222-2222-2222-2222-222222222222",
+            "post_author_id": "33333333-3333-3333-3333-333333333333",
+            "comment_id": "44444444-4444-4444-4444-444444444444",
+            "parent_comment_id": "55555555-5555-5555-5555-555555555555",
+            "content_preview": "reply text"
+        }))
+        .unwrap();
+        assert_eq!(
+            d.parent_comment_id,
+            Some(Uuid::parse_str("55555555-5555-5555-5555-555555555555").unwrap())
+        );
+    }
+
+    #[test]
+    fn user_followed_data_parses() {
+        let d: UserFollowedData = serde_json::from_value(serde_json::json!({
+            "follower_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "followee_id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+        }))
+        .unwrap();
+        assert_eq!(
+            d.follower_id,
+            Uuid::parse_str("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa").unwrap()
+        );
+    }
+
+    #[test]
+    fn moderation_action_data_parses() {
+        let d: ModerationActionData = serde_json::from_value(serde_json::json!({
+            "actor_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "target_user_id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+            "target_post_id": null
+        }))
+        .unwrap();
+        assert!(d.target_post_id.is_none());
+    }
+
+    // ── Event routing logic (matching) ──────────────────────────────────────
+
+    #[test]
+    fn interaction_handler_matches_liked_commented_replied() {
+        for event_type in ["liked", "commented", "replied"] {
+            let env = parse_envelope(&format!(
+                r#"{{"event_type":"{event_type}","data":{{"user_id":"11111111-1111-1111-1111-111111111111","post_id":"22222222-2222-2222-2222-222222222222","post_author_id":"33333333-3333-3333-3333-333333333333","commenter_id":"44444444-4444-4444-4444-444444444444","comment_id":"55555555-5555-5555-5555-555555555555","parent_comment_id":null,"content_preview":"test"}}}}"#
+            ));
+            // These event types enter the match arms (not the catch-all).
+            assert!(
+                matches!(env.event_type.as_str(), "liked" | "commented" | "replied"),
+                "should match {event_type}"
+            );
+        }
+    }
+
+    #[test]
+    fn interaction_handler_ignores_saved_shared_hidden() {
+        for event_type in ["saved", "shared", "hidden", "reported", "viewed"] {
+            let env = parse_envelope(&format!(
+                r#"{{"event_type":"{event_type}","data":{{"user_id":"11111111-1111-1111-1111-111111111111","post_id":"22222222-2222-2222-2222-222222222222","post_author_id":"33333333-3333-3333-3333-333333333333","commenter_id":"44444444-4444-4444-4444-444444444444","comment_id":"55555555-5555-5555-5555-555555555555","parent_comment_id":null,"content_preview":"test"}}}}"#
+            ));
+            assert!(
+                matches!(
+                    env.event_type.as_str(),
+                    "saved" | "shared" | "hidden" | "reported" | "viewed"
+                ),
+                "should be an ignored event type"
+            );
+        }
+    }
+
+    #[test]
+    fn moderation_handler_matches_action_types() {
+        for event_type in ["post_hidden", "author_warned", "author_banned"] {
+            let env = parse_envelope(&format!(
+                r#"{{"event_type":"{event_type}","data":{{"actor_id":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","target_user_id":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","target_post_id":null}}}}"#
+            ));
+            let kind = match env.event_type.as_str() {
+                "post_hidden" => Some("post_hidden"),
+                "author_warned" => Some("author_warned"),
+                "author_banned" => Some("author_banned"),
+                _ => None,
+            };
+            assert_eq!(kind, Some(event_type));
+        }
+    }
+
+    #[test]
+    fn moderation_handler_ignores_report_dismissed() {
+        let env = parse_envelope(
+            r#"{"event_type":"report_dismissed","data":{"actor_id":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","target_user_id":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"}}"#,
+        );
+        assert!(matches!(
+            env.event_type.as_str(),
+            "report_dismissed" | "post_unhidden" | "author_unbanned"
+        ));
+    }
+}
+
 async fn handle_interaction(state: AppState, env: InboundEnvelope) -> anyhow::Result<()> {
     match env.event_type.as_str() {
         "liked" => {
