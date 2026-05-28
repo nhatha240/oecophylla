@@ -50,6 +50,7 @@ pub struct UserDto {
     pub role: UserRole,
     pub display_name: Option<String>,
     pub avatar_url: Option<String>,
+    pub topic_prefs: Vec<String>,
 }
 #[derive(Serialize)]
 pub struct AuthBody {
@@ -64,6 +65,7 @@ fn dto(u: repo::UserRow) -> UserDto {
         role: u.role,
         display_name: u.display_name,
         avatar_url: u.avatar_url,
+        topic_prefs: u.topic_prefs,
     }
 }
 

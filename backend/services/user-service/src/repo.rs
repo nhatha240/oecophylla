@@ -216,6 +216,7 @@ pub async fn fallback_suggestions(
         "SELECT id, username, display_name, avatar_url, bio, 0::bigint AS mutual_count
          FROM users
          WHERE is_active = true AND id != $1
+           AND id NOT IN (SELECT followee_id FROM follows WHERE follower_id = $1)
          ORDER BY created_at DESC
          LIMIT $2",
     )

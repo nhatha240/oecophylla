@@ -65,14 +65,15 @@ def seed_users(cur, count: int) -> list:
     for i in range(count):
         username = f"seed_{i:03d}"
         email = f"{username}@oec.local"
-        rows.append((username, email, SHARED_HASH, roles[i], f"Seed User {i:03d}"))
+        prefs = random.sample(TOPICS_POOL, k=random.randint(1, 4))
+        rows.append((username, email, SHARED_HASH, roles[i], f"Seed User {i:03d}", prefs))
 
     user_ids = []
     for chunk in chunked(rows, 500):
-        placeholders = ",".join(["(%s, %s, %s, %s, %s)"] * len(chunk))
+        placeholders = ",".join(["(%s, %s, %s, %s, %s, %s)"] * len(chunk))
         flat = [v for row in chunk for v in row]
         cur.execute(
-            f"""INSERT INTO users (username, email, password_hash, role, display_name)
+            f"""INSERT INTO users (username, email, password_hash, role, display_name, topic_prefs)
                 VALUES {placeholders} RETURNING id""",
             flat,
         )

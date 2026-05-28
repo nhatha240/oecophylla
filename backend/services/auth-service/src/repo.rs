@@ -11,6 +11,7 @@ pub struct UserRow {
     pub role: UserRole,
     pub display_name: Option<String>,
     pub avatar_url: Option<String>,
+    pub topic_prefs: Vec<String>,
 }
 
 pub async fn insert_user(
@@ -23,7 +24,7 @@ pub async fn insert_user(
     sqlx::query_as::<_, UserRow>(
         "INSERT INTO users (username, email, password_hash, display_name)
          VALUES ($1, $2, $3, $4)
-         RETURNING id, username, email, password_hash, role, display_name, avatar_url",
+         RETURNING id, username, email, password_hash, role, display_name, avatar_url, topic_prefs",
     )
     .bind(username)
     .bind(email)
@@ -44,7 +45,7 @@ pub async fn find_by_email_or_username(
     key: &str,
 ) -> Result<Option<UserRow>, AppError> {
     Ok(sqlx::query_as::<_, UserRow>(
-        "SELECT id, username, email, password_hash, role, display_name, avatar_url
+        "SELECT id, username, email, password_hash, role, display_name, avatar_url, topic_prefs
          FROM users WHERE email = $1 OR username = $1",
     )
     .bind(key)
@@ -54,7 +55,7 @@ pub async fn find_by_email_or_username(
 
 pub async fn find_by_id(db: &PgPool, id: Uuid) -> Result<Option<UserRow>, AppError> {
     Ok(sqlx::query_as::<_, UserRow>(
-        "SELECT id, username, email, password_hash, role, display_name, avatar_url
+        "SELECT id, username, email, password_hash, role, display_name, avatar_url, topic_prefs
          FROM users WHERE id = $1",
     )
     .bind(id)
