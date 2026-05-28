@@ -57,9 +57,13 @@
             ? 'admin'
             : pathname.startsWith('/settings')
               ? 'settings'
-              : pathname.startsWith('/post/')
-                ? 'feed'
-                : 'feed';
+              : pathname.startsWith('/notifications')
+                ? 'notifications'
+                : pathname === '/saved'
+                  ? 'saved'
+                  : pathname.startsWith('/post/')
+                    ? 'feed'
+                    : 'feed';
   $: mobileNavActive =
     pathname === '/'
       ? 'home'
@@ -71,7 +75,11 @@
             ? 'notifications'
             : pathname.startsWith('/profile/')
               ? 'profile'
-              : '';
+              : pathname === '/saved'
+                ? 'saved'
+                : pathname.startsWith('/admin')
+                  ? 'admin'
+                  : '';
 
   onMount(() => {
     const saved = window.localStorage.getItem('oec-theme');
@@ -105,7 +113,7 @@
           <Icon name="Users" size={18} />
           <span>Theo dõi</span>
         </a>
-        <a class:active={pathname === '/saved'} class="nav-item" href="/saved">
+        <a class:active={activeNav === 'saved'} class="nav-item" href="/saved">
           <Icon name="Bookmark" size={18} />
           <span>Đã lưu</span>
         </a>
@@ -121,7 +129,7 @@
           <span>Hồ sơ</span>
         </a>
         {#if currentUser?.role === 'admin'}
-          <a class="nav-item" href="/admin">
+          <a class:active={activeNav === 'admin'} class="nav-item" href="/admin">
             <Icon name="Shield" size={18} />
             <span>Quản trị</span>
           </a>

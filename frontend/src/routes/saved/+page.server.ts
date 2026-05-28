@@ -14,6 +14,7 @@ export const load: ServerLoad = async ({ fetch, parent }) => {
     return { saved, me: me.items };
   } catch (e) {
     if (e instanceof ApiException && e.status === 401) throw redirect(303, '/login');
+    console.error('[saved] load error:', e);
     return { saved: { items: [], next_cursor: null }, me: {} };
   }
 };

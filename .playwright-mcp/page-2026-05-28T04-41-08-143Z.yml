@@ -1,0 +1,134 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - complementary [ref=e4]:
+      - link "O Oecophylla" [ref=e5] [cursor=pointer]:
+        - /url: /
+        - generic [ref=e6]: O
+        - generic [ref=e7]:
+          - text: Oecophy
+          - emphasis [ref=e8]: lla
+      - navigation [ref=e9]:
+        - link "Trang chủ" [ref=e10] [cursor=pointer]:
+          - /url: /
+          - img [ref=e11]
+          - generic [ref=e15]: Trang chủ
+        - link "Khám phá" [ref=e16] [cursor=pointer]:
+          - /url: /search
+          - img [ref=e17]
+          - generic [ref=e20]: Khám phá
+        - link "Theo dõi" [ref=e21] [cursor=pointer]:
+          - /url: /?feed=following
+          - img [ref=e22]
+          - generic [ref=e27]: Theo dõi
+        - link "Đã lưu" [ref=e28] [cursor=pointer]:
+          - /url: /saved
+          - img [ref=e29]
+          - generic [ref=e31]: Đã lưu
+        - link "Thông báo" [ref=e32] [cursor=pointer]:
+          - /url: /notifications
+          - img [ref=e33]
+          - generic [ref=e36]: Thông báo
+        - link "Hồ sơ" [ref=e37] [cursor=pointer]:
+          - /url: /profile/019e5fd1-233f-791a-ba67-470a5d2dab02
+          - img [ref=e38]
+          - generic [ref=e41]: Hồ sơ
+        - link "Quản trị" [ref=e42] [cursor=pointer]:
+          - /url: /admin
+          - img [ref=e43]
+          - generic [ref=e46]: Quản trị
+      - generic [ref=e47]: Của bạn
+      - navigation [ref=e48]:
+        - link "Thể thao" [ref=e49] [cursor=pointer]:
+          - /url: /search?q=sports
+          - generic [ref=e51]: Thể thao
+        - link "Sức khoẻ" [ref=e52] [cursor=pointer]:
+          - /url: /search?q=health
+          - generic [ref=e54]: Sức khoẻ
+        - link "Môi trường" [ref=e55] [cursor=pointer]:
+          - /url: /search?q=environment
+          - generic [ref=e57]: Môi trường
+      - generic [ref=e58]:
+        - generic [ref=e59] [cursor=pointer]:
+          - link "S Seed User 001 @seed_001" [ref=e60]:
+            - /url: /profile/019e5fd1-233f-791a-ba67-470a5d2dab02
+            - generic [ref=e61]: S
+            - generic [ref=e62]:
+              - generic [ref=e63]: Seed User 001
+              - generic [ref=e64]: "@seed_001"
+          - link "Cài đặt" [ref=e65]:
+            - /url: /settings
+            - img [ref=e66]
+        - button "Đăng xuất" [ref=e70] [cursor=pointer]:
+          - img [ref=e71]
+          - generic [ref=e73]: Đăng xuất
+    - generic [ref=e74]:
+      - banner [ref=e75]:
+        - generic [ref=e76]: Oecophylla
+        - generic [ref=e78]:
+          - img [ref=e80]
+          - textbox "Tìm chủ đề, tác giả, hoặc bài viết…" [ref=e83]
+        - generic [ref=e84]:
+          - link "Khu vực quản trị" [ref=e85] [cursor=pointer]:
+            - /url: /admin
+            - img [ref=e86]
+            - text: Khu vực quản trị
+          - button "Đổi giao diện" [ref=e89] [cursor=pointer]:
+            - img [ref=e90]
+          - button "Thông báo" [ref=e93] [cursor=pointer]:
+            - img [ref=e94]
+      - generic [ref=e956]:
+        - main [ref=e957]:
+          - generic [ref=e958]:
+            - link "← Bảng tin" [ref=e959] [cursor=pointer]:
+              - /url: /
+            - heading "Đã lưu" [level=2] [ref=e960]
+          - list [ref=e961]:
+            - listitem [ref=e962]:
+              - article [ref=e963]:
+                - generic [ref=e964]:
+                  - generic [ref=e965]: "0"
+                  - generic [ref=e966]:
+                    - generic [ref=e967]: Seed User 047
+                    - generic [ref=e968]:
+                      - generic [ref=e969]: "@seed_047"
+                      - generic [ref=e970]: ·
+                      - generic [ref=e971]: 22:46:42 25/5/2026
+                - 'link "Seeded post #12 about culture" [ref=e972] [cursor=pointer]':
+                  - /url: /post/019e5fd1-2356-7cbf-b24d-e77b5a9ba864
+                - paragraph [ref=e973]: "Seeded post #12 about culture"
+                - generic [ref=e974]:
+                  - link "#culture" [ref=e975] [cursor=pointer]:
+                    - /url: /tag/culture
+                  - link "#environment" [ref=e976] [cursor=pointer]:
+                    - /url: /tag/environment
+                  - link "#sports" [ref=e977] [cursor=pointer]:
+                    - /url: /tag/sports
+                  - link "culture" [ref=e978] [cursor=pointer]:
+                    - /url: /topic/culture
+                  - link "environment" [ref=e979] [cursor=pointer]:
+                    - /url: /topic/environment
+                - generic [ref=e980]:
+                  - button "1" [pressed] [ref=e981] [cursor=pointer]:
+                    - img [ref=e982]
+                    - text: "1"
+                  - button "1" [pressed] [ref=e984] [cursor=pointer]:
+                    - img [ref=e985]
+                    - text: "1"
+                  - link "0" [ref=e987] [cursor=pointer]:
+                    - /url: /post/019e5fd1-2356-7cbf-b24d-e77b5a9ba864
+                    - img [ref=e988]
+                    - text: "0"
+                  - generic [ref=e990]:
+                    - img [ref=e991]
+                    - text: "0"
+              - generic [ref=e996]:
+                - text: "@seed_047"
+                - generic [ref=e997]: đã lưu
+          - paragraph [ref=e998]: Hết bài.
+        - complementary [ref=e999]:
+          - generic [ref=e1000]:
+            - heading "Bài đã lưu" [level=4] [ref=e1001]:
+              - img [ref=e1002]
+              - text: Bài đã lưu
+            - paragraph [ref=e1004]: Các bài viết bạn lưu sẽ xuất hiện ở đây. Không giới hạn số lượng.
+  - generic [ref=e924]: Đã lưu — Oecophylla

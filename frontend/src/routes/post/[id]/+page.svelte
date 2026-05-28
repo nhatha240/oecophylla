@@ -14,22 +14,28 @@
   let sseConnected = false;
   let es: EventSource | null = null;
 
-  function addComment(raw: { id: string; post_id: string; author_id: string; author_username: string; content: string; parent_id: string | null; created_at: string }) {
-    if (comments.some((c) => c.id === raw.id)) return;
-    comments = [
-      ...comments,
-      {
-        id: raw.id,
-        post_id: raw.post_id,
-        author_id: raw.author_id,
-        author_username: raw.author_username,
-        author_display_name: null,
-        parent_comment_id: raw.parent_id,
-        content: raw.content,
-        is_deleted: false,
-        created_at: raw.created_at
+  function addComment(raw: { id: string; post_id: string; author_id: string; author_username: string; author_display_name?: string | null; content: string; parent_id: string | null; created_at: string }) {
+    if (comments.some((c) => c.id === raw.id || (c.replies ?? []).some((r) => r.id === raw.id))) return;
+    const formatted: Comment = {
+      id: raw.id,
+      post_id: raw.post_id,
+      author_id: raw.author_id,
+      author_username: raw.author_username,
+      author_display_name: raw.author_display_name ?? null,
+      parent_comment_id: raw.parent_id,
+      content: raw.content,
+      is_deleted: false,
+      created_at: raw.created_at
+    };
+    if (raw.parent_id) {
+      const idx = comments.findIndex((c) => c.id === raw.parent_id);
+      if (idx !== -1) {
+        comments[idx] = { ...comments[idx], replies: [...(comments[idx].replies ?? []), formatted] };
+        comments = comments;
+        return;
       }
-    ];
+    }
+    comments = [...comments, formatted];
   }
 
   onMount(() => {

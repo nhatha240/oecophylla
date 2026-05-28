@@ -1,0 +1,5 @@
+[      87ms] [WARNING] <meta name="apple-mobile-web-app-capable" content="yes"> is deprecated. Please include <meta name="mobile-web-app-capable" content="yes"> @ http://localhost:3000/:0
+[   71783ms] [ERROR] Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING @ http://localhost:3000/api/v1/notifications/stream:0
+[   71783ms] [ERROR] Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING @ http://localhost:3000/api/v1/feed/trending/stream:0
+[  697649ms] [ERROR] Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING @ http://localhost:3000/api/v1/notifications/stream:0
+[  697651ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://localhost:3000/api/v1/notifications/unread-count:0

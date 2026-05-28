@@ -9,6 +9,7 @@ pub struct CommentDto {
     pub post_id: Uuid,
     pub author_id: Uuid,
     pub author_username: String,
+    pub author_display_name: Option<String>,
     pub content: String,
     pub parent_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,

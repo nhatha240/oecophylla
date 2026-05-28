@@ -173,7 +173,7 @@ pub async fn fetch_comment_dto(
 ) -> Result<Option<crate::comment_dto::CommentDto>, AppError> {
     Ok(sqlx::query_as::<_, crate::comment_dto::CommentDto>(
         "SELECT c.id, c.post_id, c.author_id,
-                u.username AS author_username,
+                u.username AS author_username, u.display_name AS author_display_name,
                 c.content, c.parent_comment_id AS parent_id, c.created_at
          FROM comments c
          JOIN users u ON u.id = c.author_id
@@ -275,12 +275,14 @@ pub struct SavedPostRow {
     pub tags: Vec<String>,
     pub topics: Vec<String>,
     pub safety_score: f32,
+    pub status: String,
     pub like_count: i32,
     pub comment_count: i32,
     pub save_count: i32,
     pub share_count: i32,
     pub view_count: i64,
     pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
     pub saved_at: DateTime<Utc>,
 }
 
@@ -296,14 +298,14 @@ pub async fn list_saved_posts(
                 r#"SELECT
                     p.id, p.author_id, u.username, u.display_name, u.avatar_url,
                     p.content, p.media_urls, p.tags, p.topics, p.safety_score,
+                    p.status::text AS status,
                     p.like_count, p.comment_count, p.save_count, p.share_count,
-                    p.view_count, p.created_at, i.created_at AS saved_at
+                    p.view_count, p.created_at, p.updated_at, i.created_at AS saved_at
                 FROM interactions i
                 JOIN posts p ON p.id = i.post_id
                 JOIN users u ON u.id = p.author_id
                 WHERE i.user_id = $1
                   AND i.type = 'save'::interaction_type
-                  AND p.status = 'published'
                   AND (i.created_at, p.id) < ($2, $3)
                 ORDER BY i.created_at DESC
                 LIMIT $4"#,
@@ -320,14 +322,14 @@ pub async fn list_saved_posts(
                 r#"SELECT
                     p.id, p.author_id, u.username, u.display_name, u.avatar_url,
                     p.content, p.media_urls, p.tags, p.topics, p.safety_score,
+                    p.status::text AS status,
                     p.like_count, p.comment_count, p.save_count, p.share_count,
-                    p.view_count, p.created_at, i.created_at AS saved_at
+                    p.view_count, p.created_at, p.updated_at, i.created_at AS saved_at
                 FROM interactions i
                 JOIN posts p ON p.id = i.post_id
                 JOIN users u ON u.id = p.author_id
                 WHERE i.user_id = $1
                   AND i.type = 'save'::interaction_type
-                  AND p.status = 'published'
                 ORDER BY i.created_at DESC
                 LIMIT $2"#,
             )
