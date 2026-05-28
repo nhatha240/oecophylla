@@ -42,9 +42,10 @@
 </script>
 
 {#if enabled}
-  <div class="relative">
+  <div style="position:relative;">
     <button
-      class="icon-btn relative"
+      class="icon-btn"
+      style="position:relative;"
       title="Thông báo"
       aria-haspopup="dialog"
       aria-expanded={open}
@@ -52,37 +53,83 @@
     >
       <Icon name="Bell" size={18} />
       {#if $notifications.unread > 0}
-        <span class="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--rose-500)] px-1 text-[11px] font-semibold text-white">
+        <span style="
+          position:absolute; top:-4px; right:-5px;
+          min-width:17px; height:17px; padding:0 4px;
+          background:var(--rose-500,#f43f5e);
+          color:#fff; font-size:10px; font-weight:700; line-height:17px;
+          border-radius:999px; text-align:center; white-space:nowrap;
+        ">
           {$notifications.unread > 9 ? '9+' : $notifications.unread}
         </span>
       {/if}
     </button>
 
     {#if open}
-      <button class="fixed inset-0 z-30 bg-transparent" aria-label="Đóng thông báo" on:click={() => (open = false)}></button>
-      <section class="glass-surface absolute right-0 z-40 mt-3 flex w-[min(92vw,24rem)] flex-col gap-3 rounded-[32px] px-4 py-4 shadow-[0_28px_80px_rgba(15,23,42,0.16)]">
-        <div class="flex items-start justify-between gap-4">
+      <!-- Backdrop -->
+      <button
+        style="position:fixed;inset:0;z-index:30;background:transparent;border:none;cursor:default;"
+        aria-label="Đóng thông báo"
+        on:click={() => (open = false)}
+      ></button>
+
+      <!-- Popup panel -->
+      <div style="
+        position:absolute; right:0; top:calc(100% + 10px); z-index:40;
+        width:min(90vw,360px);
+        background:rgba(255,255,255,0.92);
+        backdrop-filter:blur(20px) saturate(1.8);
+        -webkit-backdrop-filter:blur(20px) saturate(1.8);
+        border:1px solid rgba(255,255,255,0.6);
+        border-radius:20px;
+        box-shadow:0 8px 40px rgba(15,23,42,0.14), 0 1px 3px rgba(15,23,42,0.06);
+        overflow:hidden;
+      ">
+        <!-- Header -->
+        <div style="
+          display:flex; align-items:center; justify-content:space-between;
+          padding:16px 18px 12px;
+          border-bottom:1px solid var(--hairline,rgba(0,0,0,0.07));
+        ">
           <div>
-            <h3 class="text-display-serif text-xl text-slate-900">Thông báo</h3>
-            <p class="text-sm text-slate-500">
+            <div style="font-size:16px;font-weight:700;color:var(--ink-900,#0f172a);letter-spacing:-0.01em;">Thông báo</div>
+            <div style="font-size:12px;margin-top:2px;color:var(--ink-400,#94a3b8);">
               {#if $notifications.unavailable}
-                Dịch vụ chưa sẵn sàng.
+                Dịch vụ chưa sẵn sàng
               {:else if $notifications.unread > 0}
-                {$notifications.unread} mục chưa đọc
+                {$notifications.unread} chưa đọc
               {:else}
-                Bạn đã đọc hết
+                Đã đọc hết
               {/if}
-            </p>
+            </div>
           </div>
-          <button class="glass-chip text-xs" on:click={readAll} disabled={$notifications.items.length === 0}>Đọc hết</button>
+          <button
+            on:click={readAll}
+            disabled={$notifications.items.length === 0}
+            style="
+              padding:5px 12px; border-radius:999px;
+              background:var(--emerald-100,#d1fae5);
+              color:var(--emerald-700,#047857);
+              font-size:12px; font-weight:600;
+              border:none; cursor:pointer;
+              opacity:{$notifications.items.length === 0 ? 0.4 : 1};
+              transition:opacity 0.15s;
+            "
+          >Đọc hết</button>
         </div>
 
-        <div class="max-h-[24rem] space-y-3 overflow-y-auto pr-1">
+        <!-- Body -->
+        <div style="max-height:320px; overflow-y:auto; padding:8px 0;">
           {#if $notifications.loading}
-            <p class="px-2 py-6 text-center text-sm text-slate-500">Đang tải thông báo…</p>
+            <div style="padding:32px 16px;text-align:center;font-size:13px;color:var(--ink-400,#94a3b8);">
+              Đang tải…
+            </div>
           {:else if $notifications.items.length === 0}
-            <div class="glass-surface rounded-[26px] px-4 py-6 text-center text-sm text-slate-500">
-              {$notifications.unavailable ? 'Thông báo sẽ xuất hiện khi service hoàn tất.' : 'Chưa có thông báo mới.'}
+            <div style="padding:36px 16px;text-align:center;">
+              <div style="font-size:28px;margin-bottom:8px;">🔔</div>
+              <div style="font-size:13px;color:var(--ink-400,#94a3b8);">
+                {$notifications.unavailable ? 'Thông báo sẽ xuất hiện khi service hoàn tất.' : 'Chưa có thông báo mới.'}
+              </div>
             </div>
           {:else}
             {#each $notifications.items as item (item.id)}
@@ -91,11 +138,25 @@
           {/if}
         </div>
 
-        <div class="flex items-center justify-between px-1 text-xs uppercase tracking-[0.24em] text-slate-400">
-          <span>{$notifications.connected ? 'Đang đồng bộ trực tiếp' : 'Chờ kết nối trực tiếp'}</span>
-          <span>{enabled ? 'Apple Glass' : ''}</span>
+        <!-- Footer -->
+        <div style="
+          display:flex; align-items:center; justify-content:space-between;
+          padding:8px 18px;
+          border-top:1px solid var(--hairline,rgba(0,0,0,0.07));
+          font-size:10px; letter-spacing:0.08em; text-transform:uppercase;
+          color:var(--ink-300,#cbd5e1);
+        ">
+          <span style="display:flex;align-items:center;gap:5px;">
+            <span style="
+              width:6px;height:6px;border-radius:50%;flex-shrink:0;
+              background:{$notifications.connected ? 'var(--emerald-500,#22c55e)' : 'var(--ink-300,#cbd5e1)'};
+              box-shadow:{$notifications.connected ? '0 0 0 3px rgba(34,197,94,0.2)' : 'none'};
+            "></span>
+            {$notifications.connected ? 'Trực tiếp' : 'Đang kết nối'}
+          </span>
+          <a href="/notifications" on:click={() => (open = false)} style="color:var(--emerald-600,#16a34a);text-decoration:none;font-weight:600;">Xem tất cả</a>
         </div>
-      </section>
+      </div>
     {/if}
   </div>
 {/if}
