@@ -2,6 +2,8 @@
   import Icon from '$lib/apple-glass/components/Icon.svelte';
   export let action = '/post/new';
   export let error: string | null = null;
+  // When true, render the dedicated compose surface with a prominent writing well.
+  export let prominent = false;
 
   let content = '';
   let tagsRaw = '';
@@ -123,16 +125,27 @@
   }
 </script>
 
-<form method="post" action={action} class="composer">
+<form method="post" action={action} class="composer" class:composer-prominent={prominent}>
   <div class="avatar s40">O</div>
   <div class="right">
     {#if showPreview}
-      <div class="whitespace-pre-wrap text-slate-800 text-sm leading-relaxed min-h-[4.5rem] p-2 rounded-lg bg-slate-50">
+      <div class="whitespace-pre-wrap text-slate-800 text-sm leading-relaxed min-h-[4.5rem] p-2 rounded-lg bg-slate-50 mb-5">
         {#if content}
           {@html renderMarkdown(content)}
         {:else}
           <span class="text-slate-400 italic">Chưa có nội dung</span>
         {/if}
+      </div>
+    {:else if prominent}
+      <div class="writing-well" class:has-content={content.length > 0}>
+        <span class="writing-well-label">Nội dung bài viết</span>
+        <textarea
+          name="content"
+          rows="3"
+          maxlength="4000"
+          bind:value={content}
+          placeholder="Bạn muốn chia sẻ tin tức hoặc góc nhìn gì hôm nay?"
+        ></textarea>
       </div>
     {:else}
       <textarea

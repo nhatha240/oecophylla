@@ -16,6 +16,75 @@
 .sensitive-hint { margin-top: 10px; font-size: 12px; background: var(--amber-50); color: var(--amber-500); padding: 10px 14px; border-radius: var(--r-3); display: flex; gap: 10px; align-items: flex-start; line-height: 1.45; }
 [data-theme="dark"] .sensitive-hint { color: #E0B45A; }
 
+/* Composer — prominent writing well (dedicated /post/new surface) */
+.composer-prominent { padding: 22px 24px; box-shadow: var(--glass-shadow); }
+
+.writing-well {
+  margin-bottom: 1rem;
+  position: relative;
+  border-radius: var(--r-3);
+  /* Recessed glass canvas: subtle gradient + inner depth + emerald accent rail */
+  background: linear-gradient(170deg, rgba(0, 166, 107, 0.05), rgba(255, 255, 255, 0.18));
+  box-shadow:
+    inset 0px 0 0 0 rgba(0, 166, 107, 0.45),       /* accent rail */
+    inset 0 2px 7px -2px rgba(15, 50, 35, 0.16),    /* recessed depth */
+    inset 0 0 0 1px rgba(15, 22, 20, 0.05);
+  transition: box-shadow 0.22s var(--ease, cubic-bezier(0.16, 1, 0.3, 1)), background 0.22s ease;
+}
+.writing-well:focus-within {
+  background: linear-gradient(170deg, rgba(0, 166, 107, 0.09), rgba(255, 255, 255, 0.30));
+  box-shadow:
+    inset 0 0 0 0 var(--emerald-500),             /* rail grows + saturates */
+    inset 0 2px 7px -2px rgba(15, 50, 35, 0.12),
+    inset 0 0 0 1px rgba(0, 166, 107, 0.30),
+    0 0 0 4px rgba(0, 166, 107, 0.12),              /* focus glow ring */
+    0 10px 28px -14px rgba(0, 166, 107, 0.40);
+}
+
+.writing-well-label {
+  position: absolute;
+  top: 13px;
+  left: 18px;
+  font: 600 11px/1 var(--font-ui);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--emerald-600);
+  opacity: 0.55;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.writing-well:focus-within .writing-well-label { opacity: 0.95; }
+/* Tuck the label away once the user is writing so it never competes with content */
+.writing-well.has-content .writing-well-label { opacity: 0; transform: translateY(-4px); }
+
+.composer-prominent .writing-well textarea {
+  padding: 36px 18px 18px;
+  min-height: 168px;
+  font: 16.5px/1.65 var(--font-ui);
+  background: transparent;
+}
+.composer-prominent .writing-well textarea::placeholder {
+  color: var(--muted-2);
+  font-size: 16px;
+}
+
+[data-theme="dark"] .writing-well {
+  background: linear-gradient(170deg, rgba(43, 196, 135, 0.08), rgba(255, 255, 255, 0.03));
+  box-shadow:
+    inset 3px 0 0 0 rgba(43, 196, 135, 0.55),
+    inset 0 2px 7px -2px rgba(0, 0, 0, 0.45),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+[data-theme="dark"] .writing-well:focus-within {
+  background: linear-gradient(170deg, rgba(43, 196, 135, 0.14), rgba(255, 255, 255, 0.05));
+  box-shadow:
+    inset 4px 0 0 0 var(--emerald-500),
+    inset 0 2px 7px -2px rgba(0, 0, 0, 0.40),
+    inset 0 0 0 1px rgba(43, 196, 135, 0.35),
+    0 0 0 4px rgba(43, 196, 135, 0.15),
+    0 10px 28px -14px rgba(43, 196, 135, 0.45);
+}
+
 /* Post card */
 .post { background: var(--surface); border: 1px solid var(--hairline); border-radius: var(--r-4); padding: 22px 24px; margin-bottom: 14px; position: relative; transition: border-color 0.15s; }
 .post:hover { border-color: var(--hairline-strong); }

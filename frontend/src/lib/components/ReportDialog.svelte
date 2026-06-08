@@ -26,7 +26,7 @@
     <h3 class="serif" style="font-size: 24px; margin: 0 0 12px;">Báo cáo bài viết</h3>
     <div class="field" style="gap: 10px;">
       {#each ['spam','misinformation','harassment','nsfw','other'] as r}
-        <label class="chip outline" style="justify-content: flex-start; padding: 10px 14px;">
+        <label class="chip" style="justify-content: flex-start; padding: 10px 14px;">
           <input type="radio" bind:group={reason} value={r} /> {r}
         </label>
       {/each}

@@ -26,6 +26,12 @@
     environment: '#14b8a6', ai: '#a855f7', news: '#64748b',
   };
 
+  // Scroll the tapped tab fully into view so the active label is never clipped
+  // by the rounded pill edge on narrow / overflowing tab strips.
+  function centerTab(e: MouseEvent) {
+    (e.currentTarget as HTMLElement)?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+  }
+
   let items: FeedItem[] = data.feed?.items ?? [];
   let cursor: string | null = data.feed?.next_cursor ?? null;
   let meByPost: Record<string, MyInteractions> = data.me ?? {};
@@ -184,25 +190,27 @@
     {/if}
 
     {#if data.feed}
-      <Composer action="/post/new" />
+      <Composer action="/post/new" prominent />
     {/if}
 
-    <div class="tabs">
-      <button class="tab" class:active={feedMode === 'foryou' && localSort === 'default'} on:click={() => { localSort = 'default'; switchFeed('foryou'); }}>
-        <Icon name="Sparkle" size={14} /> Dành cho bạn
-      </button>
-      <button class="tab" class:active={feedMode === 'following'} on:click={() => { localSort = 'default'; switchFeed('following'); }}>
-        <Icon name="Users" size={14} /> Đang theo dõi
-      </button>
-      <button class="tab" class:active={localSort === 'new'} on:click={() => sortBy('new')}>
-        <Icon name="Clock" size={14} /> Tin mới
-      </button>
-      <button class="tab" class:active={localSort === 'trend' || feedMode === 'trending'} on:click={() => sortBy('trend')}>
-        <Icon name="Flame" size={14} /> Xu hướng
-      </button>
-      <a class="tab" href="/saved">
-        <Icon name="Bookmark" size={14} /> Đã lưu
-      </a>
+    <div class="tab-row">
+      <div class="tabs">
+        <button class="tab" class:active={feedMode === 'foryou' && localSort === 'default'} on:click={centerTab} on:click={() => { localSort = 'default'; switchFeed('foryou'); }}>
+          <Icon name="Sparkle" size={14} /> Dành cho bạn
+        </button>
+        <button class="tab" class:active={feedMode === 'following'} on:click={centerTab} on:click={() => { localSort = 'default'; switchFeed('following'); }}>
+          <Icon name="Users" size={14} /> Đang theo dõi
+        </button>
+        <button class="tab" class:active={localSort === 'new'} on:click={centerTab} on:click={() => sortBy('new')}>
+          <Icon name="Clock" size={14} /> Tin mới
+        </button>
+        <button class="tab" class:active={localSort === 'trend' || feedMode === 'trending'} on:click={centerTab} on:click={() => sortBy('trend')}>
+          <Icon name="Flame" size={14} /> Xu hướng
+        </button>
+        <a class="tab" href="/saved">
+          <Icon name="Bookmark" size={14} /> Đã lưu
+        </a>
+      </div>
       <span class="tab-update t-meta">Cập nhật {updatedAgo}</span>
     </div>
 

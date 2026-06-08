@@ -20,14 +20,17 @@ function getTarget(path: string): string {
 }
 
 function withDefaultHeaders(init: ApiFetchInit): RequestInit {
+  // Pull `headers` and the non-standard `quiet` flag out before spreading so
+  // `...rest` can't clobber the merged headers and `quiet` never leaks to fetch.
+  const { headers, quiet: _quiet, ...rest } = init;
   return {
     credentials: 'include',
+    ...rest,
     headers: {
       'content-type': 'application/json',
       'x-requested-with': 'oec-web',
-      ...(init.headers || {}),
+      ...(headers || {}),
     },
-    ...init,
   };
 }
 
@@ -79,7 +82,7 @@ export async function apiFetch<T>(
     let body: ApiError | null = null;
     try { body = await res.json(); } catch { /* ignore parse errors */ }
     if (!init.quiet) console.error('API error', { path, status: res.status, body });
-    throw new ApiException(res.status, body?.error.code ?? 'UNKNOWN', body?.error.details);
+    throw new ApiException(res.status, body?.error?.code ?? 'UNKNOWN', body?.error?.details);
   }
   const text = await res.text();
   if (!text) return undefined as T;

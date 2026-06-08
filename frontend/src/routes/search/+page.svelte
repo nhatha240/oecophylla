@@ -254,7 +254,7 @@
                 <div class="sub">
                   <span>{new Date(post.created_at).toLocaleDateString('vi-VN')}</span>
                   {#if post.rank > 0}
-                    <span class="chip outline" style="font-size:10px;padding:1px 6px;">điểm {post.rank.toFixed(2)}</span>
+                    <span class="chip" style="font-size:10px;padding:1px 6px;">điểm {post.rank.toFixed(2)}</span>
                   {/if}
                 </div>
               </div>
@@ -264,7 +264,7 @@
             </a>
             <div class="post-meta-row" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;">
               {#each post.tags.slice(0, 3) as t}
-                <a href="/search?q={encodeURIComponent(t)}" class="chip outline" style="font-size:12px;">#{t}</a>
+                <a href="/search?q={encodeURIComponent(t)}" class="chip" style="font-size:12px;">#{t}</a>
               {/each}
               {#each post.topics.slice(0, 2) as topic}
                 <a href="/topic/{topic}" class="chip active" style="font-size:12px;">{TOPIC_LABELS[topic] ?? topic}</a>
@@ -309,7 +309,7 @@
                 {/if}
               </div>
               {#if u.role === 'creator'}
-                <span class="chip outline" style="font-size:11px;white-space:nowrap;flex-shrink:0;">Creator</span>
+                <span class="chip" style="font-size:11px;white-space:nowrap;flex-shrink:0;">Creator</span>
               {/if}
             </a>
           {/each}

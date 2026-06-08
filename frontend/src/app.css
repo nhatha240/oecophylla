@@ -70,6 +70,47 @@
 }
 .tabs::-webkit-scrollbar { display: none; }
 
+/* Tab strip + trailing "Cập nhật…" meta share one row: the pill scrolls
+   internally, the meta stays put (and hides on phones to free up label space).
+   Keeping the meta inside the scrolling pill wasted ~140px and pushed the
+   active tab under the rounded edge, clipping its label. */
+.tab-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;          /* timestamp drops below rather than squeezing the tabs into a scroll */
+  gap: 12px;
+  margin-bottom: 22px;
+}
+.tab-row .tabs {
+  width: auto;
+  margin-bottom: 0;
+  flex: 1 1 auto;
+  min-width: 0;            /* let the pill shrink and scroll instead of overflowing the row */
+  scroll-padding-inline: 12px;
+  scroll-behavior: smooth;
+}
+.tab-row .tab-update {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+@media (max-width: 640px) {
+  /* On phones the 5 tabs can't fit one line, so wrap them instead of scrolling
+     — every tab (including the active one) stays fully visible, never clipped
+     by the rounded pill edge. */
+  .tab-row .tab-update { display: none; }
+  .tabs {
+    flex-wrap: wrap !important;
+    overflow: visible !important;
+    border-radius: 20px;
+    row-gap: 4px;
+  }
+  .tab { padding: 8px 12px; }
+}
+
 @layer components {
   .glass-surface {
     @apply bg-canvas-50/65 backdrop-blur-glass border border-white/40

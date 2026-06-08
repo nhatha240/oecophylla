@@ -274,7 +274,7 @@
         <p class="hint">Các chủ đề được đồng bộ từ hồ sơ người dùng hiện tại.</p>
         <div class="chips">
           {#each data.profile.topic_prefs as topic}
-            <span class="chip outline">{topic}</span>
+            <span class="chip">{topic}</span>
           {/each}
         </div>
       </div>

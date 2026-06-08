@@ -22,7 +22,7 @@
     {#each filters as item, i}
       <button class={`chip ${filter === filterIds[i] ? 'active' : ''}`} on:click={() => (filter = filterIds[i])}>{#if filter === filterIds[i]}<Icon name="Check" size={11} />{/if}{item}</button>
     {/each}
-    <button class="chip outline" style="margin-left: auto"><Icon name="Filter" size={12} /> Bộ lọc nâng cao</button>
+    <button class="chip" style="margin-left: auto"><Icon name="Filter" size={12} /> Bộ lọc nâng cao</button>
   </div>
   <div class="explore-grid">
     <div>

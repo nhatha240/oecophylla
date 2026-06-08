@@ -1,8 +1,9 @@
 /**
  * Send a single view event per post per page session once it stays >= 50%
- * visible for 800ms. We deliberately use a private endpoint convention
- * (`POST /api/v1/posts/{id}/view`) — when the route is wired the event will
- * land on the interactions topic; until then the failed fetch is swallowed.
+ * visible for 800ms. Posts to `POST /api/v1/posts/{id}/view` (content-service),
+ * which bumps the view counter and — when authenticated — emits a `viewed`
+ * interaction onto the interactions topic. Failures are swallowed: view
+ * tracking must never surface to users.
  */
 export function viewTracker(node: HTMLElement, postId: string) {
   let timer: ReturnType<typeof setTimeout> | null = null;

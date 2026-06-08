@@ -867,7 +867,6 @@ body::after {
           inset 0 -0.08em 0.12em rgba(0, 0, 0, 0.08),
           inset 0 0 1.2em rgba(255, 255, 255, 0.14);
 
-  overflow: hidden;
   cursor: pointer;
   appearance: none;
   -webkit-appearance: none;

@@ -58,7 +58,7 @@
     <div class="why-card">
       <h4><Icon name="Sparkle" size={14} /> Vì sao bạn thấy bài viết này?</h4>
       <p>Bạn đã đọc 11 bài về AI trong 30 ngày qua và tương tác nhiều với chủ đề <b>“AI có trách nhiệm”</b>. Bài viết này có nguồn được xác minh, độ tin cậy cao và đang nhận phản hồi tích cực từ cộng đồng mà bạn theo dõi.</p>
-      <div class="why-tags"><span class="chip active">AI có trách nhiệm</span><span class="chip active">Khoa học dữ liệu</span><span class="chip outline">Tiếng Việt tự nhiên</span></div>
+      <div class="why-tags"><span class="chip active">AI có trách nhiệm</span><span class="chip active">Khoa học dữ liệu</span><span class="chip">Tiếng Việt tự nhiên</span></div>
     </div>
 
     <div class="reader-actions">

@@ -14,7 +14,13 @@ def test_apply_reported_decrements():
 
 def test_unknown_event_no_op():
     base = {"ai": 0.5}
-    assert apply_topic_delta(base, ["ai"], "viewed") == base
+    assert apply_topic_delta(base, ["ai"], "unknown_event") == base
+
+
+def test_apply_viewed_adds_small_signal():
+    out = apply_topic_delta({}, ["ai", "tech"], "viewed")
+    # 0.5 / 2 = 0.25
+    assert out == {"ai": 0.25, "tech": 0.25}
 
 
 def test_empty_topics_falls_back_to_general():

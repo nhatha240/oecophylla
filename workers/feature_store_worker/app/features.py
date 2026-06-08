@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 WEIGHTS: dict[str, float] = {
+    "viewed": 0.5,
     "liked": 1.5,
     "unliked": -1.5,
     "saved": 2.5,

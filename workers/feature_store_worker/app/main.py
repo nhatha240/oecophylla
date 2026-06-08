@@ -69,12 +69,18 @@ class Worker:
                         if record.value:
                             self._buffer.append(record.value)
                 if self._should_flush():
-                    await self._flush()
-                    await self.consumer.commit()
+                    ok = await self._flush()
+                    # Only advance the committed offset when every user's
+                    # features applied cleanly. On a transient failure the
+                    # offending events are re-queued and the offset is left
+                    # uncommitted so the batch is retried instead of lost.
+                    if ok:
+                        await self.consumer.commit()
         except asyncio.CancelledError:
-            await self._flush()
-            with contextlib.suppress(Exception):
-                await self.consumer.commit()
+            ok = await self._flush()
+            if ok:
+                with contextlib.suppress(Exception):
+                    await self.consumer.commit()
             raise
 
     def _should_flush(self) -> bool:
@@ -83,10 +89,13 @@ class Worker:
             or (time.monotonic() - self._last_flush) >= self.cfg.flush_interval_seconds
         )
 
-    async def _flush(self) -> None:
+    async def _flush(self) -> bool:
+        """Apply buffered events. Returns True if every user's features were
+        applied; on partial failure the failed users' events are re-queued and
+        False is returned so the caller leaves the Kafka offset uncommitted."""
         if not self._buffer:
             self._last_flush = time.monotonic()
-            return
+            return True
         events = self._buffer
         self._buffer = []
         self._last_flush = time.monotonic()
@@ -98,6 +107,7 @@ class Worker:
                 continue
             per_user[user].append(env)
 
+        failed_events: list[dict[str, Any]] = []
         if per_user:
             assert self.pool is not None
             assert self.redis is not None
@@ -106,13 +116,22 @@ class Worker:
                     await self._apply_for_user(user_id, user_events)
                 except Exception:  # noqa: BLE001
                     logger.exception("failed to apply features for %s", user_id)
+                    failed_events.extend(user_events)
 
         # Trending sorted set: every event lightly bumps the post regardless of
-        # which user produced it.
+        # which user produced it. Trending is approximate, so a failure here is
+        # logged but does not block the offset commit.
         try:
             await self._update_trending(events)
         except Exception:  # noqa: BLE001
             logger.exception("failed to update trending")
+
+        if failed_events:
+            # Re-queue for the next flush so the events are retried rather than
+            # silently dropped along with the committed offset.
+            self._buffer = failed_events + self._buffer
+            return False
+        return True
 
     async def _apply_for_user(self, user_id: str, events: list[dict]) -> None:
         assert self.pool is not None

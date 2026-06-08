@@ -67,9 +67,9 @@
         {#if (composerOpen || composer) && composer.length > 12}
           <div class="composer-suggest">
             <span class="t-meta" style="margin-right: 4px; align-self: center">Gợi ý chủ đề:</span>
-            <span class="chip outline">#Công nghệ</span>
-            <span class="chip outline">#AI</span>
-            <span class="chip outline">#Báo chí số</span>
+            <span class="chip">#Công nghệ</span>
+            <span class="chip">#AI</span>
+            <span class="chip">#Báo chí số</span>
             <span class="chip"><Icon name="Plus" size={11} /> Thêm</span>
           </div>
         {/if}

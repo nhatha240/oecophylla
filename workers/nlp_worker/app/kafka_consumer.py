@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import time
@@ -10,9 +11,38 @@ from .infer import infer_topics
 
 logger = logging.getLogger("nlp_worker.consumer")
 
+# Backoff between reconnect attempts when Kafka/Postgres is briefly unavailable
+# (e.g. a broker restart). Keeps the worker alive and self-healing instead of
+# dying permanently on the first connection error.
+RECONNECT_DELAY_SECONDS = 5.0
+
 
 async def run_consumer(cfg: Settings) -> None:
+    """Run the consume loop, reconnecting on transient failures.
+
+    A single ``consumer.start()`` that throws (Kafka not yet reachable) used to
+    kill the worker for good; now we retry with backoff so a broker restart
+    self-heals. Cancellation (graceful shutdown) propagates out cleanly.
     """
+    while True:
+        try:
+            await _run_once(cfg)
+            return  # clean completion (only happens if the loop is broken out of)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — log and retry any connection error
+            logger.error(
+                "nlp-worker consumer error; reconnecting in %ss: %s",
+                RECONNECT_DELAY_SECONDS,
+                exc,
+                exc_info=True,
+            )
+            await asyncio.sleep(RECONNECT_DELAY_SECONDS)
+
+
+async def _run_once(cfg: Settings) -> None:
+    """One connect → consume → cleanup cycle.
+
     Consumes oecophylla.content.created, infers topics, updates posts.topics.
     Idempotent: skip if topics already non-empty.
     Micro-batch: flush every cfg.flush_interval_seconds OR cfg.flush_batch_size events.

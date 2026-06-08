@@ -83,7 +83,7 @@
     <p>Bài viết đang có tương tác trong mạng lưới của bạn và được phân phối qua feed hiện tại của Oecophylla.</p>
     <div class="why-tags">
       {#each data.post.tags as tag}
-        <span class="chip outline">#{tag}</span>
+        <span class="chip">#{tag}</span>
       {/each}
     </div>
   </div>

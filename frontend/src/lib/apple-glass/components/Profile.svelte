@@ -27,7 +27,7 @@
       <h2>{me.name}<Icon name="Verified" size={18} style="color: var(--azure-500)" /></h2>
       <div class="handle">{me.handle} · Hà Nội</div>
       <p class="bio">Biên tập tin công nghệ, quan tâm AI có trách nhiệm và báo chí số tại Việt Nam. Viết về cách công nghệ thay đổi cách chúng ta đọc tin.</p>
-      <div class="chips"><span class="chip active">AI</span><span class="chip active">Báo chí số</span><span class="chip active">Edu-tech</span><span class="chip outline">+ 4</span></div>
+      <div class="chips"><span class="chip active">AI</span><span class="chip active">Báo chí số</span><span class="chip active">Edu-tech</span><span class="chip">+ 4</span></div>
       <div class="profile-stats"><div><b>1.842</b> <span>người theo dõi</span></div><div><b>283</b> <span>đang theo dõi</span></div><div><b>42</b> <span>bài viết</span></div><div><b>7</b> <span>nhóm</span></div></div>
     </div>
     <div class="profile-head-actions"><button class="btn ghost"><Icon name="Share" size={14} /> Chia sẻ</button><button class="btn primary"><Icon name="Edit" size={14} /> Chỉnh sửa hồ sơ</button></div>
@@ -55,7 +55,7 @@
         <button class="btn ghost sm" style="width: 100%; margin-top: 14px"><Icon name="Edit" size={12} /> Chỉnh sở thích</button>
       </div>
       <div class="taste-card"><h4>Kiểm soát cá nhân hóa</h4><p class="hint">Bạn quyết định mức độ thuật toán định hình bảng tin.</p><ToggleRow bind:value={personalization} name="Bật cá nhân hóa" desc="Tắt để chỉ thấy bài theo thời gian." /><ToggleRow bind:value={showSensitive} name="Hiển thị nội dung nhạy cảm" desc="Đã được kiểm duyệt và gắn nhãn." /><ToggleRow bind:value={activityMix} name="Trộn chủ đề ngoài sở thích" desc="Giúp tránh bong bóng thông tin." /></div>
-      <div class="taste-card"><h4>Chủ đề đang ẩn</h4><p class="hint">Bạn đã chọn không xem các chủ đề này.</p><div class="chips"><span class="chip outline">Bóng đá <Icon name="X" size={10} /></span><span class="chip outline">Giải trí <Icon name="X" size={10} /></span><button class="chip outline" style="background: transparent"><Icon name="Plus" size={11} /> Thêm</button></div></div>
+      <div class="taste-card"><h4>Chủ đề đang ẩn</h4><p class="hint">Bạn đã chọn không xem các chủ đề này.</p><div class="chips"><span class="chip">Bóng đá <Icon name="X" size={10} /></span><span class="chip">Giải trí <Icon name="X" size={10} /></span><button class="chip" style="background: transparent"><Icon name="Plus" size={11} /> Thêm</button></div></div>
     </aside>
   </div>
 </div>

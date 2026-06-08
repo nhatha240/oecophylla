@@ -85,7 +85,7 @@
     </div>
     <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
       {#if isTrusted}
-        <span class="chip outline" style="font-size:11px;padding:2px 8px;display:flex;align-items:center;gap:3px;white-space:nowrap;">
+        <span class="chip" style="font-size:11px;padding:2px 8px;display:flex;align-items:center;gap:3px;white-space:nowrap;">
           <Icon name="Shield" size={11} />
           Nguồn đáng tin cậy
         </span>
@@ -119,7 +119,7 @@
   <!-- Tags + Topics chips row + view count -->
   <div class="post-meta-row" style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-top:8px;">
     {#each post.tags.slice(0, 3) as t}
-      <a href="/search?q={encodeURIComponent(t)}" class="chip outline" style="font-size:12px;">#{t}</a>
+      <a href="/search?q={encodeURIComponent(t)}" class="chip" style="font-size:12px;">#{t}</a>
     {/each}
     {#each (post.topics ?? []).slice(0, 2) as topic}
       <a href="/topic/{topic}" class="chip active" style="font-size:12px;">{topicLabels[topic] ?? topic}</a>

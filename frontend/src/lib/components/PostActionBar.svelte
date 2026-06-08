@@ -10,8 +10,13 @@
   let saved  = me?.saved  ?? false;
   let likeCount = post.like_count;
   let saveCount = post.save_count;
+  const inFlight = { like: false, save: false };
 
   async function toggle(kind: 'like' | 'save') {
+    // Ignore re-entrant clicks while a request is pending so rapid toggling
+    // can't race two optimistic updates into an inconsistent counter.
+    if (inFlight[kind]) return;
+    inFlight[kind] = true;
     const wasOn = kind === 'like' ? liked : saved;
     const counter = kind === 'like' ? likeCount : saveCount;
     // optimistic
@@ -25,6 +30,8 @@
       else                 { saved = wasOn; saveCount = counter; }
       if (e instanceof ApiException && e.status === 401) showToast('Vui lòng đăng nhập để tiếp tục.');
       else showToast('Không cập nhật được tương tác.');
+    } finally {
+      inFlight[kind] = false;
     }
   }
 </script>
