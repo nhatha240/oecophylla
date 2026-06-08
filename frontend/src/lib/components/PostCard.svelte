@@ -46,6 +46,10 @@
     politics: 'Chính trị', entertainment: 'Giải trí', health: 'Sức khoẻ',
     business: 'Kinh doanh', culture: 'Văn hoá', education: 'Giáo dục',
     environment: 'Môi trường', ai: 'AI & Học máy', news: 'Tin tức',
+    // Labels emitted by the NLP analyzer / LLM (keyword vocab uses singular
+    // `sport` and includes `music`/`general`). Keep this map a superset of
+    // ALLOWED_TOPICS in workers/nlp_worker/app/llm.py so every tag displays.
+    sport: 'Thể thao', music: 'Âm nhạc', general: 'Tổng hợp',
   };
 
   // Recommendation reason from rank

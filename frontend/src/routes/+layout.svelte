@@ -18,6 +18,9 @@
     politics: 'Chính trị', entertainment: 'Giải trí', health: 'Sức khoẻ',
     business: 'Kinh doanh', culture: 'Văn hoá', education: 'Giáo dục',
     environment: 'Môi trường', ai: 'Trí tuệ nhân tạo', news: 'Tin tức',
+    // Superset of ALLOWED_TOPICS in workers/nlp_worker/app/llm.py (analyzer
+    // emits singular `sport` plus `music`/`general`).
+    sport: 'Thể thao', music: 'Âm nhạc', general: 'Tổng hợp',
   };
 
   let theme: 'light' | 'dark' = 'light';
