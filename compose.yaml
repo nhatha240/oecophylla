@@ -258,6 +258,7 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: ${REDIS_URL}
+      JWT_SECRET: ${JWT_SECRET}
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8091/health"]
       interval: 10s
@@ -294,6 +295,16 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL}
       KAFKA_BROKERS: ${KAFKA_BROKERS}
+      # Optional LLM analysis via LM Studio on the host (OpenAI-compatible API).
+      NLP_LLM_ENABLED: ${NLP_LLM_ENABLED:-false}
+      NLP_LLM_BASE_URL: ${NLP_LLM_BASE_URL:-http://host.docker.internal:1234/v1}
+      NLP_LLM_MODEL: ${NLP_LLM_MODEL:-gemma-4-12b}
+      NLP_LLM_API_KEY: ${NLP_LLM_API_KEY:-lm-studio}
+      NLP_LLM_TIMEOUT_SECONDS: ${NLP_LLM_TIMEOUT_SECONDS:-30}
+    # Reach LM Studio running on the Docker host (works on macOS/Windows; on
+    # Linux this maps to the host gateway).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   cache-invalidator:
     <<: *restart

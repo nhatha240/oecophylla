@@ -1,4 +1,4 @@
-.PHONY: up down logs ps test test-python test-phase-2b test-phase-3 fmt lint deny audit sqlx-prepare seed clean
+.PHONY: up down logs ps test test-python test-phase-2b test-phase-3 test-phase-4 fmt lint deny audit sqlx-prepare seed evaluate clean
 
 up:
 	docker compose -f compose.yaml -f compose.dev.yaml up -d --build
@@ -50,7 +50,13 @@ sqlx-prepare:
 	cd backend && cargo sqlx prepare --workspace -- --all-targets
 
 seed:
-	docker compose --profile tools run --rm scripts seed_phase1.py
+	docker compose --profile tools run --rm scripts seed.py
+
+evaluate:
+	docker compose --profile tools run --rm scripts evaluate.py --k $(or $(K),10)
+
+test-phase-4:
+	bash scripts/smoke_phase4.sh
 
 clean:
 	docker compose down -v

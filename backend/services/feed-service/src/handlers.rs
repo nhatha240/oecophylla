@@ -33,6 +33,10 @@ use crate::{
 
 const DEFAULT_PAGE_SIZE: usize = 20;
 const MAX_PAGE_SIZE: usize = 50;
+/// Fallback feeds (trending / recent) are cached briefly so that a degraded
+/// feed does not stick for the full personalized TTL after the recommender
+/// recovers. A short window still absorbs request bursts during an outage.
+const FALLBACK_CACHE_TTL_SECONDS: usize = 60;
 
 fn current(s: &AppState, h: &HeaderMap) -> Option<AuthUser> {
     let raw = h.get(axum::http::header::COOKIE)?.to_str().ok()?;
@@ -247,6 +251,7 @@ async fn load_or_build_feed(s: &AppState, user_id: Uuid) -> (CachedFeed, String)
     .await
     {
         Ok(items) if !items.is_empty() => {
+            log_impressions(s, user_id, &items).await;
             let cached = build_cached_feed("personalized", items);
             persist(s, user_id, &cached).await;
             (cached, "personalized".into())
@@ -273,7 +278,7 @@ async fn fallback_feed(s: &AppState, user_id: Uuid) -> (CachedFeed, String) {
                 })
                 .collect();
             let cached = build_cached_feed("fallback", items);
-            persist(s, user_id, &cached).await;
+            persist_with_ttl(s, user_id, &cached, FALLBACK_CACHE_TTL_SECONDS).await;
             return (cached, "fallback".into());
         }
     }
@@ -291,10 +296,10 @@ async fn fallback_feed(s: &AppState, user_id: Uuid) -> (CachedFeed, String) {
         })
         .collect();
     let cached = build_cached_feed("fallback", items);
-    // Cache the fallback at a shorter TTL by reusing the configured TTL — when
-    // the recommender comes back online the cache-invalidator wipes per-user
-    // entries on interactions.
-    persist(s, user_id, &cached).await;
+    // Cache the fallback at a short TTL so the degraded feed is re-evaluated
+    // soon — once the recommender is healthy the next miss rebuilds a
+    // personalized feed instead of serving stale fallback for the full TTL.
+    persist_with_ttl(s, user_id, &cached, FALLBACK_CACHE_TTL_SECONDS).await;
     (cached, "fallback".into())
 }
 
@@ -314,10 +319,25 @@ fn build_cached_feed(source: &str, items: Vec<RecommendationItem>) -> CachedFeed
     }
 }
 
+/// Best-effort impression log of the personalized set. Mirrors `persist`: a
+/// failure is logged but never surfaces to the client, because the feed must be
+/// served even when the impression write fails.
+async fn log_impressions(s: &AppState, user_id: Uuid, items: &[RecommendationItem]) {
+    let rows: Vec<(Uuid, f32, String)> = items
+        .iter()
+        .map(|i| (i.post_id, i.score, i.source.clone()))
+        .collect();
+    if let Err(err) = repo::log_impressions(&s.db, user_id, &rows).await {
+        tracing::warn!(error = %err, %user_id, "failed to log impressions");
+    }
+}
+
 async fn persist(s: &AppState, user_id: Uuid, feed: &CachedFeed) {
-    if let Err(err) =
-        set_cached_feed(&s.redis, user_id, feed, s.feed_cfg.feed_cache_ttl_seconds).await
-    {
+    persist_with_ttl(s, user_id, feed, s.feed_cfg.feed_cache_ttl_seconds).await;
+}
+
+async fn persist_with_ttl(s: &AppState, user_id: Uuid, feed: &CachedFeed, ttl_seconds: usize) {
+    if let Err(err) = set_cached_feed(&s.redis, user_id, feed, ttl_seconds).await {
         tracing::warn!(error = %err, %user_id, "failed to cache feed");
     }
 }
@@ -434,7 +454,6 @@ pub async fn trending_topics(State(s): State<AppState>) -> AppResult<Json<Vec<Tr
             let label = label_map
                 .get(slug.as_str())
                 .map(|s| s.to_string())
-                .clone()
                 .unwrap_or_else(|| slug.clone());
             TrendingTopic { slug, label, count }
         })

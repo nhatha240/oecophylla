@@ -8,6 +8,7 @@ import asyncpg
 
 from .settings import Settings
 from .infer import infer_topics
+from .llm import analyze as llm_analyze
 
 logger = logging.getLogger("nlp_worker.consumer")
 
@@ -75,25 +76,29 @@ async def _run_once(cfg: Settings) -> None:
                 len(batch) >= cfg.flush_batch_size
                 or elapsed >= cfg.flush_interval_seconds
             ):
-                await _process_batch(conn, batch)
+                await _process_batch(conn, batch, cfg)
                 batch.clear()
                 last_flush = time.monotonic()
     finally:
         if batch:
-            await _process_batch(conn, batch)
+            await _process_batch(conn, batch, cfg)
         await consumer.stop()
         await conn.close()
 
 
-async def _process_batch(conn: asyncpg.Connection, messages: list) -> None:
+async def _process_batch(
+    conn: asyncpg.Connection, messages: list, cfg: Settings | None = None
+) -> None:
     for msg in messages:
         try:
-            await _process_one(conn, msg.value)
+            await _process_one(conn, msg.value, cfg)
         except Exception as e:
             logger.error("Failed to process message: %s", e, exc_info=True)
 
 
-async def _process_one(conn: asyncpg.Connection, envelope: dict) -> None:
+async def _process_one(
+    conn: asyncpg.Connection, envelope: dict, cfg: Settings | None = None
+) -> None:
     data = envelope.get("data", {})
     post_id = data.get("post_id")
     if not post_id:
@@ -114,12 +119,36 @@ async def _process_one(conn: asyncpg.Connection, envelope: dict) -> None:
         return
 
     content = row["content"] or ""
-    topics = infer_topics(content)
 
-    # Update only if topics still empty (race-safe via WHERE clause)
-    result = await conn.execute(
-        "UPDATE posts SET topics = $1 WHERE id = $2 AND coalesce(cardinality(topics), 0) = 0",
-        topics,
-        post_id,
+    # Optional LLM analysis (topics + safety_score). On any failure or when
+    # disabled, fall back to the deterministic keyword analyzer (topics only).
+    safety_score: float | None = None
+    if cfg is not None and cfg.nlp_llm_enabled:
+        analysis = await llm_analyze(cfg, content)
+        if analysis is not None:
+            topics = analysis["topics"]
+            safety_score = analysis["safety_score"]
+        else:
+            topics = infer_topics(content)
+    else:
+        topics = infer_topics(content)
+
+    # Update only if topics still empty (race-safe via WHERE clause). Set
+    # safety_score too when the LLM produced one.
+    if safety_score is None:
+        result = await conn.execute(
+            "UPDATE posts SET topics = $1 WHERE id = $2 AND coalesce(cardinality(topics), 0) = 0",
+            topics,
+            post_id,
+        )
+    else:
+        result = await conn.execute(
+            "UPDATE posts SET topics = $1, safety_score = $2 "
+            "WHERE id = $3 AND coalesce(cardinality(topics), 0) = 0",
+            topics,
+            safety_score,
+            post_id,
+        )
+    logger.info(
+        "Post %s → topics %s safety=%s (result=%s)", post_id, topics, safety_score, result
     )
-    logger.info("Post %s → topics %s (result=%s)", post_id, topics, result)

@@ -105,6 +105,39 @@ pub async fn following_feed(
     Ok(rows)
 }
 
+/// Best-effort impression log. Records the personalized set served to a user so
+/// the recommender's click-through rate can be measured offline. Callers must
+/// treat failures as non-fatal — view serving never depends on this write.
+pub async fn log_impressions(
+    db: &PgPool,
+    user_id: Uuid,
+    items: &[(Uuid, f32, String)],
+) -> anyhow::Result<()> {
+    if items.is_empty() {
+        return Ok(());
+    }
+    let post_ids: Vec<Uuid> = items.iter().map(|(p, _, _)| *p).collect();
+    let scores: Vec<f64> = items.iter().map(|(_, s, _)| *s as f64).collect();
+    let sources: Vec<String> = items.iter().map(|(_, _, src)| src.clone()).collect();
+    sqlx::query(
+        r#"
+        INSERT INTO recommendations (user_id, post_id, score, source)
+        SELECT $1, t.post_id, t.score, t.source
+        FROM unnest($2::uuid[], $3::float8[], $4::text[])
+            AS t(post_id, score, source)
+        ON CONFLICT (user_id, post_id, served_at) DO NOTHING
+        "#,
+    )
+    .bind(user_id)
+    .bind(&post_ids)
+    .bind(&scores)
+    .bind(&sources)
+    .execute(db)
+    .await
+    .context("log_impressions")?;
+    Ok(())
+}
+
 /// Most recent published posts; used as the last-resort fallback when neither
 /// the cache nor the recommendation API nor Redis trending have items.
 pub async fn recent_published(db: &PgPool, limit: i64) -> anyhow::Result<Vec<FeedPostRow>> {

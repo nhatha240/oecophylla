@@ -7,7 +7,7 @@ use axum::{
 use common::{
     auth::verify_access,
     error::{AppError, AppResult},
-    events::{ContentCreated, Envelope, TOPIC_CONTENT_CREATED},
+    events::{ContentCreated, Envelope, ViewData, TOPIC_CONTENT_CREATED, TOPIC_INTERACTIONS},
     models::{AuthUser, PostStatus, UserRole},
 };
 use serde::Deserialize;
@@ -187,8 +187,36 @@ pub async fn delete_post(
     Ok(StatusCode::NO_CONTENT)
 }
 
-pub async fn view(State(s): State<AppState>, Path(id): Path<Uuid>) -> AppResult<impl IntoResponse> {
-    repo::increment_view(&s.db, id).await?;
+pub async fn view(
+    State(s): State<AppState>,
+    Path(id): Path<Uuid>,
+    h: axum::http::HeaderMap,
+) -> AppResult<impl IntoResponse> {
+    let author_id = match repo::increment_view(&s.db, id).await? {
+        Some(author_id) => author_id,
+        None => return Ok(StatusCode::NO_CONTENT),
+    };
+    // Attribute the view to the recommendation pipeline only when we know who
+    // is viewing; anonymous views still bump the counter above.
+    if let Some(me) = current(&s, &h) {
+        // Best-effort CTR attribution: a logged-in view closes the loop on any
+        // open impression of this post. Never blocks the view path.
+        if let Err(err) = repo::mark_recommendation_clicked(&s.db, me.id, id).await {
+            tracing::warn!(error = %err, user_id = %me.id, post_id = %id, "failed to mark recommendation clicked");
+        }
+        let env = Envelope::new(
+            "viewed",
+            "content-service",
+            ViewData {
+                user_id: me.id,
+                post_id: id,
+                post_author_id: author_id,
+            },
+        );
+        s.kafka
+            .produce_json(TOPIC_INTERACTIONS, id.to_string().as_str(), &env)
+            .await;
+    }
     Ok(StatusCode::NO_CONTENT)
 }
 

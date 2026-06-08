@@ -233,11 +233,15 @@ pub async fn list_replies(
     .await?)
 }
 
+/// Soft-deletes a comment. Returns `(post_id, was_top_level, changed)` where
+/// `changed` is false when the comment was already deleted — callers must not
+/// adjust counters again in that case, otherwise repeated DELETEs drive
+/// `comment_count` negative.
 pub async fn soft_delete_comment(
     tx: &mut Transaction<'_, Postgres>,
     id: Uuid,
     requester: AuthUser,
-) -> Result<(Uuid /*post_id*/, bool /*was_top_level*/), AppError> {
+) -> Result<(Uuid /*post_id*/, bool /*was_top_level*/, bool /*changed*/), AppError> {
     use common::models::UserRole;
     let row: Option<(Uuid, Uuid, Option<Uuid>, bool)> = sqlx::query_as(
         "SELECT post_id, author_id, parent_comment_id, is_deleted FROM comments WHERE id=$1",
@@ -248,17 +252,19 @@ pub async fn soft_delete_comment(
     let (post_id, author_id, parent, already) = row.ok_or(AppError::NotFound {
         kind: "comment".into(),
     })?;
-    if already {
-        return Ok((post_id, parent.is_none()));
-    }
+    // Authorization is checked before any short-circuit so that callers cannot
+    // probe or act on comments they do not own.
     if author_id != requester.id && requester.role != UserRole::Admin {
         return Err(AppError::Forbidden);
+    }
+    if already {
+        return Ok((post_id, parent.is_none(), false));
     }
     sqlx::query("UPDATE comments SET is_deleted = true WHERE id=$1")
         .bind(id)
         .execute(&mut **tx)
         .await?;
-    Ok((post_id, parent.is_none()))
+    Ok((post_id, parent.is_none(), true))
 }
 
 // === saved posts ===

@@ -43,6 +43,16 @@ pub struct UserFollowed {
     pub followed_at: DateTime<Utc>,
 }
 
+/// A user viewing a post. Emitted by content-service on `POST /posts/{id}/view`
+/// when the request carries a valid session, so the feature store and trending
+/// set receive the (highest-volume) view signal.
+#[derive(Serialize)]
+pub struct ViewData {
+    pub user_id: Uuid,
+    pub post_id: Uuid,
+    pub post_author_id: Uuid,
+}
+
 #[derive(Serialize)]
 pub struct ModerationAction {
     pub actor_id: Uuid,

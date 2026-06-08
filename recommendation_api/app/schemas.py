@@ -52,6 +52,7 @@ class EvaluateRequest(BaseModel):
 
 class EvaluateResponse(BaseModel):
     precision_at_k: float
+    recall_at_k: float
     ctr_simulation: float
     diversity: float
     fallback_rate: float

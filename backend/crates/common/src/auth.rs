@@ -69,8 +69,11 @@ pub fn hash_password(plain: &str, m_cost: u32, t_cost: u32, p_cost: u32) -> anyh
     let mut salt_bytes = [0u8; 16];
     rand::rng().fill(&mut salt_bytes);
     use base64::Engine;
-    let mut b64 = base64::engine::general_purpose::STANDARD_NO_PAD.encode(salt_bytes);
-    b64 = b64.replace('+', ".").replace('/', "/");
+    // SaltString uses the PHC B64 alphabet (`[./0-9A-Za-z]`), in which `+` is
+    // invalid but `/` is valid — so only `+` needs remapping.
+    let b64 = base64::engine::general_purpose::STANDARD_NO_PAD
+        .encode(salt_bytes)
+        .replace('+', ".");
     let salt = SaltString::from_b64(&b64)
         .map_err(|e| anyhow::anyhow!("salt encoding: {e}"))?;
     let params = argon2::Params::new(m_cost, t_cost, p_cost, None)

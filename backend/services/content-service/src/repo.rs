@@ -173,11 +173,40 @@ pub async fn delete(db: &PgPool, id: Uuid) -> Result<bool, AppError> {
         == 1)
 }
 
-pub async fn increment_view(db: &PgPool, id: Uuid) -> Result<(), AppError> {
-    sqlx::query("UPDATE posts SET view_count = view_count + 1 WHERE id = $1")
-        .bind(id)
-        .execute(db)
-        .await?;
+/// Increments the view counter and returns the post's author, or `None` if the
+/// post does not exist.
+pub async fn increment_view(db: &PgPool, id: Uuid) -> Result<Option<Uuid>, AppError> {
+    Ok(sqlx::query_scalar::<_, Uuid>(
+        "UPDATE posts SET view_count = view_count + 1 WHERE id = $1 RETURNING author_id",
+    )
+    .bind(id)
+    .fetch_optional(db)
+    .await?)
+}
+
+/// Best-effort: mark the most recent un-clicked impression of `post_id` for
+/// `user_id` as clicked. Drives recommender CTR (clicked / served). Callers must
+/// treat failures as non-fatal — the view counter and event still proceed.
+pub async fn mark_recommendation_clicked(
+    db: &PgPool,
+    user_id: Uuid,
+    post_id: Uuid,
+) -> Result<(), AppError> {
+    sqlx::query(
+        r#"
+        UPDATE recommendations SET clicked_at = now()
+        WHERE (user_id, post_id, served_at) = (
+            SELECT user_id, post_id, served_at FROM recommendations
+            WHERE user_id = $1 AND post_id = $2 AND clicked_at IS NULL
+            ORDER BY served_at DESC
+            LIMIT 1
+        )
+        "#,
+    )
+    .bind(user_id)
+    .bind(post_id)
+    .execute(db)
+    .await?;
     Ok(())
 }
 

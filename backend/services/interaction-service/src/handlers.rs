@@ -320,8 +320,8 @@ pub async fn delete_comment(
 ) -> AppResult<impl IntoResponse> {
     let me = current(&s, &h).ok_or(AppError::Unauthorized)?;
     let mut tx = s.db.begin().await?;
-    let (post_id, was_top) = repo::soft_delete_comment(&mut tx, id, me).await?;
-    if was_top {
+    let (post_id, was_top, changed) = repo::soft_delete_comment(&mut tx, id, me).await?;
+    if changed && was_top {
         repo::bump_counter(&mut tx, post_id, "comment_count", -1).await?;
     }
     tx.commit().await?;

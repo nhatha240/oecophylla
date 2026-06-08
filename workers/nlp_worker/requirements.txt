@@ -3,5 +3,6 @@ aiokafka==0.12.*
 cramjam>=2.8
 pydantic==2.*
 pydantic-settings==2.*
+httpx==0.28.*
 pytest==8.*
 pytest-asyncio==0.25.*
