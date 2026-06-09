@@ -2,8 +2,8 @@
   import { goto, invalidateAll } from '$app/navigation';
   import { page } from '$app/stores';
   import type { PageData } from './$types';
-  import type { SearchPost, Profile, FeedItem } from '$lib/types';
-  import { searchPosts, searchUsers } from '$lib/api';
+  import type { SearchPost, Profile, FeedItem, MyInteractions } from '$lib/types';
+  import { searchPosts, searchUsers, getMyInteractionsBatch } from '$lib/api';
   import PostCard from '$lib/components/PostCard.svelte';
   import InfiniteSentinel from '$lib/components/InfiniteSentinel.svelte';
   import Icon from '$lib/apple-glass/components/Icon.svelte';
@@ -15,12 +15,14 @@
   let activeType: 'post' | 'user' = (data.type as 'post' | 'user') ?? 'post';
   let activeFilter = data.filter ?? 'all';
   let loading = false;
+  let meByPost: Record<string, MyInteractions> = (data.me ?? {}) as Record<string, MyInteractions>;
 
   // Re-sync when server re-runs the load (URL navigation)
   $: {
     q = data.q;
     activeType = (data.type as 'post' | 'user') ?? 'post';
     activeFilter = data.filter ?? 'all';
+    meByPost = (data.me ?? {}) as Record<string, MyInteractions>;
   }
   $: posts = (data.posts?.items ?? []) as SearchPost[];
   $: postCursor = data.posts?.next_cursor ?? null;
@@ -89,7 +91,11 @@
       const next = await searchPosts(fetch, q, postCursor);
       const seen = new Set(posts.map((p) => p.id));
       const fresh = next.items.filter((p) => !seen.has(p.id));
-      if (fresh.length) posts = [...posts, ...fresh];
+      if (fresh.length) {
+        posts = [...posts, ...fresh];
+        const meBatch = await getMyInteractionsBatch(fetch, fresh.map((p) => p.id)).catch(() => ({ items: {} }));
+        meByPost = { ...meByPost, ...meBatch.items };
+      }
       postCursor = next.next_cursor;
     } catch { /* silent */ } finally {
       loading = false;
@@ -220,7 +226,7 @@
           </div>
           <div style="display:flex;flex-direction:column;gap:0;">
             {#each data.featuredPosts as post}
-              <PostCard {post} />
+              <PostCard {post} me={meByPost[post.id] ?? null} />
             {/each}
           </div>
         </div>

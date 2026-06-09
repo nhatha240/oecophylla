@@ -10,7 +10,7 @@
 
   let items: Post[] = data.posts ?? [];
   let cursor: string | null = data.nextCursor ?? null;
-  let meByPost: Record<string, MyInteractions> = {};
+  let meByPost: Record<string, MyInteractions> = data.me ?? {};
   let loading = false;
   let error: string | null = null;
 

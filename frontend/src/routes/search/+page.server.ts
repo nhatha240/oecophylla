@@ -1,10 +1,17 @@
 import type { PageServerLoad } from './$types';
-import { searchPosts, searchUsers, getTrendingTopics, getFeed } from '$lib/api';
+import { searchPosts, searchUsers, getTrendingTopics, getFeed, getMyInteractionsBatch } from '$lib/api';
 
 export const load: PageServerLoad = async ({ url, fetch }) => {
   const q = url.searchParams.get('q') ?? '';
   const type = url.searchParams.get('type') ?? 'post';
   const filter = url.searchParams.get('filter') ?? 'all';
+
+  // Hydrate the viewer's like/save state for a set of posts so they render with
+  // the correct (red) like color. The batch endpoint rejects an empty list.
+  const hydrateMe = async (ids: string[]): Promise<Record<string, unknown>> =>
+    ids.length
+      ? (await getMyInteractionsBatch(fetch, ids).catch(() => ({ items: {} }))).items
+      : {};
 
   // When no query → explore/discovery mode
   if (!q.trim()) {
@@ -19,6 +26,7 @@ export const load: PageServerLoad = async ({ url, fetch }) => {
     const creators = creatorsResult.status === 'fulfilled'
       ? creatorsResult.value.items.filter((u) => u.role === 'creator').slice(0, 4)
       : [];
+    const me = await hydrateMe(featuredPosts.map((p) => p.id));
 
     return {
       q, type, filter,
@@ -27,6 +35,7 @@ export const load: PageServerLoad = async ({ url, fetch }) => {
       featuredPosts,
       creators,
       posts: null, users: null,
+      me,
     };
   }
 
@@ -42,8 +51,9 @@ export const load: PageServerLoad = async ({ url, fetch }) => {
 
   try {
     const posts = await searchPosts(fetch, q);
-    return { q, type, filter, mode: 'search' as const, posts, users: null, trendingTopics: [], featuredPosts: [], creators: [] };
+    const me = await hydrateMe(posts.items.map((p) => p.id));
+    return { q, type, filter, mode: 'search' as const, posts, users: null, trendingTopics: [], featuredPosts: [], creators: [], me };
   } catch {
-    return { q, type, filter, mode: 'search' as const, posts: { items: [], next_cursor: null }, users: null, trendingTopics: [], featuredPosts: [], creators: [] };
+    return { q, type, filter, mode: 'search' as const, posts: { items: [], next_cursor: null }, users: null, trendingTopics: [], featuredPosts: [], creators: [], me: {} };
   }
 };

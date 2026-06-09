@@ -4,9 +4,11 @@
   import { user } from '$lib/stores/auth';
   import { ApiException, apiFetch } from '$lib/api';
   import { showToast } from '$lib/stores/toast';
-  import type { Profile } from '$lib/types';
+  import type { Profile, MyInteractions } from '$lib/types';
 
-  export let data: { profile: Profile; posts: import('$lib/types').Post[] };
+  export let data: { profile: Profile; posts: import('$lib/types').Post[]; me?: Record<string, MyInteractions> };
+
+  $: meByPost = data.me ?? {};
 
   const ALL_TOPICS = ['tech', 'science', 'sports', 'politics', 'entertainment', 'health', 'business', 'culture', 'education', 'environment'];
 
@@ -213,7 +215,7 @@
       </div>
 
       {#if activeTab === 'posts'}
-        {#each data.posts as p (p.id)}<PostCard post={p} />{/each}
+        {#each data.posts as p (p.id)}<PostCard post={p} me={meByPost[p.id] ?? null} />{/each}
         {#if data.posts.length === 0}<p class="muted">Chưa có bài viết.</p>{/if}
       {:else if activeTab === 'followers'}
         {#if loadingTab}
