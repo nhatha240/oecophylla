@@ -12,20 +12,22 @@ import logging
 
 import httpx
 
-from .keywords import TOPIC_KEYWORDS_EN, TOPIC_KEYWORDS_VI
 from .settings import Settings
+from .topics import CANONICAL_TOPICS, normalize_topics
 
 logger = logging.getLogger("nlp_worker.llm")
 
-# Constrain the model to the same topic vocabulary the keyword analyzer uses,
-# so downstream ranking/feed code sees a consistent label space.
-ALLOWED_TOPICS = sorted(set(TOPIC_KEYWORDS_EN) | set(TOPIC_KEYWORDS_VI))
+# Canonical slugs are a *preference*, not a hard whitelist — classification is
+# dynamic, so the model may introduce a new concise slug when nothing fits.
+_PREFERRED = ", ".join(CANONICAL_TOPICS.keys())
 
 SYSTEM_PROMPT = (
     "You are a content classifier for a Vietnamese/English social platform. "
     "Given a post, return STRICT JSON with two keys:\n"
-    '  "topics": an array of 1-3 labels chosen ONLY from this list: '
-    f"{ALLOWED_TOPICS}. Use [\"general\"] if none fit.\n"
+    '  "topics": an array of 1-3 short lowercase topic slugs. PREFER these '
+    f"existing slugs when they fit: {_PREFERRED}. If none fit, you MAY coin a "
+    "new concise slug in lowercase-hyphenated English (e.g. \"space-travel\"). "
+    'Use ["general"] only when the post has no clear topic.\n'
     '  "safety_score": a float in [0,1] where 1.0 is completely safe and 0.0 is '
     "severely unsafe (hate, violence, explicit, scams). "
     "Return ONLY the JSON object, no prose."
@@ -33,12 +35,14 @@ SYSTEM_PROMPT = (
 
 
 def _coerce(raw: dict) -> dict | None:
-    """Validate and normalize the model's JSON into {topics, safety_score}."""
+    """Validate and normalize the model's JSON into {topics, safety_score}.
+
+    Topics are slugified + alias-collapsed (dynamic vocabulary) rather than
+    whitelisted, so emergent topics survive while staying well-formed."""
     topics = raw.get("topics")
     if not isinstance(topics, list):
         return None
-    allowed = set(ALLOWED_TOPICS) | {"general"}
-    clean = [t for t in topics if isinstance(t, str) and t in allowed]
+    clean = normalize_topics(topics, limit=3)
     if not clean:
         clean = ["general"]
 
@@ -49,10 +53,7 @@ def _coerce(raw: dict) -> dict | None:
         score = 1.0
     score = max(0.0, min(1.0, score))
 
-    # Dedup while preserving order, cap at 3.
-    seen: set[str] = set()
-    topics_out = [t for t in clean if not (t in seen or seen.add(t))][:3]
-    return {"topics": topics_out, "safety_score": round(score, 3)}
+    return {"topics": clean, "safety_score": round(score, 3)}
 
 
 async def analyze(cfg: Settings, content: str) -> dict | None:

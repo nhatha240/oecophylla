@@ -27,9 +27,12 @@ import sys
 import asyncpg
 from argon2 import PasswordHasher
 
+# Canonical topic slugs — keep in sync with workers/nlp_worker/app/topics.py
+# and frontend/src/lib/topics.ts ("general" is the no-topic fallback, not seeded).
 TOPICS = [
     "tech", "science", "sports", "politics", "entertainment",
     "health", "business", "culture", "education", "environment",
+    "ai", "music", "news",
 ]
 
 # Interaction signal weights (Bảng 2.2). `view`/`comment` are NOT interaction

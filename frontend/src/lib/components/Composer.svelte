@@ -1,5 +1,6 @@
 <script lang="ts">
   import Icon from '$lib/apple-glass/components/Icon.svelte';
+  import { topicLabel } from '$lib/topics';
   export let action = '/post/new';
   export let error: string | null = null;
   // When true, render the dedicated compose surface with a prominent writing well.
@@ -57,12 +58,6 @@
     news: ['news','breaking','report','update','tin tức','báo chí','tin nóng','thời sự'],
   };
 
-  const TOPIC_LABELS: Record<string, string> = {
-    tech: 'Công nghệ', science: 'Khoa học', sports: 'Thể thao',
-    politics: 'Chính trị', entertainment: 'Giải trí', health: 'Sức khoẻ',
-    business: 'Kinh doanh', culture: 'Văn hoá', education: 'Giáo dục',
-    environment: 'Môi trường', ai: 'AI', news: 'Tin tức',
-  };
 
   // Extract #hashtags typed inside the content body
   function extractHashtags(text: string): string[] {
@@ -190,7 +185,7 @@
     {#if suggestedTags.length > 0}
       <div class="composer-suggest">
         {#each suggestedTags as tag}
-          {@const label = TOPIC_LABELS[tag] ?? tag}
+          {@const label = topicLabel(tag)}
           {@const active = selectedTags.includes(tag)}
           <button
             type="button"

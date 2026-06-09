@@ -6,6 +6,7 @@
   import { apiFetch, ApiException, changePassword, deleteAccount } from '$lib/api';
   import { showToast } from '$lib/stores/toast';
   import type { Profile } from '$lib/types';
+  import { TOPICS } from '$lib/topics';
 
   export let data: { profile: Profile };
 
@@ -29,18 +30,9 @@
   let deleteConfirmText = '';
   let deleting = false;
 
-  const allTopics: { key: string; label: string }[] = [
-    { key: 'tech', label: 'Công nghệ' },
-    { key: 'science', label: 'Khoa học' },
-    { key: 'sports', label: 'Thể thao' },
-    { key: 'politics', label: 'Chính trị' },
-    { key: 'entertainment', label: 'Giải trí' },
-    { key: 'health', label: 'Sức khỏe' },
-    { key: 'business', label: 'Kinh doanh' },
-    { key: 'culture', label: 'Văn hóa' },
-    { key: 'education', label: 'Giáo dục' },
-    { key: 'environment', label: 'Môi trường' }
-  ];
+  // Picker options come from the shared topic vocabulary; exclude "general"
+  // (the no-topic fallback, not a real interest to pick).
+  const allTopics = TOPICS.filter((t) => t.key !== 'general');
 
   $: bioLength = bio.length;
   $: passwordMismatch = confirmNewPassword.length > 0 && newPassword !== confirmNewPassword;

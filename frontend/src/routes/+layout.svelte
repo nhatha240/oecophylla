@@ -9,19 +9,11 @@
   import { user } from '$lib/stores/auth';
   import { notifications } from '$lib/stores/notifications';
   import { clearToast, toast } from '$lib/stores/toast';
+  import { topicLabel } from '$lib/topics';
   export let data: { user: import('$lib/types').User | null };
   $: user.set(data.user);
 
   const topicColors = ['#22c55e', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
-  const topicLabels: Record<string, string> = {
-    tech: 'Công nghệ', science: 'Khoa học', sports: 'Thể thao',
-    politics: 'Chính trị', entertainment: 'Giải trí', health: 'Sức khoẻ',
-    business: 'Kinh doanh', culture: 'Văn hoá', education: 'Giáo dục',
-    environment: 'Môi trường', ai: 'Trí tuệ nhân tạo', news: 'Tin tức',
-    // Superset of ALLOWED_TOPICS in workers/nlp_worker/app/llm.py (analyzer
-    // emits singular `sport` plus `music`/`general`).
-    sport: 'Thể thao', music: 'Âm nhạc', general: 'Tổng hợp',
-  };
 
   let theme: 'light' | 'dark' = 'light';
   let q = '';
@@ -145,7 +137,7 @@
           {#each (currentUser.topic_prefs ?? []).slice(0, 4) as topic, i}
             <a class="nav-item" href="/search?q={encodeURIComponent(topic)}">
               <span class="topic-dot" style="background:{topicColors[i % topicColors.length]};width:10px;height:10px;border-radius:50%;flex-shrink:0;display:inline-block;"></span>
-              <span>{topicLabels[topic] ?? topic}</span>
+              <span>{topicLabel(topic)}</span>
             </a>
           {/each}
         </nav>

@@ -2,6 +2,7 @@
   import type { Post, MyInteractions } from '$lib/types';
   import PostActionBar from './PostActionBar.svelte';
   import Icon from '$lib/apple-glass/components/Icon.svelte';
+  import { topicLabel } from '$lib/topics';
 
   export let post: Post;
   export let me: MyInteractions | null = null;
@@ -40,21 +41,9 @@
   $: titleText = lines[0] ?? post.content;
   $: excerptText = lines.length > 1 ? lines.slice(1).join(' ') : '';
 
-  // Topics display labels
-  const topicLabels: Record<string, string> = {
-    tech: 'Công nghệ', science: 'Khoa học', sports: 'Thể thao',
-    politics: 'Chính trị', entertainment: 'Giải trí', health: 'Sức khoẻ',
-    business: 'Kinh doanh', culture: 'Văn hoá', education: 'Giáo dục',
-    environment: 'Môi trường', ai: 'AI & Học máy', news: 'Tin tức',
-    // Labels emitted by the NLP analyzer / LLM (keyword vocab uses singular
-    // `sport` and includes `music`/`general`). Keep this map a superset of
-    // ALLOWED_TOPICS in workers/nlp_worker/app/llm.py so every tag displays.
-    sport: 'Thể thao', music: 'Âm nhạc', general: 'Tổng hợp',
-  };
-
   // Recommendation reason from rank
   $: rankReason = ('rank' in post && (post as any).rank?.reason) ? (post as any).rank.reason : '';
-  $: rankTopics = post.topics?.slice(0, 2).map(t => topicLabels[t] ?? t).join(' và ') ?? '';
+  $: rankTopics = post.topics?.slice(0, 2).map(t => topicLabel(t)).join(' và ') ?? '';
 
   // Format view count
   function fmtNum(n: number): string {
@@ -126,7 +115,7 @@
       <a href="/search?q={encodeURIComponent(t)}" class="chip" style="font-size:12px;">#{t}</a>
     {/each}
     {#each (post.topics ?? []).slice(0, 2) as topic}
-      <a href="/topic/{topic}" class="chip active" style="font-size:12px;">{topicLabels[topic] ?? topic}</a>
+      <a href="/topic/{topic}" class="chip active" style="font-size:12px;">{topicLabel(topic)}</a>
     {/each}
     {#if post.view_count > 0}
       <span class="t-meta" style="margin-left:auto;display:flex;align-items:center;gap:4px;white-space:nowrap;font-size:12px;">
