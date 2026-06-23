@@ -1,0 +1,47 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]: O
+      - generic [ref=e7]:
+        - text: Oecophy
+        - emphasis [ref=e8]: lla
+    - heading "Theo dõi tin tức phù hợp với bạn, mỗi ngày." [level=1] [ref=e12]
+    - generic [ref=e13]: Một mạng xã hội nội dung minh bạch, có kiểm duyệt và do bạn tự định hình.
+  - generic [ref=e14]:
+    - generic [ref=e15]:
+      - link "Đăng nhập" [ref=e16] [cursor=pointer]:
+        - /url: /login
+      - link "Tạo tài khoản" [ref=e17] [cursor=pointer]:
+        - /url: /register
+    - heading "Chào mừng trở lại" [level=1] [ref=e18]
+    - paragraph [ref=e19]: Tiếp tục với bảng tin đã cá nhân hoá của bạn.
+    - generic [ref=e20]:
+      - button "Google" [ref=e21] [cursor=pointer]
+      - button "Facebook" [ref=e22] [cursor=pointer]
+      - button "Apple" [ref=e23] [cursor=pointer]
+    - generic [ref=e24]: hoặc dùng email
+    - generic [ref=e25]:
+      - generic [ref=e26]:
+        - generic [ref=e27]: Email hoặc username
+        - textbox "Email hoặc username" [ref=e28]:
+          - /placeholder: ban@vidu.com hoặc username
+      - generic [ref=e29]:
+        - generic [ref=e30]: Mật khẩu
+        - textbox "Mật khẩu" [ref=e31]:
+          - /placeholder: Tối thiểu 8 ký tự
+        - generic [ref=e32]: Cookie phiên sẽ được lưu an toàn trên trình duyệt.
+      - generic [ref=e33]:
+        - generic [ref=e34]:
+          - checkbox "Ghi nhớ thiết bị này" [checked] [ref=e35]
+          - text: Ghi nhớ thiết bị này
+        - link "Chưa có tài khoản?" [ref=e36] [cursor=pointer]:
+          - /url: /register
+      - button "Đăng nhập" [ref=e37] [cursor=pointer]
+    - paragraph [ref=e38]:
+      - text: Khi tiếp tục, bạn đồng ý với
+      - link "Điều khoản" [ref=e39] [cursor=pointer]:
+        - /url: /
+      - text: và
+      - link "Chính sách bảo mật" [ref=e40] [cursor=pointer]:
+        - /url: /
+      - text: của Oecophylla.

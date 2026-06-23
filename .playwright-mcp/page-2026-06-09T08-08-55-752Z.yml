@@ -1,0 +1,96 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - link "O Oecophylla" [ref=e5] [cursor=pointer]:
+      - /url: /
+      - generic [ref=e6]: O
+      - generic [ref=e7]:
+        - text: Oecophy
+        - emphasis [ref=e8]: lla
+    - navigation [ref=e9]:
+      - link "Trang chủ" [ref=e10] [cursor=pointer]:
+        - /url: /
+        - img [ref=e11]
+        - generic [ref=e15]: Trang chủ
+      - link "Khám phá" [ref=e16] [cursor=pointer]:
+        - /url: /search
+        - img [ref=e17]
+        - generic [ref=e20]: Khám phá
+      - link "Theo dõi" [ref=e21] [cursor=pointer]:
+        - /url: /?feed=following
+        - img [ref=e22]
+        - generic [ref=e27]: Theo dõi
+      - link "Đã lưu" [ref=e28] [cursor=pointer]:
+        - /url: /saved
+        - img [ref=e29]
+        - generic [ref=e31]: Đã lưu
+      - link "Thông báo" [ref=e32] [cursor=pointer]:
+        - /url: /notifications
+        - img [ref=e33]
+        - generic [ref=e36]: Thông báo
+      - link "Hồ sơ" [ref=e37] [cursor=pointer]:
+        - /url: /login
+        - img [ref=e38]
+        - generic [ref=e41]: Hồ sơ
+    - generic [ref=e42]:
+      - generic [ref=e44] [cursor=pointer]:
+        - generic [ref=e45]: Khách
+        - generic [ref=e46]: Đăng nhập để cá nhân hoá bảng tin
+      - generic [ref=e47]:
+        - link "Đăng nhập" [ref=e48] [cursor=pointer]:
+          - /url: /login
+          - img [ref=e49]
+          - generic [ref=e51]: Đăng nhập
+        - link "Tạo tài khoản" [ref=e52] [cursor=pointer]:
+          - /url: /register
+          - img [ref=e53]
+          - generic [ref=e55]: Tạo tài khoản
+  - generic [ref=e56]:
+    - banner [ref=e57]:
+      - generic [ref=e58]:
+        - text: Bảng tin
+        - emphasis [ref=e59]: · Dành cho bạn
+      - generic [ref=e60]:
+        - img [ref=e62]
+        - textbox "Tìm chủ đề, tác giả, hoặc bài viết…" [ref=e65]
+      - button "Đổi giao diện" [ref=e67] [cursor=pointer]:
+        - img [ref=e68]
+    - generic [ref=e70]:
+      - main [ref=e71]:
+        - generic [ref=e72]:
+          - generic [ref=e73]:
+            - button "Dành cho bạn" [ref=e74] [cursor=pointer]:
+              - img [ref=e75]
+              - text: Dành cho bạn
+            - button "Đang theo dõi" [ref=e78] [cursor=pointer]:
+              - img [ref=e79]
+              - text: Đang theo dõi
+            - button "Tin mới" [ref=e84] [cursor=pointer]:
+              - img [ref=e85]
+              - text: Tin mới
+            - button "Xu hướng" [ref=e88] [cursor=pointer]:
+              - img [ref=e89]
+              - text: Xu hướng
+            - link "Đã lưu" [ref=e91] [cursor=pointer]:
+              - /url: /saved
+              - img [ref=e92]
+              - text: Đã lưu
+          - generic [ref=e94]: Cập nhật 0 giây trước
+        - generic [ref=e95]:
+          - heading "Bảng tin Apple Glass đang chờ bạn" [level=2] [ref=e96]
+          - paragraph [ref=e97]: Đăng nhập để xem dòng tin được cá nhân hoá, theo dõi chủ đề quan tâm và lưu bài viết để đọc lại.
+          - link "Đăng nhập" [ref=e98] [cursor=pointer]:
+            - /url: /login
+      - complementary [ref=e99]:
+        - generic [ref=e100]:
+          - heading "Đang thịnh hành" [level=4] [ref=e101]:
+            - img [ref=e102]
+            - text: Đang thịnh hành
+          - paragraph [ref=e104]: Đang tải xu hướng…
+        - generic [ref=e105]:
+          - heading "Nhịp đọc của bạn" [level=4] [ref=e107]:
+            - img [ref=e108]
+            - text: Nhịp đọc của bạn
+          - paragraph [ref=e110]:
+            - link "Đăng nhập" [ref=e111] [cursor=pointer]:
+              - /url: /login
+            - text: để cá nhân hoá nhịp đọc.

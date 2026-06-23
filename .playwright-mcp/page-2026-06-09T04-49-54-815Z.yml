@@ -1,0 +1,268 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - link "O Oecophylla" [ref=e5] [cursor=pointer]:
+      - /url: /
+      - generic [ref=e6]: O
+      - generic [ref=e7]:
+        - text: Oecophy
+        - emphasis [ref=e8]: lla
+    - navigation [ref=e9]:
+      - link "Trang chủ" [ref=e10] [cursor=pointer]:
+        - /url: /
+        - img [ref=e11]
+        - generic [ref=e15]: Trang chủ
+      - link "Khám phá" [ref=e16] [cursor=pointer]:
+        - /url: /search
+        - img [ref=e17]
+        - generic [ref=e20]: Khám phá
+      - link "Theo dõi" [ref=e21] [cursor=pointer]:
+        - /url: /?feed=following
+        - img [ref=e22]
+        - generic [ref=e27]: Theo dõi
+      - link "Đã lưu" [ref=e28] [cursor=pointer]:
+        - /url: /saved
+        - img [ref=e29]
+        - generic [ref=e31]: Đã lưu
+      - link "Thông báo" [ref=e32] [cursor=pointer]:
+        - /url: /notifications
+        - img [ref=e33]
+        - generic [ref=e36]: Thông báo
+      - link "Hồ sơ" [ref=e37] [cursor=pointer]:
+        - /url: /profile/019eaaab-d10d-7bcf-9148-159e972ac8fe
+        - img [ref=e38]
+        - generic [ref=e41]: Hồ sơ
+    - generic [ref=e42]:
+      - generic [ref=e43] [cursor=pointer]:
+        - link "U UI Tester @uitester1" [ref=e44]:
+          - /url: /profile/019eaaab-d10d-7bcf-9148-159e972ac8fe
+          - generic [ref=e45]: U
+          - generic [ref=e46]:
+            - generic [ref=e47]: UI Tester
+            - generic [ref=e48]: "@uitester1"
+        - link "Cài đặt" [ref=e49]:
+          - /url: /settings
+          - img [ref=e50]
+      - button "Đăng xuất" [ref=e54] [cursor=pointer]:
+        - img [ref=e55]
+        - generic [ref=e57]: Đăng xuất
+  - generic [ref=e58]:
+    - banner [ref=e59]:
+      - generic [ref=e60]: Hồ sơ
+      - generic [ref=e61]:
+        - img [ref=e63]
+        - textbox "Tìm chủ đề, tác giả, hoặc bài viết…" [ref=e66]
+      - generic [ref=e67]:
+        - button "Đổi giao diện" [ref=e68] [cursor=pointer]:
+          - img [ref=e69]
+        - button "Thông báo" [ref=e72] [cursor=pointer]:
+          - img [ref=e73]
+    - generic [ref=e76]:
+      - generic [ref=e78]:
+        - generic [ref=e80]: C
+        - generic [ref=e81]:
+          - heading "chan nhan" [level=2] [ref=e82]:
+            - text: chan nhan
+            - img [ref=e83]
+          - generic [ref=e85]: "@cn01minhphuong · tham gia từ 27/5/2026"
+          - paragraph [ref=e86]: Người dùng Oecophylla đang xây dựng hồ sơ đọc tin và dấu chân thảo luận của mình.
+          - generic [ref=e87]:
+            - generic [ref=e88]: 4 bài viết
+            - button "— người theo dõi" [ref=e89] [cursor=pointer]
+            - button "— đang theo dõi" [ref=e90] [cursor=pointer]
+        - button "+ Theo dõi" [ref=e92] [cursor=pointer]
+      - generic [ref=e93]:
+        - generic [ref=e94]:
+          - generic [ref=e95]:
+            - button "Bài viết 4" [ref=e96] [cursor=pointer]:
+              - text: Bài viết
+              - generic [ref=e97]: "4"
+            - button "Người theo dõi" [ref=e98] [cursor=pointer]
+            - button "Đang theo dõi" [ref=e99] [cursor=pointer]
+          - article [ref=e100]:
+            - generic [ref=e101]:
+              - link "NG" [ref=e102] [cursor=pointer]:
+                - /url: /profile/019e6758-c875-735d-90d4-cac76ba4c585
+              - generic [ref=e103]:
+                - link "Người dùng" [ref=e105] [cursor=pointer]:
+                  - /url: /profile/019e6758-c875-735d-90d4-cac76ba4c585
+                - generic [ref=e106]:
+                  - generic [ref=e107]: "@019e6758"
+                  - generic [ref=e108]: ·
+                  - generic [ref=e109]: 12 giờ trước
+              - generic [ref=e110]:
+                - generic [ref=e111] [cursor=pointer]:
+                  - img [ref=e112]
+                  - text: Nguồn đáng tin cậy
+                - link "Xem chi tiết" [ref=e115] [cursor=pointer]:
+                  - /url: /post/019ea81b-6bc9-7361-b86a-c81cb17ea389
+                  - img [ref=e116]
+            - link "he he h" [ref=e120] [cursor=pointer]:
+              - /url: /post/019ea81b-6bc9-7361-b86a-c81cb17ea389
+            - generic [ref=e121]:
+              - link "#chuabiet" [ref=e122] [cursor=pointer]:
+                - /url: /search?q=chuabiet
+              - link "Tổng hợp" [ref=e123] [cursor=pointer]:
+                - /url: /topic/general
+              - generic [ref=e124]:
+                - img [ref=e125]
+                - text: 4 lượt đọc
+            - generic [ref=e128]:
+              - img [ref=e129]
+              - generic [ref=e132]: Được đề xuất vì bạn quan tâm đến Tổng hợp.
+            - generic [ref=e133]:
+              - button "3" [pressed] [ref=e134] [cursor=pointer]:
+                - img [ref=e135]
+                - text: "3"
+              - button "0" [ref=e137] [cursor=pointer]:
+                - img [ref=e138]
+                - text: "0"
+              - link "0" [ref=e140] [cursor=pointer]:
+                - /url: /post/019ea81b-6bc9-7361-b86a-c81cb17ea389
+                - img [ref=e141]
+                - text: "0"
+              - generic [ref=e143]:
+                - img [ref=e144]
+                - text: "0"
+          - article [ref=e149]:
+            - generic [ref=e150]:
+              - link "NG" [ref=e151] [cursor=pointer]:
+                - /url: /profile/019e6758-c875-735d-90d4-cac76ba4c585
+              - generic [ref=e152]:
+                - link "Người dùng" [ref=e154] [cursor=pointer]:
+                  - /url: /profile/019e6758-c875-735d-90d4-cac76ba4c585
+                - generic [ref=e155]:
+                  - generic [ref=e156]: "@019e6758"
+                  - generic [ref=e157]: ·
+                  - generic [ref=e158]: 31/5/2026
+              - generic [ref=e159]:
+                - generic [ref=e160] [cursor=pointer]:
+                  - img [ref=e161]
+                  - text: Nguồn đáng tin cậy
+                - link "Xem chi tiết" [ref=e164] [cursor=pointer]:
+                  - /url: /post/019e7e2a-c765-7c72-89fc-e0d3f85d6c22
+                  - img [ref=e165]
+            - 'link "Breaking: new AI machine learning research on neural networks and deep learning models from a tech startup. Software engineers love this technology." [ref=e169] [cursor=pointer]':
+              - /url: /post/019e7e2a-c765-7c72-89fc-e0d3f85d6c22
+            - generic [ref=e170]:
+              - link "AI & Học máy" [ref=e171] [cursor=pointer]:
+                - /url: /topic/ai
+              - link "Kinh doanh" [ref=e172] [cursor=pointer]:
+                - /url: /topic/business
+              - generic [ref=e173]:
+                - img [ref=e174]
+                - text: 26 lượt đọc
+            - generic [ref=e177]:
+              - img [ref=e178]
+              - generic [ref=e181]: Được đề xuất vì bạn quan tâm đến AI & Học máy và Kinh doanh.
+            - generic [ref=e182]:
+              - button "1" [ref=e183] [cursor=pointer]:
+                - img [ref=e184]
+                - text: "1"
+              - button "0" [ref=e186] [cursor=pointer]:
+                - img [ref=e187]
+                - text: "0"
+              - link "0" [ref=e189] [cursor=pointer]:
+                - /url: /post/019e7e2a-c765-7c72-89fc-e0d3f85d6c22
+                - img [ref=e190]
+                - text: "0"
+              - generic [ref=e192]:
+                - img [ref=e193]
+                - text: "0"
+          - article [ref=e198]:
+            - generic [ref=e199]:
+              - link "NG" [ref=e200] [cursor=pointer]:
+                - /url: /profile/019e6758-c875-735d-90d4-cac76ba4c585
+              - generic [ref=e201]:
+                - link "Người dùng" [ref=e203] [cursor=pointer]:
+                  - /url: /profile/019e6758-c875-735d-90d4-cac76ba4c585
+                - generic [ref=e204]:
+                  - generic [ref=e205]: "@019e6758"
+                  - generic [ref=e206]: ·
+                  - generic [ref=e207]: 31/5/2026
+              - generic [ref=e208]:
+                - generic [ref=e209] [cursor=pointer]:
+                  - img [ref=e210]
+                  - text: Nguồn đáng tin cậy
+                - link "Xem chi tiết" [ref=e213] [cursor=pointer]:
+                  - /url: /post/019e7e27-0c8d-7c73-994b-314b31477382
+                  - img [ref=e214]
+            - link "Bài viết về cuoc song lap trinh hom nay, tai chi dang di xuong" [ref=e218] [cursor=pointer]:
+              - /url: /post/019e7e27-0c8d-7c73-994b-314b31477382
+            - generic [ref=e219]:
+              - 'link "##ai #laptrinh" [ref=e220] [cursor=pointer]':
+                - /url: /search?q=%23ai%20%20%23laptrinh
+              - link "AI & Học máy" [ref=e221] [cursor=pointer]:
+                - /url: /topic/ai
+              - link "Âm nhạc" [ref=e222] [cursor=pointer]:
+                - /url: /topic/music
+              - generic [ref=e223]:
+                - img [ref=e224]
+                - text: 1 lượt đọc
+            - generic [ref=e227]:
+              - img [ref=e228]
+              - generic [ref=e231]: Được đề xuất vì bạn quan tâm đến AI & Học máy và Âm nhạc.
+            - generic [ref=e232]:
+              - button "1" [ref=e233] [cursor=pointer]:
+                - img [ref=e234]
+                - text: "1"
+              - button "0" [ref=e236] [cursor=pointer]:
+                - img [ref=e237]
+                - text: "0"
+              - link "0" [ref=e239] [cursor=pointer]:
+                - /url: /post/019e7e27-0c8d-7c73-994b-314b31477382
+                - img [ref=e240]
+                - text: "0"
+              - generic [ref=e242]:
+                - img [ref=e243]
+                - text: "0"
+          - article [ref=e248]:
+            - generic [ref=e249]:
+              - link "NG" [ref=e250] [cursor=pointer]:
+                - /url: /profile/019e6758-c875-735d-90d4-cac76ba4c585
+              - generic [ref=e251]:
+                - link "Người dùng" [ref=e253] [cursor=pointer]:
+                  - /url: /profile/019e6758-c875-735d-90d4-cac76ba4c585
+                - generic [ref=e254]:
+                  - generic [ref=e255]: "@019e6758"
+                  - generic [ref=e256]: ·
+                  - generic [ref=e257]: 31/5/2026
+              - generic [ref=e258]:
+                - generic [ref=e259] [cursor=pointer]:
+                  - img [ref=e260]
+                  - text: Nguồn đáng tin cậy
+                - link "Xem chi tiết" [ref=e263] [cursor=pointer]:
+                  - /url: /post/019e7e26-5b6f-7d02-8784-b3e0917af5bb
+                  - img [ref=e264]
+            - link "Bài viết về lập trình AI và machine learning hôm nay" [ref=e268] [cursor=pointer]:
+              - /url: /post/019e7e26-5b6f-7d02-8784-b3e0917af5bb
+            - generic [ref=e269]:
+              - 'link "##ai #laptrinh" [ref=e270] [cursor=pointer]':
+                - /url: /search?q=%23ai%20%20%23laptrinh
+              - link "AI & Học máy" [ref=e271] [cursor=pointer]:
+                - /url: /topic/ai
+              - link "Giáo dục" [ref=e272] [cursor=pointer]:
+                - /url: /topic/education
+              - generic [ref=e273]:
+                - img [ref=e274]
+                - text: 1 lượt đọc
+            - generic [ref=e277]:
+              - img [ref=e278]
+              - generic [ref=e281]: Được đề xuất vì bạn quan tâm đến AI & Học máy và Giáo dục.
+            - generic [ref=e282]:
+              - button "1" [ref=e283] [cursor=pointer]:
+                - img [ref=e284]
+                - text: "1"
+              - button "0" [ref=e286] [cursor=pointer]:
+                - img [ref=e287]
+                - text: "0"
+              - link "0" [ref=e289] [cursor=pointer]:
+                - /url: /post/019e7e26-5b6f-7d02-8784-b3e0917af5bb
+                - img [ref=e290]
+                - text: "0"
+              - generic [ref=e292]:
+                - img [ref=e293]
+                - text: "0"
+        - complementary [ref=e298]:
+          - generic [ref=e299]:
+            - heading "Hồ sơ sở thích" [level=4] [ref=e300]
+            - paragraph [ref=e301]: Các chủ đề được đồng bộ từ hồ sơ người dùng hiện tại.

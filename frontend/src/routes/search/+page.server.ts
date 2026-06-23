@@ -3,7 +3,11 @@ import { searchPosts, searchUsers, getTrendingTopics, getFeed, getMyInteractions
 
 export const load: PageServerLoad = async ({ url, fetch }) => {
   const q = url.searchParams.get('q') ?? '';
-  const type = url.searchParams.get('type') ?? 'post';
+  // A leading "@" is an explicit user lookup (e.g. "@quynhanh") regardless of
+  // the active tab; the "@" is stripped before querying.
+  const isMention = q.trim().startsWith('@');
+  const mentionQuery = q.trim().replace(/^@+/, '').trim();
+  const type = isMention ? 'user' : (url.searchParams.get('type') ?? 'post');
   const filter = url.searchParams.get('filter') ?? 'all';
 
   // Hydrate the viewer's like/save state for a set of posts so they render with
@@ -13,8 +17,8 @@ export const load: PageServerLoad = async ({ url, fetch }) => {
       ? (await getMyInteractionsBatch(fetch, ids).catch(() => ({ items: {} }))).items
       : {};
 
-  // When no query → explore/discovery mode
-  if (!q.trim()) {
+  // When no query (or a bare "@") → explore/discovery mode
+  if (!q.trim() || (isMention && !mentionQuery)) {
     const [topicsResult, featuredResult, creatorsResult] = await Promise.allSettled([
       getTrendingTopics(fetch),
       getFeed(fetch, undefined, 6),
@@ -41,8 +45,9 @@ export const load: PageServerLoad = async ({ url, fetch }) => {
 
   // Query mode → search results
   if (type === 'user') {
+    const userQuery = isMention ? mentionQuery : q;
     try {
-      const users = await searchUsers(fetch, q);
+      const users = await searchUsers(fetch, userQuery);
       return { q, type, filter, mode: 'search' as const, posts: null, users, trendingTopics: [], featuredPosts: [], creators: [] };
     } catch {
       return { q, type, filter, mode: 'search' as const, posts: null, users: { items: [] }, trendingTopics: [], featuredPosts: [], creators: [] };

@@ -1,0 +1,83 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - link "O Oecophylla" [ref=e5] [cursor=pointer]:
+      - /url: /
+      - generic [ref=e6]: O
+      - generic [ref=e7]:
+        - text: Oecophy
+        - emphasis [ref=e8]: lla
+    - navigation [ref=e9]:
+      - link "Trang chủ" [ref=e10] [cursor=pointer]:
+        - /url: /
+        - img [ref=e11]
+        - generic [ref=e15]: Trang chủ
+      - link "Khám phá" [ref=e16] [cursor=pointer]:
+        - /url: /search
+        - img [ref=e17]
+        - generic [ref=e20]: Khám phá
+      - link "Theo dõi" [ref=e21] [cursor=pointer]:
+        - /url: /?feed=following
+        - img [ref=e22]
+        - generic [ref=e27]: Theo dõi
+      - link "Đã lưu" [ref=e28] [cursor=pointer]:
+        - /url: /saved
+        - img [ref=e29]
+        - generic [ref=e31]: Đã lưu
+      - link "Thông báo" [ref=e32] [cursor=pointer]:
+        - /url: /notifications
+        - img [ref=e33]
+        - generic [ref=e36]: Thông báo
+      - link "Hồ sơ" [ref=e37] [cursor=pointer]:
+        - /url: /profile/019e5fd1-2335-733b-a05a-6b6124d6f2b6
+        - img [ref=e38]
+        - generic [ref=e41]: Hồ sơ
+      - link "Quản trị" [ref=e42] [cursor=pointer]:
+        - /url: /admin
+        - img [ref=e43]
+        - generic [ref=e46]: Quản trị
+    - generic [ref=e47]: Của bạn
+    - navigation [ref=e48]:
+      - link "Công nghệ" [ref=e49] [cursor=pointer]:
+        - /url: /search?q=tech
+        - generic [ref=e51]: Công nghệ
+      - link "AI & Học máy" [ref=e52] [cursor=pointer]:
+        - /url: /search?q=ai
+        - generic [ref=e54]: AI & Học máy
+      - link "Khoa học" [ref=e55] [cursor=pointer]:
+        - /url: /search?q=science
+        - generic [ref=e57]: Khoa học
+    - generic [ref=e58]:
+      - generic [ref=e59] [cursor=pointer]:
+        - link "S Seed User 000 @seed_000" [ref=e60]:
+          - /url: /profile/019e5fd1-2335-733b-a05a-6b6124d6f2b6
+          - generic [ref=e61]: S
+          - generic [ref=e62]:
+            - generic [ref=e63]: Seed User 000
+            - generic [ref=e64]: "@seed_000"
+        - link "Cài đặt" [ref=e65]:
+          - /url: /settings
+          - img [ref=e66]
+      - button "Đăng xuất" [ref=e70] [cursor=pointer]:
+        - img [ref=e71]
+        - generic [ref=e73]: Đăng xuất
+  - generic [ref=e74]:
+    - banner [ref=e75]:
+      - generic [ref=e76]: Oecophylla
+      - generic [ref=e77]:
+        - img [ref=e79]
+        - textbox "Tìm chủ đề, tác giả, hoặc bài viết…" [ref=e82]
+      - generic [ref=e83]:
+        - link "Khu vực quản trị" [ref=e84] [cursor=pointer]:
+          - /url: /admin
+          - img [ref=e85]
+          - text: Khu vực quản trị
+        - button "Đổi giao diện" [ref=e88] [cursor=pointer]:
+          - img [ref=e89]
+        - button "Thông báo" [ref=e92] [cursor=pointer]:
+          - img [ref=e93]
+    - generic [ref=e96]:
+      - heading "Thông báo" [level=1] [ref=e98]
+      - generic [ref=e99]:
+        - img [ref=e101]
+        - paragraph [ref=e104]: Chưa có thông báo nào
+        - paragraph [ref=e105]: Khi có người thích, bình luận hoặc theo dõi bạn, thông báo sẽ xuất hiện ở đây.

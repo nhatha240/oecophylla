@@ -71,7 +71,8 @@
     debounceTimer = setTimeout(() => {
       const params = new URLSearchParams($page.url.searchParams);
       if (q.trim()) params.set('q', q.trim()); else params.delete('q');
-      params.set('type', activeType);
+      // "@name" is an explicit user lookup, so force the user tab.
+      params.set('type', q.trim().startsWith('@') ? 'user' : activeType);
       goto(`/search?${params}`, { replaceState: true, keepFocus: true });
     }, 300);
   }

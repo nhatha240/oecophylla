@@ -1,0 +1,953 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - link "O Oecophylla" [ref=e5] [cursor=pointer]:
+      - /url: /
+      - generic [ref=e6]: O
+      - generic [ref=e7]:
+        - text: Oecophy
+        - emphasis [ref=e8]: lla
+    - navigation [ref=e9]:
+      - link "Trang chủ" [ref=e10] [cursor=pointer]:
+        - /url: /
+        - img [ref=e11]
+        - generic [ref=e15]: Trang chủ
+      - link "Khám phá" [ref=e16] [cursor=pointer]:
+        - /url: /search
+        - img [ref=e17]
+        - generic [ref=e20]: Khám phá
+      - link "Theo dõi" [ref=e21] [cursor=pointer]:
+        - /url: /?feed=following
+        - img [ref=e22]
+        - generic [ref=e27]: Theo dõi
+      - link "Đã lưu" [ref=e28] [cursor=pointer]:
+        - /url: /saved
+        - img [ref=e29]
+        - generic [ref=e31]: Đã lưu
+      - link "Thông báo" [ref=e32] [cursor=pointer]:
+        - /url: /notifications
+        - img [ref=e33]
+        - generic [ref=e36]: Thông báo
+      - link "Hồ sơ" [ref=e37] [cursor=pointer]:
+        - /url: /profile/019eaaab-d10d-7bcf-9148-159e972ac8fe
+        - img [ref=e38]
+        - generic [ref=e41]: Hồ sơ
+    - generic [ref=e42]:
+      - generic [ref=e43] [cursor=pointer]:
+        - link "U UI Tester @uitester1" [ref=e44]:
+          - /url: /profile/019eaaab-d10d-7bcf-9148-159e972ac8fe
+          - generic [ref=e45]: U
+          - generic [ref=e46]:
+            - generic [ref=e47]: UI Tester
+            - generic [ref=e48]: "@uitester1"
+        - link "Cài đặt" [ref=e49]:
+          - /url: /settings
+          - img [ref=e50]
+      - button "Đăng xuất" [ref=e54] [cursor=pointer]:
+        - img [ref=e55]
+        - generic [ref=e57]: Đăng xuất
+  - generic [ref=e58]:
+    - banner [ref=e59]:
+      - generic [ref=e60]: Oecophylla
+      - generic [ref=e61]:
+        - img [ref=e63]
+        - textbox "Tìm chủ đề, tác giả, hoặc bài viết…" [ref=e66]
+      - generic [ref=e67]:
+        - button "Đổi giao diện" [ref=e68] [cursor=pointer]:
+          - img [ref=e69]
+        - button "Thông báo" [ref=e72] [cursor=pointer]:
+          - img [ref=e73]
+    - main [ref=e77]:
+      - link "Quay lại bảng tin" [ref=e79] [cursor=pointer]:
+        - /url: /
+        - img [ref=e80]
+        - text: Quay lại bảng tin
+      - generic [ref=e82]:
+        - generic [ref=e83] [cursor=pointer]: General
+        - generic [ref=e84]: 20 bài viết
+      - paragraph [ref=e85]: Chủ đề · Được phân loại tự động
+      - list [ref=e86]:
+        - listitem [ref=e87]:
+          - article [ref=e88]:
+            - generic [ref=e89]:
+              - link "NG" [ref=e90] [cursor=pointer]:
+                - /url: /profile/019e6758-c875-735d-90d4-cac76ba4c585
+              - generic [ref=e91]:
+                - link "Người dùng" [ref=e93] [cursor=pointer]:
+                  - /url: /profile/019e6758-c875-735d-90d4-cac76ba4c585
+                - generic [ref=e94]:
+                  - generic [ref=e95]: "@019e6758"
+                  - generic [ref=e96]: ·
+                  - generic [ref=e97]: 12 giờ trước
+              - generic [ref=e98]:
+                - generic [ref=e99] [cursor=pointer]:
+                  - img [ref=e100]
+                  - text: Nguồn đáng tin cậy
+                - link "Xem chi tiết" [ref=e103] [cursor=pointer]:
+                  - /url: /post/019ea81b-6bc9-7361-b86a-c81cb17ea389
+                  - img [ref=e104]
+            - link "he he h" [ref=e108] [cursor=pointer]:
+              - /url: /post/019ea81b-6bc9-7361-b86a-c81cb17ea389
+            - generic [ref=e109]:
+              - link "#chuabiet" [ref=e110] [cursor=pointer]:
+                - /url: /search?q=chuabiet
+              - link "Tổng hợp" [ref=e111] [cursor=pointer]:
+                - /url: /topic/general
+              - generic [ref=e112]:
+                - img [ref=e113]
+                - text: 4 lượt đọc
+            - generic [ref=e116]:
+              - img [ref=e117]
+              - generic [ref=e120]: Được đề xuất vì bạn quan tâm đến Tổng hợp.
+            - generic [ref=e121]:
+              - button "3" [pressed] [ref=e122] [cursor=pointer]:
+                - img [ref=e123]
+                - text: "3"
+              - button "0" [ref=e125] [cursor=pointer]:
+                - img [ref=e126]
+                - text: "0"
+              - link "0" [ref=e128] [cursor=pointer]:
+                - /url: /post/019ea81b-6bc9-7361-b86a-c81cb17ea389
+                - img [ref=e129]
+                - text: "0"
+              - generic [ref=e131]:
+                - img [ref=e132]
+                - text: "0"
+        - listitem [ref=e137]:
+          - article [ref=e138]:
+            - generic [ref=e139]:
+              - link "NG" [ref=e140] [cursor=pointer]:
+                - /url: /profile/019e7dae-b50c-7233-8df6-46437bbdba42
+              - generic [ref=e141]:
+                - link "Người dùng" [ref=e143] [cursor=pointer]:
+                  - /url: /profile/019e7dae-b50c-7233-8df6-46437bbdba42
+                - generic [ref=e144]:
+                  - generic [ref=e145]: "@019e7dae"
+                  - generic [ref=e146]: ·
+                  - generic [ref=e147]: 31/5/2026
+              - generic [ref=e148]:
+                - generic [ref=e149] [cursor=pointer]:
+                  - img [ref=e150]
+                  - text: Nguồn đáng tin cậy
+                - link "Xem chi tiết" [ref=e153] [cursor=pointer]:
+                  - /url: /post/019e7e21-4e53-7fb0-9209-740c6b5791cc
+                  - img [ref=e154]
+            - 'link "Bài viết kiểm thử từ Playwright — verifying the create-post flow end to end. #demo" [ref=e158] [cursor=pointer]':
+              - /url: /post/019e7e21-4e53-7fb0-9209-740c6b5791cc
+            - generic [ref=e159]:
+              - link "#demo" [ref=e160] [cursor=pointer]:
+                - /url: /search?q=demo
+              - link "#test" [ref=e161] [cursor=pointer]:
+                - /url: /search?q=test
+              - link "Tổng hợp" [ref=e162] [cursor=pointer]:
+                - /url: /topic/general
+              - generic [ref=e163]:
+                - img [ref=e164]
+                - text: 11 lượt đọc
+            - generic [ref=e167]:
+              - img [ref=e168]
+              - generic [ref=e171]: Được đề xuất vì bạn quan tâm đến Tổng hợp.
+            - generic [ref=e172]:
+              - button "0" [ref=e173] [cursor=pointer]:
+                - img [ref=e174]
+                - text: "0"
+              - button "0" [ref=e176] [cursor=pointer]:
+                - img [ref=e177]
+                - text: "0"
+              - link "0" [ref=e179] [cursor=pointer]:
+                - /url: /post/019e7e21-4e53-7fb0-9209-740c6b5791cc
+                - img [ref=e180]
+                - text: "0"
+              - generic [ref=e182]:
+                - img [ref=e183]
+                - text: "0"
+        - listitem [ref=e188]:
+          - article [ref=e189]:
+            - generic [ref=e190]:
+              - link "NG" [ref=e191] [cursor=pointer]:
+                - /url: /profile/019e6c5c-3cf6-75ca-8c1d-feaed20afda3
+              - generic [ref=e192]:
+                - link "Người dùng" [ref=e194] [cursor=pointer]:
+                  - /url: /profile/019e6c5c-3cf6-75ca-8c1d-feaed20afda3
+                - generic [ref=e195]:
+                  - generic [ref=e196]: "@019e6c5c"
+                  - generic [ref=e197]: ·
+                  - generic [ref=e198]: 28/5/2026
+              - generic [ref=e199]:
+                - generic [ref=e200] [cursor=pointer]:
+                  - img [ref=e201]
+                  - text: Nguồn đáng tin cậy
+                - link "Xem chi tiết" [ref=e204] [cursor=pointer]:
+                  - /url: /post/019e6c5c-4573-7a72-aa24-86303735643d
+                  - img [ref=e205]
+            - link "post qcb1779934444747" [ref=e209] [cursor=pointer]:
+              - /url: /post/019e6c5c-4573-7a72-aa24-86303735643d
+            - link "cover" [ref=e210] [cursor=pointer]:
+              - /url: /post/019e6c5c-4573-7a72-aa24-86303735643d
+              - img "cover" [ref=e211]
+            - generic [ref=e212]:
+              - link "Tổng hợp" [ref=e213] [cursor=pointer]:
+                - /url: /topic/general
+              - generic [ref=e214]:
+                - img [ref=e215]
+                - text: 62 lượt đọc
+            - generic [ref=e218]:
+              - img [ref=e219]
+              - generic [ref=e222]: Được đề xuất vì bạn quan tâm đến Tổng hợp.
+            - generic [ref=e223]:
+              - button "1" [ref=e224] [cursor=pointer]:
+                - img [ref=e225]
+                - text: "1"
+              - button "1" [ref=e227] [cursor=pointer]:
+                - img [ref=e228]
+                - text: "1"
+              - link "1" [ref=e230] [cursor=pointer]:
+                - /url: /post/019e6c5c-4573-7a72-aa24-86303735643d
+                - img [ref=e231]
+                - text: "1"
+              - generic [ref=e233]:
+                - img [ref=e234]
+                - text: "0"
+        - listitem [ref=e239]:
+          - article [ref=e240]:
+            - generic [ref=e241]:
+              - link "NG" [ref=e242] [cursor=pointer]:
+                - /url: /profile/019e6c39-c93e-7d85-a3a2-d7410d0c77d9
+              - generic [ref=e243]:
+                - link "Người dùng" [ref=e245] [cursor=pointer]:
+                  - /url: /profile/019e6c39-c93e-7d85-a3a2-d7410d0c77d9
+                - generic [ref=e246]:
+                  - generic [ref=e247]: "@019e6c39"
+                  - generic [ref=e248]: ·
+                  - generic [ref=e249]: 28/5/2026
+              - generic [ref=e250]:
+                - generic [ref=e251] [cursor=pointer]:
+                  - img [ref=e252]
+                  - text: Nguồn đáng tin cậy
+                - link "Xem chi tiết" [ref=e255] [cursor=pointer]:
+                  - /url: /post/019e6c39-c95c-72f2-8847-2922f6b84fde
+                  - img [ref=e256]
+            - link "QC api post content" [ref=e260] [cursor=pointer]:
+              - /url: /post/019e6c39-c95c-72f2-8847-2922f6b84fde
+            - generic [ref=e261]:
+              - link "#qc" [ref=e262] [cursor=pointer]:
+                - /url: /search?q=qc
+              - link "#api" [ref=e263] [cursor=pointer]:
+                - /url: /search?q=api
+              - link "Tổng hợp" [ref=e264] [cursor=pointer]:
+                - /url: /topic/general
+              - generic [ref=e265]:
+                - img [ref=e266]
+                - text: 18 lượt đọc
+            - generic [ref=e269]:
+              - img [ref=e270]
+              - generic [ref=e273]: Được đề xuất vì bạn quan tâm đến Tổng hợp.
+            - generic [ref=e274]:
+              - button "0" [ref=e275] [cursor=pointer]:
+                - img [ref=e276]
+                - text: "0"
+              - button "0" [ref=e278] [cursor=pointer]:
+                - img [ref=e279]
+                - text: "0"
+              - link "0" [ref=e281] [cursor=pointer]:
+                - /url: /post/019e6c39-c95c-72f2-8847-2922f6b84fde
+                - img [ref=e282]
+                - text: "0"
+              - generic [ref=e284]:
+                - img [ref=e285]
+                - text: "0"
+        - listitem [ref=e290]:
+          - article [ref=e291]:
+            - generic [ref=e292]:
+              - link "NG" [ref=e293] [cursor=pointer]:
+                - /url: /profile/019e6a59-db64-78c4-a4b9-d5984f3a83e8
+              - generic [ref=e294]:
+                - link "Người dùng" [ref=e296] [cursor=pointer]:
+                  - /url: /profile/019e6a59-db64-78c4-a4b9-d5984f3a83e8
+                - generic [ref=e297]:
+                  - generic [ref=e298]: "@019e6a59"
+                  - generic [ref=e299]: ·
+                  - generic [ref=e300]: 27/5/2026
+              - generic [ref=e301]:
+                - generic [ref=e302] [cursor=pointer]:
+                  - img [ref=e303]
+                  - text: Nguồn đáng tin cậy
+                - link "Xem chi tiết" [ref=e306] [cursor=pointer]:
+                  - /url: /post/019e6a59-db6c-7753-9f90-f0fbf06226dd
+                  - img [ref=e307]
+            - link "moderation smoke target" [ref=e311] [cursor=pointer]:
+              - /url: /post/019e6a59-db6c-7753-9f90-f0fbf06226dd
+            - generic [ref=e312]:
+              - link "Tổng hợp" [ref=e313] [cursor=pointer]:
+                - /url: /topic/general
+              - generic [ref=e314]:
+                - img [ref=e315]
+                - text: 14 lượt đọc
+            - generic [ref=e318]:
+              - img [ref=e319]
+              - generic [ref=e322]: Được đề xuất vì bạn quan tâm đến Tổng hợp.
+            - generic [ref=e323]:
+              - button "0" [ref=e324] [cursor=pointer]:
+                - img [ref=e325]
+                - text: "0"
+              - button "0" [ref=e327] [cursor=pointer]:
+                - img [ref=e328]
+                - text: "0"
+              - link "0" [ref=e330] [cursor=pointer]:
+                - /url: /post/019e6a59-db6c-7753-9f90-f0fbf06226dd
+                - img [ref=e331]
+                - text: "0"
+              - generic [ref=e333]:
+                - img [ref=e334]
+                - text: "0"
+        - listitem [ref=e339]:
+          - article [ref=e340]:
+            - generic [ref=e341]:
+              - link "NG" [ref=e342] [cursor=pointer]:
+                - /url: /profile/019e6a59-db60-7b35-8e8d-2b5ee87d6e2d
+              - generic [ref=e343]:
+                - link "Người dùng" [ref=e345] [cursor=pointer]:
+                  - /url: /profile/019e6a59-db60-7b35-8e8d-2b5ee87d6e2d
+                - generic [ref=e346]:
+                  - generic [ref=e347]: "@019e6a59"
+                  - generic [ref=e348]: ·
+                  - generic [ref=e349]: 27/5/2026
+              - generic [ref=e350]:
+                - generic [ref=e351] [cursor=pointer]:
+                  - img [ref=e352]
+                  - text: Nguồn đáng tin cậy
+                - link "Xem chi tiết" [ref=e355] [cursor=pointer]:
+                  - /url: /post/019e6a59-db66-7721-91cb-6e59789e9252
+                  - img [ref=e356]
+            - link "moderation smoke target" [ref=e360] [cursor=pointer]:
+              - /url: /post/019e6a59-db66-7721-91cb-6e59789e9252
+            - generic [ref=e361]:
+              - link "Tổng hợp" [ref=e362] [cursor=pointer]:
+                - /url: /topic/general
+              - generic [ref=e363]:
+                - img [ref=e364]
+                - text: 8 lượt đọc
+            - generic [ref=e367]:
+              - img [ref=e368]
+              - generic [ref=e371]: Được đề xuất vì bạn quan tâm đến Tổng hợp.
+            - generic [ref=e372]:
+              - button "0" [ref=e373] [cursor=pointer]:
+                - img [ref=e374]
+                - text: "0"
+              - button "0" [ref=e376] [cursor=pointer]:
+                - img [ref=e377]
+                - text: "0"
+              - link "0" [ref=e379] [cursor=pointer]:
+                - /url: /post/019e6a59-db66-7721-91cb-6e59789e9252
+                - img [ref=e380]
+                - text: "0"
+              - generic [ref=e382]:
+                - img [ref=e383]
+                - text: "0"
+        - listitem [ref=e388]:
+          - article [ref=e389]:
+            - generic [ref=e390]:
+              - link "NG" [ref=e391] [cursor=pointer]:
+                - /url: /profile/019e6a59-db5a-7561-aa51-a6318326cc8a
+              - generic [ref=e392]:
+                - link "Người dùng" [ref=e394] [cursor=pointer]:
+                  - /url: /profile/019e6a59-db5a-7561-aa51-a6318326cc8a
+                - generic [ref=e395]:
+                  - generic [ref=e396]: "@019e6a59"
+                  - generic [ref=e397]: ·
+                  - generic [ref=e398]: 27/5/2026
+              - generic [ref=e399]:
+                - generic [ref=e400] [cursor=pointer]:
+                  - img [ref=e401]
+                  - text: Nguồn đáng tin cậy
+                - link "Xem chi tiết" [ref=e404] [cursor=pointer]:
+                  - /url: /post/019e6a59-db66-7721-91cb-6e64489ae029
+                  - img [ref=e405]
+            - link "moderation smoke target" [ref=e409] [cursor=pointer]:
+              - /url: /post/019e6a59-db66-7721-91cb-6e64489ae029
+            - generic [ref=e410]:
+              - link "Tổng hợp" [ref=e411] [cursor=pointer]:
+                - /url: /topic/general
+              - generic [ref=e412]:
+                - img [ref=e413]
+                - text: 6 lượt đọc
+            - generic [ref=e416]:
+              - img [ref=e417]
+              - generic [ref=e420]: Được đề xuất vì bạn quan tâm đến Tổng hợp.
+            - generic [ref=e421]:
+              - button "0" [ref=e422] [cursor=pointer]:
+                - img [ref=e423]
+                - text: "0"
+              - button "0" [ref=e425] [cursor=pointer]:
+                - img [ref=e426]
+                - text: "0"
+              - link "0" [ref=e428] [cursor=pointer]:
+                - /url: /post/019e6a59-db66-7721-91cb-6e64489ae029
+                - img [ref=e429]
+                - text: "0"
+              - generic [ref=e431]:
+                - img [ref=e432]
+                - text: "0"
+        - listitem [ref=e437]:
+          - article [ref=e438]:
+            - generic [ref=e439]:
+              - link "NG" [ref=e440] [cursor=pointer]:
+                - /url: /profile/019e6a59-a945-7fe6-a0f7-50917e2ef181
+              - generic [ref=e441]:
+                - link "Người dùng" [ref=e443] [cursor=pointer]:
+                  - /url: /profile/019e6a59-a945-7fe6-a0f7-50917e2ef181
+                - generic [ref=e444]:
+                  - generic [ref=e445]: "@019e6a59"
+                  - generic [ref=e446]: ·
+                  - generic [ref=e447]: 27/5/2026
+              - generic [ref=e448]:
+                - generic [ref=e449] [cursor=pointer]:
+                  - img [ref=e450]
+                  - text: Nguồn đáng tin cậy
+                - link "Xem chi tiết" [ref=e453] [cursor=pointer]:
+                  - /url: /post/019e6a59-a95c-7de1-a76d-be15e9988657
+                  - img [ref=e454]
+            - link "for batch /me empty test" [ref=e458] [cursor=pointer]:
+              - /url: /post/019e6a59-a95c-7de1-a76d-be15e9988657
+            - generic [ref=e459]:
+              - link "Tổng hợp" [ref=e460] [cursor=pointer]:
+                - /url: /topic/general
+              - generic [ref=e461]:
+                - img [ref=e462]
+                - text: 3 lượt đọc
+            - generic [ref=e465]:
+              - img [ref=e466]
+              - generic [ref=e469]: Được đề xuất vì bạn quan tâm đến Tổng hợp.
+            - generic [ref=e470]:
+              - button "0" [ref=e471] [cursor=pointer]:
+                - img [ref=e472]
+                - text: "0"
+              - button "0" [ref=e474] [cursor=pointer]:
+                - img [ref=e475]
+                - text: "0"
+              - link "0" [ref=e477] [cursor=pointer]:
+                - /url: /post/019e6a59-a95c-7de1-a76d-be15e9988657
+                - img [ref=e478]
+                - text: "0"
+              - generic [ref=e480]:
+                - img [ref=e481]
+                - text: "0"
+        - listitem [ref=e486]:
+          - article [ref=e487]:
+            - generic [ref=e488]:
+              - link "NG" [ref=e489] [cursor=pointer]:
+                - /url: /profile/019e6a59-a945-7fe6-a0f7-50917e2ef181
+              - generic [ref=e490]:
+                - link "Người dùng" [ref=e492] [cursor=pointer]:
+                  - /url: /profile/019e6a59-a945-7fe6-a0f7-50917e2ef181
+                - generic [ref=e493]:
+                  - generic [ref=e494]: "@019e6a59"
+                  - generic [ref=e495]: ·
+                  - generic [ref=e496]: 27/5/2026
+              - generic [ref=e497]:
+                - generic [ref=e498] [cursor=pointer]:
+                  - img [ref=e499]
+                  - text: Nguồn đáng tin cậy
+                - link "Xem chi tiết" [ref=e502] [cursor=pointer]:
+                  - /url: /post/019e6a59-a94f-7d73-a22e-ccab86ac6f55
+                  - img [ref=e503]
+            - link "for batch /me test" [ref=e507] [cursor=pointer]:
+              - /url: /post/019e6a59-a94f-7d73-a22e-ccab86ac6f55
+            - link "Tổng hợp" [ref=e509] [cursor=pointer]:
+              - /url: /topic/general
+            - generic [ref=e510]:
+              - img [ref=e511]
+              - generic [ref=e514]: Được đề xuất vì bạn quan tâm đến Tổng hợp.
+            - generic [ref=e515]:
+              - button "1" [ref=e516] [cursor=pointer]:
+                - img [ref=e517]
+                - text: "1"
+              - button "1" [ref=e519] [cursor=pointer]:
+                - img [ref=e520]
+                - text: "1"
+              - link "0" [ref=e522] [cursor=pointer]:
+                - /url: /post/019e6a59-a94f-7d73-a22e-ccab86ac6f55
+                - img [ref=e523]
+                - text: "0"
+              - generic [ref=e525]:
+                - img [ref=e526]
+                - text: "0"
+        - listitem [ref=e531]:
+          - article [ref=e532]:
+            - generic [ref=e533]:
+              - link "NG" [ref=e534] [cursor=pointer]:
+                - /url: /profile/019e6a59-a928-7d5c-a217-0a1dddc8498e
+              - generic [ref=e535]:
+                - link "Người dùng" [ref=e537] [cursor=pointer]:
+                  - /url: /profile/019e6a59-a928-7d5c-a217-0a1dddc8498e
+                - generic [ref=e538]:
+                  - generic [ref=e539]: "@019e6a59"
+                  - generic [ref=e540]: ·
+                  - generic [ref=e541]: 27/5/2026
+              - generic [ref=e542]:
+                - generic [ref=e543] [cursor=pointer]:
+                  - img [ref=e544]
+                  - text: Nguồn đáng tin cậy
+                - link "Xem chi tiết" [ref=e547] [cursor=pointer]:
+                  - /url: /post/019e6a59-a92f-7511-8884-50770090237e
+                  - img [ref=e548]
+            - link "for hide test" [ref=e552] [cursor=pointer]:
+              - /url: /post/019e6a59-a92f-7511-8884-50770090237e
+            - generic [ref=e553]:
+              - link "Tổng hợp" [ref=e554] [cursor=pointer]:
+                - /url: /topic/general
+              - generic [ref=e555]:
+                - img [ref=e556]
+                - text: 5 lượt đọc
+            - generic [ref=e559]:
+              - img [ref=e560]
+              - generic [ref=e563]: Được đề xuất vì bạn quan tâm đến Tổng hợp.
+            - generic [ref=e564]:
+              - button "0" [ref=e565] [cursor=pointer]:
+                - img [ref=e566]
+                - text: "0"
+              - button "0" [ref=e568] [cursor=pointer]:
+                - img [ref=e569]
+                - text: "0"
+              - link "0" [ref=e571] [cursor=pointer]:
+                - /url: /post/019e6a59-a92f-7511-8884-50770090237e
+                - img [ref=e572]
+                - text: "0"
+              - generic [ref=e574]:
+                - img [ref=e575]
+                - text: "0"
+        - listitem [ref=e580]:
+          - article [ref=e581]:
+            - generic [ref=e582]:
+              - link "NG" [ref=e583] [cursor=pointer]:
+                - /url: /profile/019e6a59-a925-79a2-a87a-a9bfe510b70e
+              - generic [ref=e584]:
+                - link "Người dùng" [ref=e586] [cursor=pointer]:
+                  - /url: /profile/019e6a59-a925-79a2-a87a-a9bfe510b70e
+                - generic [ref=e587]:
+                  - generic [ref=e588]: "@019e6a59"
+                  - generic [ref=e589]: ·
+                  - generic [ref=e590]: 27/5/2026
+              - generic [ref=e591]:
+                - generic [ref=e592] [cursor=pointer]:
+                  - img [ref=e593]
+                  - text: Nguồn đáng tin cậy
+                - link "Xem chi tiết" [ref=e596] [cursor=pointer]:
+                  - /url: /post/019e6a59-a92f-7511-8884-506ae675d22f
+                  - img [ref=e597]
+            - link "for kafka" [ref=e601] [cursor=pointer]:
+              - /url: /post/019e6a59-a92f-7511-8884-506ae675d22f
+            - generic [ref=e602]:
+              - link "Tổng hợp" [ref=e603] [cursor=pointer]:
+                - /url: /topic/general
+              - generic [ref=e604]:
+                - img [ref=e605]
+                - text: 2 lượt đọc
+            - generic [ref=e608]:
+              - img [ref=e609]
+              - generic [ref=e612]: Được đề xuất vì bạn quan tâm đến Tổng hợp.
+            - generic [ref=e613]:
+              - button "1" [ref=e614] [cursor=pointer]:
+                - img [ref=e615]
+                - text: "1"
+              - button "0" [ref=e617] [cursor=pointer]:
+                - img [ref=e618]
+                - text: "0"
+              - link "0" [ref=e620] [cursor=pointer]:
+                - /url: /post/019e6a59-a92f-7511-8884-506ae675d22f
+                - img [ref=e621]
+                - text: "0"
+              - generic [ref=e623]:
+                - img [ref=e624]
+                - text: "0"
+        - listitem [ref=e629]:
+          - article [ref=e630]:
+            - generic [ref=e631]:
+              - link "NG" [ref=e632] [cursor=pointer]:
+                - /url: /profile/019e6a59-a237-79e1-9adb-868099209c8b
+              - generic [ref=e633]:
+                - link "Người dùng" [ref=e635] [cursor=pointer]:
+                  - /url: /profile/019e6a59-a237-79e1-9adb-868099209c8b
+                - generic [ref=e636]:
+                  - generic [ref=e637]: "@019e6a59"
+                  - generic [ref=e638]: ·
+                  - generic [ref=e639]: 27/5/2026
+              - generic [ref=e640]:
+                - generic [ref=e641] [cursor=pointer]:
+                  - img [ref=e642]
+                  - text: Nguồn đáng tin cậy
+                - link "Xem chi tiết" [ref=e645] [cursor=pointer]:
+                  - /url: /post/019e6a59-a243-7e33-822a-885ab9a1d421
+                  - img [ref=e646]
+            - link "post for cache hit" [ref=e650] [cursor=pointer]:
+              - /url: /post/019e6a59-a243-7e33-822a-885ab9a1d421
+            - generic [ref=e651]:
+              - link "Tổng hợp" [ref=e652] [cursor=pointer]:
+                - /url: /topic/general
+              - generic [ref=e653]:
+                - img [ref=e654]
+                - text: 2 lượt đọc
+            - generic [ref=e657]:
+              - img [ref=e658]
+              - generic [ref=e661]: Được đề xuất vì bạn quan tâm đến Tổng hợp.
+            - generic [ref=e662]:
+              - button "0" [ref=e663] [cursor=pointer]:
+                - img [ref=e664]
+                - text: "0"
+              - button "0" [ref=e666] [cursor=pointer]:
+                - img [ref=e667]
+                - text: "0"
+              - link "0" [ref=e669] [cursor=pointer]:
+                - /url: /post/019e6a59-a243-7e33-822a-885ab9a1d421
+                - img [ref=e670]
+                - text: "0"
+              - generic [ref=e672]:
+                - img [ref=e673]
+                - text: "0"
+        - listitem [ref=e678]:
+          - article [ref=e679]:
+            - generic [ref=e680]:
+              - link "NG" [ref=e681] [cursor=pointer]:
+                - /url: /profile/019e6a59-a233-769c-a63b-1fc59a0e7b31
+              - generic [ref=e682]:
+                - link "Người dùng" [ref=e684] [cursor=pointer]:
+                  - /url: /profile/019e6a59-a233-769c-a63b-1fc59a0e7b31
+                - generic [ref=e685]:
+                  - generic [ref=e686]: "@019e6a59"
+                  - generic [ref=e687]: ·
+                  - generic [ref=e688]: 27/5/2026
+              - generic [ref=e689]:
+                - generic [ref=e690] [cursor=pointer]:
+                  - img [ref=e691]
+                  - text: Nguồn đáng tin cậy
+                - link "Xem chi tiết" [ref=e694] [cursor=pointer]:
+                  - /url: /post/019e6a59-a23b-7c50-8523-17284e1d4427
+                  - img [ref=e695]
+            - link "post for feed smoke" [ref=e699] [cursor=pointer]:
+              - /url: /post/019e6a59-a23b-7c50-8523-17284e1d4427
+            - generic [ref=e700]:
+              - link "Tổng hợp" [ref=e701] [cursor=pointer]:
+                - /url: /topic/general
+              - generic [ref=e702]:
+                - img [ref=e703]
+                - text: 1 lượt đọc
+            - generic [ref=e706]:
+              - img [ref=e707]
+              - generic [ref=e710]: Được đề xuất vì bạn quan tâm đến Tổng hợp.
+            - generic [ref=e711]:
+              - button "0" [ref=e712] [cursor=pointer]:
+                - img [ref=e713]
+                - text: "0"
+              - button "0" [ref=e715] [cursor=pointer]:
+                - img [ref=e716]
+                - text: "0"
+              - link "0" [ref=e718] [cursor=pointer]:
+                - /url: /post/019e6a59-a23b-7c50-8523-17284e1d4427
+                - img [ref=e719]
+                - text: "0"
+              - generic [ref=e721]:
+                - img [ref=e722]
+                - text: "0"
+        - listitem [ref=e727]:
+          - article [ref=e728]:
+            - generic [ref=e729]:
+              - link "NG" [ref=e730] [cursor=pointer]:
+                - /url: /profile/019e6a59-9811-73dd-aad0-c3af9245b600
+              - generic [ref=e731]:
+                - link "Người dùng" [ref=e733] [cursor=pointer]:
+                  - /url: /profile/019e6a59-9811-73dd-aad0-c3af9245b600
+                - generic [ref=e734]:
+                  - generic [ref=e735]: "@019e6a59"
+                  - generic [ref=e736]: ·
+                  - generic [ref=e737]: 27/5/2026
+              - generic [ref=e738]:
+                - generic [ref=e739] [cursor=pointer]:
+                  - img [ref=e740]
+                  - text: Nguồn đáng tin cậy
+                - link "Xem chi tiết" [ref=e743] [cursor=pointer]:
+                  - /url: /post/019e6a59-9a29-7ab0-9908-fdfa87cfb54e
+                  - img [ref=e744]
+            - link "mine" [ref=e748] [cursor=pointer]:
+              - /url: /post/019e6a59-9a29-7ab0-9908-fdfa87cfb54e
+            - generic [ref=e749]:
+              - link "Tổng hợp" [ref=e750] [cursor=pointer]:
+                - /url: /topic/general
+              - generic [ref=e751]:
+                - img [ref=e752]
+                - text: 2 lượt đọc
+            - generic [ref=e755]:
+              - img [ref=e756]
+              - generic [ref=e759]: Được đề xuất vì bạn quan tâm đến Tổng hợp.
+            - generic [ref=e760]:
+              - button "0" [ref=e761] [cursor=pointer]:
+                - img [ref=e762]
+                - text: "0"
+              - button "0" [ref=e764] [cursor=pointer]:
+                - img [ref=e765]
+                - text: "0"
+              - link "0" [ref=e767] [cursor=pointer]:
+                - /url: /post/019e6a59-9a29-7ab0-9908-fdfa87cfb54e
+                - img [ref=e768]
+                - text: "0"
+              - generic [ref=e770]:
+                - img [ref=e771]
+                - text: "0"
+        - listitem [ref=e776]:
+          - article [ref=e777]:
+            - generic [ref=e778]:
+              - link "NG" [ref=e779] [cursor=pointer]:
+                - /url: /profile/019e6386-57e0-7592-bb4d-7784af19354f
+              - generic [ref=e780]:
+                - link "Người dùng" [ref=e782] [cursor=pointer]:
+                  - /url: /profile/019e6386-57e0-7592-bb4d-7784af19354f
+                - generic [ref=e783]:
+                  - generic [ref=e784]: "@019e6386"
+                  - generic [ref=e785]: ·
+                  - generic [ref=e786]: 26/5/2026
+              - generic [ref=e787]:
+                - generic [ref=e788] [cursor=pointer]:
+                  - img [ref=e789]
+                  - text: Nguồn đáng tin cậy
+                - link "Xem chi tiết" [ref=e792] [cursor=pointer]:
+                  - /url: /post/019e6386-57e1-75f3-9b2c-e5c1dea516e1
+                  - img [ref=e793]
+            - link "moderation smoke target" [ref=e797] [cursor=pointer]:
+              - /url: /post/019e6386-57e1-75f3-9b2c-e5c1dea516e1
+            - generic [ref=e798]:
+              - link "Tổng hợp" [ref=e799] [cursor=pointer]:
+                - /url: /topic/general
+              - generic [ref=e800]:
+                - img [ref=e801]
+                - text: 16 lượt đọc
+            - generic [ref=e804]:
+              - img [ref=e805]
+              - generic [ref=e808]: Được đề xuất vì bạn quan tâm đến Tổng hợp.
+            - generic [ref=e809]:
+              - button "4" [ref=e810] [cursor=pointer]:
+                - img [ref=e811]
+                - text: "4"
+              - button "4" [ref=e813] [cursor=pointer]:
+                - img [ref=e814]
+                - text: "4"
+              - link "4" [ref=e816] [cursor=pointer]:
+                - /url: /post/019e6386-57e1-75f3-9b2c-e5c1dea516e1
+                - img [ref=e817]
+                - text: "4"
+              - generic [ref=e819]:
+                - img [ref=e820]
+                - text: "0"
+        - listitem [ref=e825]:
+          - article [ref=e826]:
+            - generic [ref=e827]:
+              - link "NG" [ref=e828] [cursor=pointer]:
+                - /url: /profile/019e6386-570d-7bf7-9c5d-8baad2f02d77
+              - generic [ref=e829]:
+                - link "Người dùng" [ref=e831] [cursor=pointer]:
+                  - /url: /profile/019e6386-570d-7bf7-9c5d-8baad2f02d77
+                - generic [ref=e832]:
+                  - generic [ref=e833]: "@019e6386"
+                  - generic [ref=e834]: ·
+                  - generic [ref=e835]: 26/5/2026
+              - generic [ref=e836]:
+                - generic [ref=e837] [cursor=pointer]:
+                  - img [ref=e838]
+                  - text: Nguồn đáng tin cậy
+                - link "Xem chi tiết" [ref=e841] [cursor=pointer]:
+                  - /url: /post/019e6386-5710-7c12-bec4-4aa3d651ecb9
+                  - img [ref=e842]
+            - link "moderation smoke target" [ref=e846] [cursor=pointer]:
+              - /url: /post/019e6386-5710-7c12-bec4-4aa3d651ecb9
+            - generic [ref=e847]:
+              - link "Tổng hợp" [ref=e848] [cursor=pointer]:
+                - /url: /topic/general
+              - generic [ref=e849]:
+                - img [ref=e850]
+                - text: 1 lượt đọc
+            - generic [ref=e853]:
+              - img [ref=e854]
+              - generic [ref=e857]: Được đề xuất vì bạn quan tâm đến Tổng hợp.
+            - generic [ref=e858]:
+              - button "0" [ref=e859] [cursor=pointer]:
+                - img [ref=e860]
+                - text: "0"
+              - button "0" [ref=e862] [cursor=pointer]:
+                - img [ref=e863]
+                - text: "0"
+              - link "0" [ref=e865] [cursor=pointer]:
+                - /url: /post/019e6386-5710-7c12-bec4-4aa3d651ecb9
+                - img [ref=e866]
+                - text: "0"
+              - generic [ref=e868]:
+                - img [ref=e869]
+                - text: "0"
+        - listitem [ref=e874]:
+          - article [ref=e875]:
+            - generic [ref=e876]:
+              - link "NG" [ref=e877] [cursor=pointer]:
+                - /url: /profile/019e6386-0b67-7b4c-9209-748ea52c882e
+              - generic [ref=e878]:
+                - link "Người dùng" [ref=e880] [cursor=pointer]:
+                  - /url: /profile/019e6386-0b67-7b4c-9209-748ea52c882e
+                - generic [ref=e881]:
+                  - generic [ref=e882]: "@019e6386"
+                  - generic [ref=e883]: ·
+                  - generic [ref=e884]: 26/5/2026
+              - generic [ref=e885]:
+                - generic [ref=e886] [cursor=pointer]:
+                  - img [ref=e887]
+                  - text: Nguồn đáng tin cậy
+                - link "Xem chi tiết" [ref=e890] [cursor=pointer]:
+                  - /url: /post/019e6386-0b6b-7cc0-8d56-726ff2f7ba45
+                  - img [ref=e891]
+            - link "moderation smoke target" [ref=e895] [cursor=pointer]:
+              - /url: /post/019e6386-0b6b-7cc0-8d56-726ff2f7ba45
+            - generic [ref=e896]:
+              - link "Tổng hợp" [ref=e897] [cursor=pointer]:
+                - /url: /topic/general
+              - generic [ref=e898]:
+                - img [ref=e899]
+                - text: 1 lượt đọc
+            - generic [ref=e902]:
+              - img [ref=e903]
+              - generic [ref=e906]: Được đề xuất vì bạn quan tâm đến Tổng hợp.
+            - generic [ref=e907]:
+              - button "1" [ref=e908] [cursor=pointer]:
+                - img [ref=e909]
+                - text: "1"
+              - button "0" [ref=e911] [cursor=pointer]:
+                - img [ref=e912]
+                - text: "0"
+              - link "0" [ref=e914] [cursor=pointer]:
+                - /url: /post/019e6386-0b6b-7cc0-8d56-726ff2f7ba45
+                - img [ref=e915]
+                - text: "0"
+              - generic [ref=e917]:
+                - img [ref=e918]
+                - text: "0"
+        - listitem [ref=e923]:
+          - article [ref=e924]:
+            - generic [ref=e925]:
+              - link "NG" [ref=e926] [cursor=pointer]:
+                - /url: /profile/019e6385-e580-7400-bd01-dc5a314632b9
+              - generic [ref=e927]:
+                - link "Người dùng" [ref=e929] [cursor=pointer]:
+                  - /url: /profile/019e6385-e580-7400-bd01-dc5a314632b9
+                - generic [ref=e930]:
+                  - generic [ref=e931]: "@019e6385"
+                  - generic [ref=e932]: ·
+                  - generic [ref=e933]: 26/5/2026
+              - generic [ref=e934]:
+                - generic [ref=e935] [cursor=pointer]:
+                  - img [ref=e936]
+                  - text: Nguồn đáng tin cậy
+                - link "Xem chi tiết" [ref=e939] [cursor=pointer]:
+                  - /url: /post/019e6385-e582-71b3-9ed8-dd885a3108e3
+                  - img [ref=e940]
+            - link "moderation smoke target" [ref=e944] [cursor=pointer]:
+              - /url: /post/019e6385-e582-71b3-9ed8-dd885a3108e3
+            - generic [ref=e945]:
+              - link "Tổng hợp" [ref=e946] [cursor=pointer]:
+                - /url: /topic/general
+              - generic [ref=e947]:
+                - img [ref=e948]
+                - text: 2 lượt đọc
+            - generic [ref=e951]:
+              - img [ref=e952]
+              - generic [ref=e955]: Được đề xuất vì bạn quan tâm đến Tổng hợp.
+            - generic [ref=e956]:
+              - button "0" [ref=e957] [cursor=pointer]:
+                - img [ref=e958]
+                - text: "0"
+              - button "0" [ref=e960] [cursor=pointer]:
+                - img [ref=e961]
+                - text: "0"
+              - link "0" [ref=e963] [cursor=pointer]:
+                - /url: /post/019e6385-e582-71b3-9ed8-dd885a3108e3
+                - img [ref=e964]
+                - text: "0"
+              - generic [ref=e966]:
+                - img [ref=e967]
+                - text: "0"
+        - listitem [ref=e972]:
+          - article [ref=e973]:
+            - generic [ref=e974]:
+              - link "NG" [ref=e975] [cursor=pointer]:
+                - /url: /profile/019e635c-ec06-7a00-bef1-aaaba9c6e581
+              - generic [ref=e976]:
+                - link "Người dùng" [ref=e978] [cursor=pointer]:
+                  - /url: /profile/019e635c-ec06-7a00-bef1-aaaba9c6e581
+                - generic [ref=e979]:
+                  - generic [ref=e980]: "@019e635c"
+                  - generic [ref=e981]: ·
+                  - generic [ref=e982]: 26/5/2026
+              - generic [ref=e983]:
+                - generic [ref=e984] [cursor=pointer]:
+                  - img [ref=e985]
+                  - text: Nguồn đáng tin cậy
+                - link "Xem chi tiết" [ref=e988] [cursor=pointer]:
+                  - /url: /post/019e635c-ec16-7181-899e-778a5190ae91
+                  - img [ref=e989]
+            - link "fallback check" [ref=e993] [cursor=pointer]:
+              - /url: /post/019e635c-ec16-7181-899e-778a5190ae91
+            - link "Tổng hợp" [ref=e995] [cursor=pointer]:
+              - /url: /topic/general
+            - generic [ref=e996]:
+              - img [ref=e997]
+              - generic [ref=e1000]: Được đề xuất vì bạn quan tâm đến Tổng hợp.
+            - generic [ref=e1001]:
+              - button "0" [ref=e1002] [cursor=pointer]:
+                - img [ref=e1003]
+                - text: "0"
+              - button "0" [ref=e1005] [cursor=pointer]:
+                - img [ref=e1006]
+                - text: "0"
+              - link "0" [ref=e1008] [cursor=pointer]:
+                - /url: /post/019e635c-ec16-7181-899e-778a5190ae91
+                - img [ref=e1009]
+                - text: "0"
+              - generic [ref=e1011]:
+                - img [ref=e1012]
+                - text: "0"
+        - listitem [ref=e1017]:
+          - article [ref=e1018]:
+            - generic [ref=e1019]:
+              - link "NG" [ref=e1020] [cursor=pointer]:
+                - /url: /profile/019e635c-acc7-735f-ad79-74fff68fdc03
+              - generic [ref=e1021]:
+                - link "Người dùng" [ref=e1023] [cursor=pointer]:
+                  - /url: /profile/019e635c-acc7-735f-ad79-74fff68fdc03
+                - generic [ref=e1024]:
+                  - generic [ref=e1025]: "@019e635c"
+                  - generic [ref=e1026]: ·
+                  - generic [ref=e1027]: 26/5/2026
+              - generic [ref=e1028]:
+                - generic [ref=e1029] [cursor=pointer]:
+                  - img [ref=e1030]
+                  - text: Nguồn đáng tin cậy
+                - link "Xem chi tiết" [ref=e1033] [cursor=pointer]:
+                  - /url: /post/019e635c-acd2-7011-9848-47aad305c2a7
+                  - img [ref=e1034]
+            - link "phase 2b smoke" [ref=e1038] [cursor=pointer]:
+              - /url: /post/019e635c-acd2-7011-9848-47aad305c2a7
+            - generic [ref=e1039]:
+              - link "Tổng hợp" [ref=e1040] [cursor=pointer]:
+                - /url: /topic/general
+              - generic [ref=e1041]:
+                - img [ref=e1042]
+                - text: 1 lượt đọc
+            - generic [ref=e1045]:
+              - img [ref=e1046]
+              - generic [ref=e1049]: Được đề xuất vì bạn quan tâm đến Tổng hợp.
+            - generic [ref=e1050]:
+              - button "1" [ref=e1051] [cursor=pointer]:
+                - img [ref=e1052]
+                - text: "1"
+              - button "0" [ref=e1054] [cursor=pointer]:
+                - img [ref=e1055]
+                - text: "0"
+              - link "0" [ref=e1057] [cursor=pointer]:
+                - /url: /post/019e635c-acd2-7011-9848-47aad305c2a7
+                - img [ref=e1058]
+                - text: "0"
+              - generic [ref=e1060]:
+                - img [ref=e1061]
+                - text: "0"

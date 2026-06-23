@@ -356,6 +356,7 @@ pub struct MyInteractions {
     pub shared: bool,
     pub hidden: bool,
     pub reported_pending: bool,
+    pub commented: bool,
 }
 
 #[derive(Serialize)]
@@ -365,6 +366,7 @@ pub struct MyInteractionState {
     pub shared: bool,
     pub hidden: bool,
     pub reported_pending: bool,
+    pub commented: bool,
 }
 
 pub async fn my_interactions(
@@ -372,13 +374,14 @@ pub async fn my_interactions(
     user_id: Uuid,
     post_id: Uuid,
 ) -> Result<MyInteractions, AppError> {
-    let row: (Option<bool>, Option<bool>, Option<bool>, Option<bool>, bool) = sqlx::query_as(
+    let row: (Option<bool>, Option<bool>, Option<bool>, Option<bool>, bool, bool) = sqlx::query_as(
         "SELECT
            bool_or(type = 'like'::interaction_type)  AS liked,
            bool_or(type = 'save'::interaction_type)  AS saved,
            bool_or(type = 'share'::interaction_type) AS shared,
            bool_or(type = 'hide'::interaction_type)  AS hidden,
-           EXISTS (SELECT 1 FROM reports WHERE reporter_id=$1 AND post_id=$2 AND status='pending') AS reported_pending
+           EXISTS (SELECT 1 FROM reports WHERE reporter_id=$1 AND post_id=$2 AND status='pending') AS reported_pending,
+           EXISTS (SELECT 1 FROM comments WHERE author_id=$1 AND post_id=$2 AND is_deleted=false) AS commented
          FROM interactions WHERE user_id=$1 AND post_id=$2"
     ).bind(user_id).bind(post_id).fetch_one(db).await?;
     Ok(MyInteractions {
@@ -387,6 +390,7 @@ pub async fn my_interactions(
         shared: row.2.unwrap_or(false),
         hidden: row.3.unwrap_or(false),
         reported_pending: row.4,
+        commented: row.5,
     })
 }
 
@@ -395,7 +399,7 @@ pub async fn batch_my_interactions(
     user_id: Uuid,
     post_ids: &[Uuid],
 ) -> Result<HashMap<Uuid, MyInteractionState>, AppError> {
-    let rows: Vec<(Uuid, bool, bool, bool, bool, bool)> = sqlx::query_as(
+    let rows: Vec<(Uuid, bool, bool, bool, bool, bool, bool)> = sqlx::query_as(
         "SELECT
            p.id AS post_id,
            COALESCE(bool_or(i.type = 'like'::interaction_type), false) AS liked,
@@ -405,7 +409,11 @@ pub async fn batch_my_interactions(
            EXISTS (
              SELECT 1 FROM reports r
              WHERE r.reporter_id = $1 AND r.post_id = p.id AND r.status = 'pending'
-           ) AS reported_pending
+           ) AS reported_pending,
+           EXISTS (
+             SELECT 1 FROM comments c
+             WHERE c.author_id = $1 AND c.post_id = p.id AND c.is_deleted = false
+           ) AS commented
          FROM unnest($2::uuid[]) AS p(id)
          LEFT JOIN interactions i ON i.user_id = $1 AND i.post_id = p.id
          GROUP BY p.id",
@@ -426,6 +434,7 @@ pub async fn batch_my_interactions(
                     shared: row.3,
                     hidden: row.4,
                     reported_pending: row.5,
+                    commented: row.6,
                 },
             )
         })

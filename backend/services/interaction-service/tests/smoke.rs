@@ -180,6 +180,11 @@ async fn my_endpoint_reflects_state() {
         .send()
         .await
         .unwrap();
+    a.post(format!("{ENVOY}/api/v1/posts/{pid}/comments"))
+        .json(&json!({ "content": "commented state" }))
+        .send()
+        .await
+        .unwrap();
     let r = a
         .get(format!("{ENVOY}/api/v1/posts/{pid}/me"))
         .send()
@@ -189,6 +194,7 @@ async fn my_endpoint_reflects_state() {
     assert_eq!(me["liked"], true);
     assert_eq!(me["saved"], true);
     assert_eq!(me["shared"], false);
+    assert_eq!(me["commented"], true);
 }
 
 #[tokio::test]
@@ -215,6 +221,11 @@ async fn batch_me_endpoint_reflects_state_and_validates_length() {
         .send()
         .await
         .unwrap();
+    a.post(format!("{ENVOY}/api/v1/posts/{pid1}/comments"))
+        .json(&json!({ "content": "batch commented state" }))
+        .send()
+        .await
+        .unwrap();
 
     let r = a
         .post(format!("{ENVOY}/api/v1/interactions/me/batch"))
@@ -229,11 +240,13 @@ async fn batch_me_endpoint_reflects_state_and_validates_length() {
     assert_eq!(body["items"][pid1]["shared"], false);
     assert_eq!(body["items"][pid1]["hidden"], false);
     assert_eq!(body["items"][pid1]["reported_pending"], true);
+    assert_eq!(body["items"][pid1]["commented"], true);
     assert_eq!(body["items"][pid2]["liked"], false);
     assert_eq!(body["items"][pid2]["saved"], false);
     assert_eq!(body["items"][pid2]["shared"], false);
     assert_eq!(body["items"][pid2]["hidden"], false);
     assert_eq!(body["items"][pid2]["reported_pending"], false);
+    assert_eq!(body["items"][pid2]["commented"], false);
 
     let too_many = (0..101)
         .map(|_| uuid::Uuid::now_v7().to_string())

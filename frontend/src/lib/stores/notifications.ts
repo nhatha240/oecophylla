@@ -7,6 +7,7 @@ import {
   markAllNotificationsRead,
   markNotificationRead
 } from '$lib/api/notifications';
+import { isNotificationRead } from '$lib/notifications/normalize';
 import type { Notification } from '$lib/types';
 
 type NotificationsState = {
@@ -76,9 +77,8 @@ export const notifications = {
   subscribe: store.subscribe
 };
 
-export async function initNotifications(fetchImpl: typeof fetch = fetch): Promise<void> {
-  if (!browser || initialized) return;
-  initialized = true;
+export async function refreshNotifications(fetchImpl: typeof fetch = fetch): Promise<void> {
+  if (!browser) return;
   store.update((state) => ({ ...state, loading: true }));
 
   try {
@@ -86,23 +86,28 @@ export async function initNotifications(fetchImpl: typeof fetch = fetch): Promis
       listNotifications(fetchImpl, { limit: 20 }),
       getNotificationUnreadCount(fetchImpl)
     ]);
-    store.set({
+    store.update((state) => ({
+      ...state,
       items: list.items,
       unread: unread.count,
-      connected: false,
       loading: false,
       unavailable: false
-    });
+    }));
   } catch (error) {
     const unavailable = isServiceUnavailable(error);
-    store.set({
-      items: [],
-      unread: 0,
-      connected: false,
+    store.update((state) => ({
+      ...state,
       loading: false,
       unavailable
-    });
+    }));
+    if (!unavailable) throw error;
   }
+}
+
+export async function initNotifications(fetchImpl: typeof fetch = fetch): Promise<void> {
+  if (!browser || initialized) return;
+  initialized = true;
+  await refreshNotifications(fetchImpl);
 }
 
 async function probeNotifications(fetchImpl: typeof fetch): Promise<boolean> {
@@ -155,7 +160,7 @@ async function openStream(fetchImpl: typeof fetch): Promise<void> {
       store.update((state) => ({
         ...state,
         items: dedupe([item, ...state.items]).slice(0, 20),
-        unread: state.unread + (item.is_read ? 0 : 1)
+        unread: state.unread + (isNotificationRead(item) ? 0 : 1)
       }));
     } catch {
       return;
@@ -207,8 +212,8 @@ export async function markNotificationAsRead(id: string, fetchImpl: typeof fetch
   }
 
   store.update((state) => {
-    const items = state.items.map((item) => (item.id === id ? { ...item, is_read: true } : item));
-    const unread = items.reduce((count, item) => count + (item.is_read ? 0 : 1), 0);
+    const items = state.items.map((item) => (item.id === id ? { ...item, is_read: true, read: true } : item));
+    const unread = items.reduce((count, item) => count + (isNotificationRead(item) ? 0 : 1), 0);
     return { ...state, items, unread };
   });
 }
@@ -224,7 +229,7 @@ export async function markAllNotificationsAsRead(fetchImpl: typeof fetch = fetch
 
   store.update((state) => ({
     ...state,
-    items: state.items.map((item) => ({ ...item, is_read: true })),
+    items: state.items.map((item) => ({ ...item, is_read: true, read: true })),
     unread: 0
   }));
 }

@@ -8,9 +8,16 @@
 
   let liked  = me?.liked  ?? false;
   let saved  = me?.saved  ?? false;
+  let commented = me?.commented ?? false;
   let likeCount = post.like_count;
   let saveCount = post.save_count;
   const inFlight = { like: false, save: false };
+
+  $: if (!inFlight.like) liked = me?.liked ?? false;
+  $: if (!inFlight.save) saved = me?.saved ?? false;
+  $: commented = me?.commented ?? false;
+  $: likeCount = post.like_count + (liked && !me?.liked ? 1 : !liked && me?.liked ? -1 : 0);
+  $: saveCount = post.save_count + (saved && !me?.saved ? 1 : !saved && me?.saved ? -1 : 0);
 
   async function toggle(kind: 'like' | 'save') {
     // Ignore re-entrant clicks while a request is pending so rapid toggling
@@ -43,6 +50,6 @@
   <button class={`post-action save ${saved ? 'active' : ''}`} on:click={() => toggle('save')} aria-pressed={saved}>
     <Icon name={saved ? 'BookmarkFill' : 'Bookmark'} size={16} /> {saveCount}
   </button>
-  <a class="post-action" href={`/post/${post.id}`}><Icon name="Comment" size={16} /> {post.comment_count}</a>
+  <a class={`post-action comment ${commented ? 'active' : ''}`} href={`/post/${post.id}`}><Icon name="Comment" size={16} /> {post.comment_count}</a>
   <span class="post-action"><Icon name="Share" size={16} /> {post.share_count}</span>
 </div>

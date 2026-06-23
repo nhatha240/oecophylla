@@ -6,6 +6,7 @@
     initNotifications,
     markAllNotificationsAsRead,
     notifications,
+    refreshNotifications,
     subscribeSSE
   } from '$lib/stores/notifications';
   import { showToast } from '$lib/stores/toast';
@@ -13,22 +14,44 @@
   export let enabled = false;
 
   let open = false;
+  let mounted = false;
+  let started = false;
+  let disposed = false;
+  let unsubscribe: () => void = () => {};
 
-  onMount(() => {
-    if (!enabled) return;
-    let unsubscribe = () => {};
-    let disposed = false;
-
+  async function startNotifications(): Promise<void> {
+    if (started || disposed) return;
+    started = true;
     void (async () => {
       await initNotifications(fetch);
       if (!disposed) {
         unsubscribe = subscribeSSE(fetch);
       }
     })();
+  }
+
+  function stopNotifications(): void {
+    if (!started) return;
+    unsubscribe();
+    unsubscribe = () => {};
+    started = false;
+    open = false;
+  }
+
+  $: if (mounted && enabled && !started) {
+    void startNotifications();
+  }
+
+  $: if (mounted && !enabled && started) {
+    stopNotifications();
+  }
+
+  onMount(() => {
+    mounted = true;
 
     return () => {
       disposed = true;
-      unsubscribe();
+      stopNotifications();
     };
   });
 
@@ -37,6 +60,18 @@
       await markAllNotificationsAsRead(fetch);
     } catch {
       showToast('Không đánh dấu đã đọc được.');
+    }
+  }
+
+  async function toggleOpen(): Promise<void> {
+    const nextOpen = !open;
+    open = nextOpen;
+    if (!nextOpen) return;
+
+    try {
+      await refreshNotifications(fetch);
+    } catch {
+      showToast('Không tải được thông báo.');
     }
   }
 </script>
@@ -49,7 +84,7 @@
       title="Thông báo"
       aria-haspopup="dialog"
       aria-expanded={open}
-      on:click={() => (open = !open)}
+      on:click={toggleOpen}
     >
       <Icon name="Bell" size={18} />
       {#if $notifications.unread > 0}
