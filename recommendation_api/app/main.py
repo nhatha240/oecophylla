@@ -16,7 +16,11 @@ from .features import (
     upsert_user_vector,
     utc_now,
 )
-from .ranking import diversity_rerank, score_post
+from .ranking import (
+    HEURISTIC_MODEL_VERSION,
+    build_rank_feature_snapshot,
+    diversity_rerank,
+)
 from .schemas import (
     EvaluateResponse,
     RebuildRequest,
@@ -68,23 +72,39 @@ async def recommend_feed(
     excluded = set(body.exclude_post_ids)
     candidates = [c for c in candidates if c.id not in excluded]
     if not candidates:
-        return RecommendFeedResponse(items=[], generated_at=utc_now())
-
-    scored = [
-        RecommendationItem(
-            post_id=c.id,
-            score=score_post(user_vec, c, half_life_hours=cfg.half_life_hours),
-            source=c.source,
-            reason=f"score={c.source}",
+        return RecommendFeedResponse(
+            items=[],
+            model_version=HEURISTIC_MODEL_VERSION,
+            generated_at=utc_now(),
         )
-        for c in candidates
-    ]
+
+    scored = []
+    for candidate in candidates:
+        features = build_rank_feature_snapshot(
+            user_vec,
+            candidate,
+            half_life_hours=cfg.half_life_hours,
+        )
+        assert features.heuristic_score is not None
+        scored.append(
+            RecommendationItem(
+                post_id=candidate.id,
+                score=features.heuristic_score,
+                source=candidate.source,
+                reason=f"score={candidate.source}",
+                features=features,
+            )
+        )
     primary = {str(c.id): c.primary_topic for c in candidates}
     author = {str(c.id): str(c.author_id) for c in candidates}
     top = diversity_rerank(
         scored, primary_topic=primary, author_id=author, limit=body.limit
     )
-    return RecommendFeedResponse(items=top, generated_at=utc_now())
+    return RecommendFeedResponse(
+        items=top,
+        model_version=HEURISTIC_MODEL_VERSION,
+        generated_at=utc_now(),
+    )
 
 
 @app.post("/recommend/features/rebuild", response_model=RebuildResponse)

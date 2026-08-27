@@ -5,7 +5,7 @@ from uuid import UUID
 
 from .db import DB, fetch_user_vector, RedisCli
 from .features import gather_candidates
-from .ranking import diversity_rerank, score_post
+from .ranking import build_rank_feature_snapshot, diversity_rerank
 from .schemas import EvaluateResponse, RecommendationItem
 
 
@@ -25,15 +25,19 @@ async def evaluate(
             fallback_rate=1.0,
         )
 
-    scored = [
-        RecommendationItem(
-            post_id=c.id,
-            score=score_post(user_vec, c),
-            source=c.source,
-            reason="evaluate",
+    scored = []
+    for candidate in candidates:
+        features = build_rank_feature_snapshot(user_vec, candidate)
+        assert features.heuristic_score is not None
+        scored.append(
+            RecommendationItem(
+                post_id=candidate.id,
+                score=features.heuristic_score,
+                source=candidate.source,
+                reason="evaluate",
+                features=features,
+            )
         )
-        for c in candidates
-    ]
     primary = {str(c.id): c.primary_topic for c in candidates}
     author = {str(c.id): str(c.author_id) for c in candidates}
     top = diversity_rerank(scored, primary_topic=primary, author_id=author, limit=k)

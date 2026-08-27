@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -11,15 +11,29 @@ class RecommendFeedRequest(BaseModel):
     exclude_post_ids: list[UUID] = Field(default_factory=list)
 
 
+class RankFeatureSnapshot(BaseModel):
+    schema_version: Literal["rank-features-v1"]
+    topic_relevance: Optional[float]
+    freshness: Optional[float]
+    safety_score: Optional[float]
+    candidate_source: str
+    is_followed_author: Optional[bool]
+    author_affinity: Optional[float]
+    heuristic_score: Optional[float]
+    ml_score: Optional[float]
+
+
 class RecommendationItem(BaseModel):
     post_id: UUID
     score: float
     source: str
     reason: str = ""
+    features: RankFeatureSnapshot
 
 
 class RecommendFeedResponse(BaseModel):
     items: list[RecommendationItem]
+    model_version: str = Field(min_length=1)
     generated_at: datetime
 
 

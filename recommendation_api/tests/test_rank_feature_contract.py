@@ -42,6 +42,15 @@ def test_rank_snapshot_contains_once_computed_heuristic_signals():
     )
 
 
+def test_rank_snapshot_uses_all_matching_topics_in_relevance():
+    snapshot = build_rank_feature_snapshot(
+        {"ai": 2.0, "tech": 1.0, "sports": 1.0},
+        _candidate(),
+    )
+
+    assert snapshot.topic_relevance == pytest.approx(0.75)
+
+
 def test_recommendation_response_serializes_versioned_snapshot_and_nulls():
     snapshot = build_rank_feature_snapshot({}, _candidate())
     response = RecommendFeedResponse(

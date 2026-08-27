@@ -2,11 +2,27 @@ from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
 from app.ranking import diversity_rerank
-from app.schemas import RecommendationItem
+from app.schemas import RankFeatureSnapshot, RecommendationItem
 
 
 def _item(score: float, post_id: UUID) -> RecommendationItem:
-    return RecommendationItem(post_id=post_id, score=score, source="topic", reason="t")
+    return RecommendationItem(
+        post_id=post_id,
+        score=score,
+        source="topic",
+        reason="t",
+        features=RankFeatureSnapshot(
+            schema_version="rank-features-v1",
+            topic_relevance=None,
+            freshness=None,
+            safety_score=None,
+            candidate_source="topic",
+            is_followed_author=None,
+            author_affinity=None,
+            heuristic_score=score,
+            ml_score=None,
+        ),
+    )
 
 
 def test_diversity_rerank_spreads_topics():

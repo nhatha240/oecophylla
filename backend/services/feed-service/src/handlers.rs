@@ -23,7 +23,9 @@ use uuid::Uuid;
 
 use crate::{
     cache::{self, get_cached_feed, set_cached_feed, trending_ids},
-    recommendation::{recommend_feed, RecommendFeedRequest, RecommendationItem},
+    recommendation::{
+        recommend_feed, RankFeatureSnapshot, RecommendFeedRequest, RecommendationItem,
+    },
     repo,
     state::AppState,
     types::{
@@ -246,8 +248,8 @@ async fn load_or_build_feed(s: &AppState, user_id: Uuid) -> (CachedFeed, String)
     )
     .await
     {
-        Ok(items) if !items.is_empty() => {
-            let cached = build_cached_feed("personalized", items);
+        Ok(result) if !result.items.is_empty() => {
+            let cached = build_cached_feed("personalized", result.items);
             persist(s, user_id, &cached).await;
             (cached, "personalized".into())
         }
@@ -270,6 +272,7 @@ async fn fallback_feed(s: &AppState, user_id: Uuid) -> (CachedFeed, String) {
                     score: score as f32,
                     source: "trending".into(),
                     reason: "redis-zset".into(),
+                    features: RankFeatureSnapshot::unranked("trending"),
                 })
                 .collect();
             let cached = build_cached_feed("fallback", items);
@@ -288,6 +291,7 @@ async fn fallback_feed(s: &AppState, user_id: Uuid) -> (CachedFeed, String) {
             score: 0.0,
             source: "recent".into(),
             reason: "fallback-recent".into(),
+            features: RankFeatureSnapshot::unranked("recent"),
         })
         .collect();
     let cached = build_cached_feed("fallback", items);

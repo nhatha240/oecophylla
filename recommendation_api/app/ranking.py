@@ -4,7 +4,11 @@ from datetime import datetime, timezone
 from math import exp
 from typing import Iterable
 
-from .schemas import CandidatePost, RecommendationItem
+from .schemas import CandidatePost, RankFeatureSnapshot, RecommendationItem
+
+
+RANK_FEATURE_SCHEMA_VERSION = "rank-features-v1"
+HEURISTIC_MODEL_VERSION = "heuristic-v1"
 
 
 def freshness_decay(created_at: datetime, half_life_hours: float = 36.0) -> float:
@@ -22,6 +26,38 @@ def relevance(user_vec: dict[str, float], post_topics: Iterable[str]) -> float:
     return sum(max(user_vec.get(t, 0.0), 0.0) for t in topics) / total
 
 
+def build_rank_feature_snapshot(
+    user_vec: dict[str, float],
+    post: CandidatePost,
+    *,
+    weights: tuple[float, float, float, float] = (0.5, 0.2, 0.1, 0.2),
+    diversity_boost: float = 1.0,
+    half_life_hours: float = 36.0,
+) -> RankFeatureSnapshot:
+    """Compute the heuristic components once and preserve the exact inputs used."""
+    topic_relevance = relevance(user_vec, post.topics)
+    freshness = freshness_decay(post.created_at, half_life_hours)
+    safety_score = float(post.safety_score)
+    w1, w2, w3, w4 = weights
+    heuristic_score = (
+        w1 * topic_relevance
+        + w2 * freshness
+        + w3 * safety_score
+        - w4 * (1.0 - diversity_boost)
+    )
+    return RankFeatureSnapshot(
+        schema_version=RANK_FEATURE_SCHEMA_VERSION,
+        topic_relevance=topic_relevance,
+        freshness=freshness,
+        safety_score=safety_score,
+        candidate_source=post.source,
+        is_followed_author=None,
+        author_affinity=None,
+        heuristic_score=heuristic_score,
+        ml_score=None,
+    )
+
+
 def score_post(
     user_vec: dict[str, float],
     post: CandidatePost,
@@ -30,13 +66,15 @@ def score_post(
     diversity_boost: float = 1.0,
     half_life_hours: float = 36.0,
 ) -> float:
-    w1, w2, w3, w4 = weights
-    return (
-        w1 * relevance(user_vec, post.topics)
-        + w2 * freshness_decay(post.created_at, half_life_hours)
-        + w3 * float(post.safety_score)
-        - w4 * (1.0 - diversity_boost)
+    snapshot = build_rank_feature_snapshot(
+        user_vec,
+        post,
+        weights=weights,
+        diversity_boost=diversity_boost,
+        half_life_hours=half_life_hours,
     )
+    assert snapshot.heuristic_score is not None
+    return snapshot.heuristic_score
 
 
 def diversity_rerank(
