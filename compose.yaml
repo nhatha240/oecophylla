@@ -3,6 +3,13 @@ name: oecophylla
 x-restart: &restart
   restart: unless-stopped
 
+x-rust-build: &rust-build
+  context: ./backend
+  dockerfile: Dockerfile
+  args:
+    CARGO_DEPS_JOBS: ${CARGO_DEPS_JOBS:-8}
+    CARGO_SERVICE_JOBS: ${CARGO_SERVICE_JOBS:-4}
+
 services:
   postgres:
     <<: *restart
@@ -49,6 +56,7 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
     volumes:
       - kafka_data:/var/lib/kafka/data
     healthcheck:
@@ -73,21 +81,16 @@ services:
     restart: "no"
 
   migrate:
-    image: rust:slim
+    build:
+      context: ./migrations
+      dockerfile: Dockerfile
+    image: oecophylla-migrate:local
     depends_on:
       postgres:
         condition: service_healthy
-    working_dir: /app
-    volumes:
-      - ./migrations:/app/migrations:ro
-      - cargo_cache:/usr/local/cargo/registry
     environment:
       DATABASE_URL: ${DATABASE_URL}
-    entrypoint: ["/bin/bash", "-c"]
-    command:
-      - |
-        cargo install --quiet sqlx-cli --version '^0.8' --no-default-features --features postgres,rustls && \
-        sqlx migrate run --source ./migrations
+    command: ["migrate", "run", "--source", "/app/migrations"]
     restart: "no"
 
   envoy:
@@ -111,8 +114,8 @@ services:
   auth-service:
     <<: *restart
     build:
-      context: ./backend
-      dockerfile: services/auth-service/Dockerfile
+      <<: *rust-build
+      target: auth-service
     depends_on:
       postgres:  { condition: service_healthy }
       redis:     { condition: service_healthy }
@@ -134,8 +137,8 @@ services:
   user-service:
     <<: *restart
     build:
-      context: ./backend
-      dockerfile: services/user-service/Dockerfile
+      <<: *rust-build
+      target: user-service
     depends_on:
       postgres:  { condition: service_healthy }
       redis:     { condition: service_healthy }
@@ -147,8 +150,8 @@ services:
   content-service:
     <<: *restart
     build:
-      context: ./backend
-      dockerfile: services/content-service/Dockerfile
+      <<: *rust-build
+      target: content-service
     depends_on:
       postgres:  { condition: service_healthy }
       redis:     { condition: service_healthy }
@@ -160,8 +163,8 @@ services:
   interaction-service:
     <<: *restart
     build:
-      context: ./backend
-      dockerfile: services/interaction-service/Dockerfile
+      <<: *rust-build
+      target: interaction-service
     depends_on:
       postgres:  { condition: service_healthy }
       redis:     { condition: service_healthy }
@@ -173,8 +176,8 @@ services:
   feed-service:
     <<: *restart
     build:
-      context: ./backend
-      dockerfile: services/feed-service/Dockerfile
+      <<: *rust-build
+      target: feed-service
     depends_on:
       postgres:           { condition: service_healthy }
       redis:              { condition: service_healthy }
@@ -191,8 +194,8 @@ services:
   moderation-service:
     <<: *restart
     build:
-      context: ./backend
-      dockerfile: services/moderation-service/Dockerfile
+      <<: *rust-build
+      target: moderation-service
     depends_on:
       postgres: { condition: service_healthy }
       redis:    { condition: service_healthy }
@@ -201,18 +204,12 @@ services:
       init-topics: { condition: service_completed_successfully }
     environment:
       <<: *svc_env
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8006/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
 
   notification-service:
     <<: *restart
     build:
-      context: ./backend
-      dockerfile: services/notification-service/Dockerfile
+      <<: *rust-build
+      target: notification-service
     # Single replica: SSE fan-out state is in-process (Mutex<HashMap<UserId, Sender>>).
     # A notification produced for user U only reaches the replica U is connected to.
     # Phase 4 moves fan-out to Redis pub/sub for horizontal scale.
@@ -226,12 +223,6 @@ services:
       init-topics: { condition: service_completed_successfully }
     environment:
       <<: *svc_env
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8007/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
 
   recommendation-api:
     <<: *restart
@@ -259,7 +250,11 @@ services:
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: ${REDIS_URL}
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8091/health"]
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8091/health', timeout=3)"
       interval: 10s
       timeout: 5s
       retries: 5
@@ -298,8 +293,8 @@ services:
   cache-invalidator:
     <<: *restart
     build:
-      context: ./backend
-      dockerfile: services/cache-invalidator/Dockerfile
+      <<: *rust-build
+      target: cache-invalidator
     depends_on:
       redis: { condition: service_healthy }
       kafka: { condition: service_healthy }
@@ -353,4 +348,3 @@ volumes:
   postgres_data:
   redis_data:
   kafka_data:
-  cargo_cache:

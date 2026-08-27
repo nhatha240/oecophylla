@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "oecophylla.fullname" . }}
+  labels:
+    {{- include "oecophylla.labels" . | nindent 4 }}
+data:
+  RUST_LOG: {{ .Values.config.rustLog | quote }}
+  KAFKA_BROKERS: {{ include "oecophylla.kafkaBrokers" . | quote }}
+  JWT_ACCESS_TTL_SECONDS: {{ .Values.config.jwtAccessTtlSeconds | quote }}
+  JWT_REFRESH_TTL_SECONDS: {{ .Values.config.jwtRefreshTtlSeconds | quote }}
+  ARGON2_M_COST: {{ .Values.config.argon2MCost | quote }}
+  ARGON2_T_COST: {{ .Values.config.argon2TCost | quote }}
+  ARGON2_P_COST: {{ .Values.config.argon2PCost | quote }}
+  AUTO_PUBLISH: {{ .Values.config.autoPublish | quote }}
+  FEED_CACHE_TTL_SECONDS: {{ .Values.config.feedCacheTtlSeconds | quote }}
+  FEED_RECOMMENDATION_TIMEOUT_MS: {{ .Values.config.feedRecommendationTimeoutMs | quote }}
+  FEED_RESULT_SIZE: {{ .Values.config.feedResultSize | quote }}
+  FEED_CANDIDATE_POOL_SIZE: {{ .Values.config.feedCandidatePoolSize | quote }}
+  RECOMMENDATION_SERVICE_URL: {{ printf "http://%s-recommendation-api:8090" (include "oecophylla.fullname" .) | quote }}
+  ENVOY_URL: {{ printf "http://%s-envoy:8080" (include "oecophylla.fullname" .) | quote }}
+  PUBLIC_API_BASE: {{ .Values.config.publicApiBase | quote }}
+  ORIGIN: {{ .Values.config.origin | quote }}
+  PYTHONDONTWRITEBYTECODE: {{ .Values.config.pythonDontWriteBytecode | quote }}
+  PYTHONUNBUFFERED: {{ .Values.config.pythonUnbuffered | quote }}

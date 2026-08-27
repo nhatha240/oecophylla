@@ -1,0 +1,98 @@
+{{- if .Values.migrations.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "oecophylla.fullname" . }}-migrate-{{ .Release.Revision }}
+  labels:
+    {{- include "oecophylla.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migrate
+spec:
+  backoffLimit: {{ .Values.migrations.backoffLimit }}
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        {{- include "oecophylla.selectorLabels" (dict "root" . "name" "migrate") | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "oecophylla.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: migrate
+          image: {{ include "oecophylla.image" .Values.migrations.image | quote }}
+          imagePullPolicy: {{ .Values.migrations.image.pullPolicy }}
+          args: ["migrate", "run", "--source", "/app/migrations"]
+          envFrom:
+            - secretRef: { name: {{ include "oecophylla.secretName" . }} }
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: {{ .Values.componentDefaults.tmpSizeLimit }}
+{{- end }}
+{{- if and .Values.migrations.enabled .Values.topicInitialization.enabled }}
+---
+{{- end }}
+{{- if .Values.topicInitialization.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "oecophylla.fullname" . }}-topics-{{ .Release.Revision }}
+  labels:
+    {{- include "oecophylla.labels" . | nindent 4 }}
+    app.kubernetes.io/component: topic-initializer
+  annotations:
+    # Run only after Helm has waited for the Kafka StatefulSet rollout. This
+    # prevents topics being created on an old broker immediately before restart.
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 10
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        {{- include "oecophylla.selectorLabels" (dict "root" . "name" "topic-initializer") | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "oecophylla.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: init-topics
+          image: {{ .Values.topicInitialization.image | quote }}
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              for topic in oecophylla.content.created oecophylla.user.followed oecophylla.interactions oecophylla.moderation.action; do
+                /opt/kafka/bin/kafka-topics.sh \
+                  --bootstrap-server "$KAFKA_BROKERS" \
+                  --create --if-not-exists --topic "$topic" \
+                  --partitions {{ .Values.topicInitialization.partitions }} \
+                  --replication-factor {{ .Values.topicInitialization.replicationFactor }}
+              done
+          env:
+            - name: KAFKA_BROKERS
+              value: {{ include "oecophylla.kafkaBrokers" . | quote }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: {{ .Values.componentDefaults.tmpSizeLimit }}
+{{- end }}

@@ -18,6 +18,12 @@ Browse:
 - Prometheus: http://localhost:9090
 - Grafana: http://localhost:3001 (admin / password from `.env`)
 
+## Kubernetes / Helm
+
+The production-oriented Helm chart is in [`charts/oecophylla`](charts/oecophylla/README.md).
+It deploys every application service and supports either managed PostgreSQL,
+Redis and Kafka or an optional single-node sandbox stack.
+
 ## Service URLs (dev override exposes raw ports)
 
 | Service | Internal | Host-exposed via `compose.dev.yaml` |

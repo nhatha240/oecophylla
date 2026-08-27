@@ -1,0 +1,147 @@
+{{- range $name, $component := .Values.components }}
+{{- if or (not (hasKey $component "enabled")) $component.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "oecophylla.componentName" (dict "root" $ "name" $name) }}
+  labels:
+    {{- include "oecophylla.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+spec:
+  replicas: {{ $component.replicas | default 1 }}
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "oecophylla.selectorLabels" (dict "root" $ "name" $name) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "oecophylla.selectorLabels" (dict "root" $ "name" $name) | nindent 8 }}
+        {{- with $.Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") $ | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") $ | sha256sum }}
+        {{- with $.Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "oecophylla.serviceAccountName" $ }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml $.Values.podSecurityContext | nindent 8 }}
+      terminationGracePeriodSeconds: {{ $.Values.componentDefaults.terminationGracePeriodSeconds }}
+      {{- with $.Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if $.Values.migrations.enabled }}
+      # sqlx serializes concurrent migrators with a database advisory lock. An
+      # init container keeps application pods unavailable until schema is ready.
+      initContainers:
+        - name: migrate
+          image: {{ include "oecophylla.image" $.Values.migrations.image | quote }}
+          imagePullPolicy: {{ $.Values.migrations.image.pullPolicy }}
+          args: ["migrate", "run", "--source", "/app/migrations"]
+          envFrom:
+            - secretRef:
+                name: {{ include "oecophylla.secretName" $ }}
+          securityContext:
+            {{- toYaml $.Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      {{- end }}
+      containers:
+        - name: {{ $name }}
+          image: {{ include "oecophylla.image" $component.image | quote }}
+          imagePullPolicy: {{ $component.image.pullPolicy }}
+          securityContext:
+            {{- toYaml $.Values.securityContext | nindent 12 }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "oecophylla.fullname" $ }}
+            - secretRef:
+                name: {{ include "oecophylla.secretName" $ }}
+          {{- with $component.env }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if $component.port }}
+          ports:
+            - name: http
+              containerPort: {{ $component.port }}
+              protocol: TCP
+            {{- if $component.adminPort }}
+            - name: admin
+              containerPort: {{ $component.adminPort }}
+              protocol: TCP
+            {{- end }}
+          {{- end }}
+          {{- if $component.probePath }}
+          startupProbe:
+            httpGet:
+              path: {{ $component.probePath }}
+              port: {{ if $component.adminPort }}admin{{ else }}http{{ end }}
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: {{ $component.probePath }}
+              port: {{ if $component.adminPort }}admin{{ else }}http{{ end }}
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: {{ $component.probePath }}
+              port: {{ if $component.adminPort }}admin{{ else }}http{{ end }}
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 3
+          {{- end }}
+          resources:
+            {{- toYaml ($component.resources | default $.Values.componentDefaults.resources) | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          {{- if eq $component.configVolume "envoy" }}
+            - name: envoy-config
+              mountPath: /etc/envoy/envoy.yaml
+              subPath: envoy.yaml
+              readOnly: true
+          {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: {{ $.Values.componentDefaults.tmpSizeLimit }}
+      {{- if eq $component.configVolume "envoy" }}
+        - name: envoy-config
+          configMap:
+            name: {{ include "oecophylla.fullname" $ }}-envoy
+      {{- end }}
+      {{- with $.Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $.Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $.Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $.Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}
+{{- end }}

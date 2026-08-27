@@ -1,0 +1,32 @@
+{{- range $name, $component := .Values.components }}
+{{- if and (or (not (hasKey $component "enabled")) $component.enabled) $component.port }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "oecophylla.componentName" (dict "root" $ "name" $name) }}
+  labels:
+    {{- include "oecophylla.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+    {{- if eq $name "envoy" }}
+    oecophylla.io/metrics: envoy
+    {{- else if ne $name "frontend" }}
+    oecophylla.io/metrics: app
+    {{- end }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "oecophylla.selectorLabels" (dict "root" $ "name" $name) | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ $component.port }}
+      targetPort: http
+      protocol: TCP
+    {{- if $component.adminPort }}
+    - name: admin
+      port: {{ $component.adminPort }}
+      targetPort: admin
+      protocol: TCP
+    {{- end }}
+{{- end }}
+{{- end }}

@@ -1,0 +1,85 @@
+# Local OrbStack/Kubernetes override. Do not put real credentials in this file;
+# pass secrets with --set-string or use secrets.existingSecret.
+infrastructure:
+  enabled: true
+  postgres:
+    storage: 2Gi
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits: { cpu: 500m, memory: 1Gi }
+  redis:
+    storage: 512Mi
+    resources:
+      requests: { cpu: 50m, memory: 64Mi }
+      limits: { cpu: 250m, memory: 256Mi }
+  kafka:
+    storage: 2Gi
+    resources:
+      requests: { cpu: 100m, memory: 384Mi }
+      limits: { cpu: 750m, memory: 1Gi }
+
+database:
+  sslMode: ""
+
+config:
+  origin: http://localhost:3000
+
+components:
+  auth-service:
+    image: { repository: oecophylla-auth-service, tag: k8s, pullPolicy: IfNotPresent }
+    replicas: 1
+  user-service:
+    image: { repository: oecophylla-user-service, tag: k8s, pullPolicy: IfNotPresent }
+    replicas: 1
+  content-service:
+    image: { repository: oecophylla-content-service, tag: k8s, pullPolicy: IfNotPresent }
+    replicas: 1
+  interaction-service:
+    image: { repository: oecophylla-interaction-service, tag: k8s, pullPolicy: IfNotPresent }
+    replicas: 1
+  feed-service:
+    image: { repository: oecophylla-feed-service, tag: k8s, pullPolicy: IfNotPresent }
+    replicas: 1
+  moderation-service:
+    image: { repository: oecophylla-moderation-service, tag: k8s, pullPolicy: IfNotPresent }
+    replicas: 1
+  notification-service:
+    image: { repository: oecophylla-notification-service, tag: k8s, pullPolicy: IfNotPresent }
+    replicas: 1
+  recommendation-api:
+    image: { repository: oecophylla-recommendation-api, tag: k8s, pullPolicy: IfNotPresent }
+    replicas: 1
+  analytics-service:
+    image: { repository: oecophylla-analytics-service, tag: k8s, pullPolicy: IfNotPresent }
+    replicas: 1
+  feature-store-worker:
+    image: { repository: oecophylla-feature-store-worker, tag: k8s, pullPolicy: IfNotPresent }
+    replicas: 1
+  nlp-worker:
+    image: { repository: oecophylla-nlp-worker, tag: k8s, pullPolicy: IfNotPresent }
+    replicas: 1
+  cache-invalidator:
+    image: { repository: oecophylla-cache-invalidator, tag: k8s, pullPolicy: IfNotPresent }
+    replicas: 1
+  envoy:
+    replicas: 1
+  frontend:
+    image: { repository: oecophylla-frontend, tag: k8s, pullPolicy: IfNotPresent }
+    replicas: 1
+
+componentDefaults:
+  resources:
+    requests: { cpu: 25m, memory: 64Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+
+migrations:
+  image:
+    repository: oecophylla-migrate
+    tag: k8s
+    pullPolicy: IfNotPresent
+
+ingress:
+  enabled: false
+
+podDisruptionBudget:
+  enabled: false

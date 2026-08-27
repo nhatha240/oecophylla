@@ -1,0 +1,97 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "oecophylla.fullname" . }}-envoy
+  labels:
+    {{- include "oecophylla.labels" . | nindent 4 }}
+data:
+  envoy.yaml: |
+    admin:
+      address:
+        socket_address: { address: 0.0.0.0, port_value: 9901 }
+    static_resources:
+      listeners:
+        - name: ingress
+          address:
+            socket_address: { address: 0.0.0.0, port_value: 8080 }
+          filter_chains:
+            - filters:
+                - name: envoy.filters.network.http_connection_manager
+                  typed_config:
+                    "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                    stat_prefix: ingress_http
+                    codec_type: AUTO
+                    route_config:
+                      name: local
+                      virtual_hosts:
+                        - name: oecophylla
+                          domains: ["*"]
+                          routes:
+                            - match: { path: "/api/v1/notifications/stream" }
+                              route: { cluster: notification, timeout: 0s, idle_timeout: 3600s }
+                            - match: { prefix: "/api/v1/notifications" }
+                              route: { cluster: notification }
+                            - match: { prefix: "/api/v1/search" }
+                              route: { cluster: content }
+                            - match: { prefix: "/admin" }
+                              route: { cluster: moderation }
+                            - match: { prefix: "/api/v1/auth" }
+                              route: { cluster: auth }
+                            - match: { prefix: "/api/v1/users" }
+                              route: { cluster: user }
+                            - match: { prefix: "/api/v1/interactions/me/batch" }
+                              route: { cluster: interaction }
+                            - match: { path: "/api/v1/feed/trending/stream" }
+                              route: { cluster: feed, timeout: 0s, idle_timeout: 3600s }
+                            - match: { prefix: "/api/v1/feed" }
+                              route: { cluster: feed }
+                            - match:
+                                safe_regex: { regex: '^/api/v1/posts/[^/]+/comments/stream$' }
+                              route: { cluster: interaction, timeout: 0s, idle_timeout: 3600s }
+                            - match:
+                                safe_regex: { regex: '^/api/v1/(posts/[^/]+/(like|save|share|hide|report|comments(?:/.*)?|me)/?|comments/[^/]+(?:/.*)?)$' }
+                              route: { cluster: interaction }
+                            - match: { path: "/api/v1/posts/saved" }
+                              route: { cluster: interaction }
+                            - match: { prefix: "/api/v1/posts" }
+                              route: { cluster: content }
+                    http_filters:
+                      - name: envoy.filters.http.local_ratelimit
+                        typed_config:
+                          "@type": type.googleapis.com/envoy.extensions.filters.http.local_ratelimit.v3.LocalRateLimit
+                          stat_prefix: ingress_http_rl
+                          token_bucket:
+                            max_tokens: 60
+                            tokens_per_fill: 60
+                            fill_interval: 60s
+                          filter_enabled:
+                            default_value: { numerator: 100, denominator: HUNDRED }
+                          filter_enforced:
+                            default_value: { numerator: 100, denominator: HUNDRED }
+                      - name: envoy.filters.http.router
+                        typed_config:
+                          "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+      clusters:
+        {{- $root := . }}
+        {{- range $cluster := list (dict "name" "auth" "component" "auth-service" "port" 8001) (dict "name" "user" "component" "user-service" "port" 8002) (dict "name" "content" "component" "content-service" "port" 8003) (dict "name" "interaction" "component" "interaction-service" "port" 8004) (dict "name" "feed" "component" "feed-service" "port" 8005) (dict "name" "moderation" "component" "moderation-service" "port" 8006) (dict "name" "notification" "component" "notification-service" "port" 8007) }}
+        - name: {{ $cluster.name }}
+          type: STRICT_DNS
+          connect_timeout: 1s
+          lb_policy: ROUND_ROBIN
+          load_assignment:
+            cluster_name: {{ $cluster.name }}
+            endpoints:
+              - lb_endpoints:
+                  - endpoint:
+                      address:
+                        socket_address:
+                          address: {{ include "oecophylla.componentName" (dict "root" $root "name" $cluster.component) }}
+                          port_value: {{ $cluster.port }}
+          health_checks:
+            - timeout: 1s
+              interval: 5s
+              unhealthy_threshold: 3
+              healthy_threshold: 1
+              http_health_check: { path: "/health" }
+        {{- end }}
+

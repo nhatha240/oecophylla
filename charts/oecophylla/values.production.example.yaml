@@ -1,0 +1,53 @@
+secrets:
+  existingSecret: oecophylla-runtime
+
+database:
+  host: postgres.production.internal
+  sslMode: require
+
+redis:
+  host: redis.production.internal
+
+kafka:
+  brokers: kafka-0.production.internal:9092,kafka-1.production.internal:9092,kafka-2.production.internal:9092
+
+config:
+  origin: https://oecophylla.example.com
+
+ingress:
+  host: oecophylla.example.com
+  tls:
+    enabled: true
+    secretName: oecophylla-tls
+
+# Replace every repository and immutable tag with images from your registry.
+components:
+  auth-service: { image: { repository: registry.example.com/oecophylla/auth-service, tag: "sha-REPLACE", pullPolicy: IfNotPresent }, replicas: 3, port: 8001, probePath: /health }
+  user-service: { image: { repository: registry.example.com/oecophylla/user-service, tag: "sha-REPLACE", pullPolicy: IfNotPresent }, replicas: 3, port: 8002, probePath: /health }
+  content-service: { image: { repository: registry.example.com/oecophylla/content-service, tag: "sha-REPLACE", pullPolicy: IfNotPresent }, replicas: 3, port: 8003, probePath: /health }
+  interaction-service: { image: { repository: registry.example.com/oecophylla/interaction-service, tag: "sha-REPLACE", pullPolicy: IfNotPresent }, replicas: 3, port: 8004, probePath: /health }
+  feed-service: { image: { repository: registry.example.com/oecophylla/feed-service, tag: "sha-REPLACE", pullPolicy: IfNotPresent }, replicas: 3, port: 8005, probePath: /health }
+  moderation-service: { image: { repository: registry.example.com/oecophylla/moderation-service, tag: "sha-REPLACE", pullPolicy: IfNotPresent }, replicas: 2, port: 8006, probePath: /health }
+  notification-service: { image: { repository: registry.example.com/oecophylla/notification-service, tag: "sha-REPLACE", pullPolicy: IfNotPresent }, replicas: 1, port: 8007, probePath: /health }
+  recommendation-api: { image: { repository: registry.example.com/oecophylla/recommendation-api, tag: "sha-REPLACE", pullPolicy: IfNotPresent }, replicas: 2, port: 8090, probePath: /health }
+  analytics-service: { image: { repository: registry.example.com/oecophylla/analytics-service, tag: "sha-REPLACE", pullPolicy: IfNotPresent }, replicas: 1, port: 8091, probePath: /health }
+  feature-store-worker: { image: { repository: registry.example.com/oecophylla/feature-store-worker, tag: "sha-REPLACE", pullPolicy: IfNotPresent }, replicas: 2 }
+  nlp-worker: { image: { repository: registry.example.com/oecophylla/nlp-worker, tag: "sha-REPLACE", pullPolicy: IfNotPresent }, replicas: 2 }
+  cache-invalidator: { image: { repository: registry.example.com/oecophylla/cache-invalidator, tag: "sha-REPLACE", pullPolicy: IfNotPresent }, replicas: 2 }
+  envoy: { image: { repository: envoyproxy/envoy, tag: v1.32-latest, pullPolicy: IfNotPresent }, replicas: 3, port: 8080, adminPort: 9901, probePath: /ready, configVolume: envoy }
+  frontend: { image: { repository: registry.example.com/oecophylla/frontend, tag: "sha-REPLACE", pullPolicy: IfNotPresent }, replicas: 3, port: 3000, probePath: / }
+
+migrations:
+  image:
+    repository: registry.example.com/oecophylla/migrate
+    tag: "sha-REPLACE"
+
+autoscaling:
+  enabled: true
+
+monitoring:
+  serviceMonitor:
+    enabled: true
+    labels:
+      release: kube-prometheus-stack
+

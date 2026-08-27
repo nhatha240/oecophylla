@@ -1,0 +1,226 @@
+nameOverride: ""
+fullnameOverride: ""
+
+imagePullSecrets: []
+
+serviceAccount:
+  create: true
+  automount: false
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  fsGroupChangePolicy: OnRootMismatch
+  seccompProfile:
+    type: RuntimeDefault
+securityContext:
+  runAsNonRoot: true
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+# These defaults are intentionally invalid for production. Override them or use
+# secrets.existingSecret (keys: DATABASE_URL, REDIS_URL, JWT_SECRET).
+secrets:
+  existingSecret: ""
+  databasePassword: CHANGE_ME
+  redisPassword: CHANGE_ME
+  jwtSecret: CHANGE_ME_minimum_32_characters
+
+config:
+  rustLog: info,sqlx=warn
+  jwtAccessTtlSeconds: "900"
+  jwtRefreshTtlSeconds: "604800"
+  argon2MCost: "19456"
+  argon2TCost: "2"
+  argon2PCost: "1"
+  autoPublish: "true"
+  feedCacheTtlSeconds: "600"
+  feedRecommendationTimeoutMs: "500"
+  feedResultSize: "50"
+  feedCandidatePoolSize: "300"
+  publicApiBase: /api/v1
+  origin: https://oecophylla.example.com
+  pythonDontWriteBytecode: "1"
+  pythonUnbuffered: "1"
+
+database:
+  host: postgres.example.internal
+  port: 5432
+  name: oecophylla
+  user: oecophylla
+  sslMode: require
+
+redis:
+  host: redis.example.internal
+  port: 6379
+  database: 0
+
+kafka:
+  brokers: kafka.example.internal:9092
+
+# Set enabled=true for a self-contained development/sandbox install. For
+# production, use managed services and keep this disabled.
+infrastructure:
+  enabled: false
+  storageClass: ""
+  postgres:
+    image: postgres:18-trixie
+    storage: 20Gi
+    resources:
+      requests: { cpu: 250m, memory: 512Mi }
+      limits: { cpu: "1", memory: 2Gi }
+  redis:
+    image: redis:8-trixie
+    storage: 5Gi
+    resources:
+      requests: { cpu: 100m, memory: 128Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+  kafka:
+    image: apache/kafka:4.0.0
+    clusterId: MkU3OEVBNTcwNTJENDM2Qw
+    storage: 20Gi
+    resources:
+      requests: { cpu: 250m, memory: 512Mi }
+      limits: { cpu: "1", memory: 2Gi }
+
+# Build and push these repositories before installing the chart. Every image is
+# separately overrideable to support independent service releases.
+components:
+  auth-service:
+    image: { repository: ghcr.io/your-org/oecophylla/auth-service, tag: "1.0.0", pullPolicy: IfNotPresent }
+    replicas: 2
+    port: 8001
+    probePath: /health
+  user-service:
+    image: { repository: ghcr.io/your-org/oecophylla/user-service, tag: "1.0.0", pullPolicy: IfNotPresent }
+    replicas: 2
+    port: 8002
+    probePath: /health
+  content-service:
+    image: { repository: ghcr.io/your-org/oecophylla/content-service, tag: "1.0.0", pullPolicy: IfNotPresent }
+    replicas: 2
+    port: 8003
+    probePath: /health
+  interaction-service:
+    image: { repository: ghcr.io/your-org/oecophylla/interaction-service, tag: "1.0.0", pullPolicy: IfNotPresent }
+    replicas: 2
+    port: 8004
+    probePath: /health
+  feed-service:
+    image: { repository: ghcr.io/your-org/oecophylla/feed-service, tag: "1.0.0", pullPolicy: IfNotPresent }
+    replicas: 2
+    port: 8005
+    probePath: /health
+  moderation-service:
+    image: { repository: ghcr.io/your-org/oecophylla/moderation-service, tag: "1.0.0", pullPolicy: IfNotPresent }
+    replicas: 2
+    port: 8006
+    probePath: /health
+  notification-service:
+    image: { repository: ghcr.io/your-org/oecophylla/notification-service, tag: "1.0.0", pullPolicy: IfNotPresent }
+    # Must remain one until SSE fan-out state moves out of process.
+    replicas: 1
+    port: 8007
+    probePath: /health
+  recommendation-api:
+    image: { repository: ghcr.io/your-org/oecophylla/recommendation-api, tag: "1.0.0", pullPolicy: IfNotPresent }
+    replicas: 2
+    port: 8090
+    probePath: /health
+  analytics-service:
+    image: { repository: ghcr.io/your-org/oecophylla/analytics-service, tag: "1.0.0", pullPolicy: IfNotPresent }
+    replicas: 1
+    port: 8091
+    probePath: /health
+  feature-store-worker:
+    image: { repository: ghcr.io/your-org/oecophylla/feature-store-worker, tag: "1.0.0", pullPolicy: IfNotPresent }
+    replicas: 1
+  nlp-worker:
+    image: { repository: ghcr.io/your-org/oecophylla/nlp-worker, tag: "1.0.0", pullPolicy: IfNotPresent }
+    replicas: 1
+  cache-invalidator:
+    image: { repository: ghcr.io/your-org/oecophylla/cache-invalidator, tag: "1.0.0", pullPolicy: IfNotPresent }
+    replicas: 1
+  envoy:
+    image: { repository: envoyproxy/envoy, tag: v1.32-latest, pullPolicy: IfNotPresent }
+    replicas: 2
+    port: 8080
+    adminPort: 9901
+    probePath: /ready
+    configVolume: envoy
+  frontend:
+    image: { repository: ghcr.io/your-org/oecophylla/frontend, tag: "1.0.0", pullPolicy: IfNotPresent }
+    replicas: 2
+    port: 3000
+    probePath: /
+
+componentDefaults:
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+  terminationGracePeriodSeconds: 30
+  tmpSizeLimit: 128Mi
+
+migrations:
+  enabled: true
+  image:
+    repository: ghcr.io/your-org/oecophylla/migrate
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent
+  backoffLimit: 3
+
+topicInitialization:
+  enabled: true
+  image: apache/kafka:4.0.0
+  partitions: 3
+  replicationFactor: 1
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+  host: oecophylla.example.com
+  tls:
+    enabled: true
+    secretName: oecophylla-tls
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  components:
+    - auth-service
+    - user-service
+    - content-service
+    - interaction-service
+    - feed-service
+    - moderation-service
+    - recommendation-api
+    - frontend
+    - envoy
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+monitoring:
+  serviceMonitor:
+    enabled: false
+    labels: {}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+topologySpreadConstraints: []

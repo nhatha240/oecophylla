@@ -1,0 +1,18 @@
+Oecophylla was installed as {{ include "oecophylla.fullname" . }}.
+
+{{- if not .Values.secrets.existingSecret }}
+WARNING: the chart is using values-managed secrets. Ensure every CHANGE_ME value
+was replaced. Prefer secrets.existingSecret in production.
+{{- end }}
+
+{{- if .Values.ingress.enabled }}
+URL: {{ ternary "https" "http" .Values.ingress.tls.enabled }}://{{ .Values.ingress.host }}
+{{- else }}
+Run:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "oecophylla.fullname" . }}-frontend 3000:3000
+{{- end }}
+
+Check rollout:
+  kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/instance={{ .Release.Name }}
+  kubectl -n {{ .Release.Namespace }} get jobs -l app.kubernetes.io/instance={{ .Release.Name }}
+

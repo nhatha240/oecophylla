@@ -1,0 +1,4 @@
+# This is a hard BuildKit scheduler limit for the dedicated docker-container
+# builder. Cargo is separately capped through CARGO_SERVICE_JOBS.
+[worker.oci]
+  max-parallelism = 2

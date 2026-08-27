@@ -1,0 +1,45 @@
+{{- if .Values.monitoring.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "oecophylla.fullname" . }}
+  labels:
+    {{- include "oecophylla.labels" . | nindent 4 }}
+    {{- with .Values.monitoring.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "oecophylla.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      oecophylla.io/metrics: app
+  namespaceSelector:
+    matchNames: [{{ .Release.Namespace }}]
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "oecophylla.fullname" . }}-envoy
+  labels:
+    {{- include "oecophylla.labels" . | nindent 4 }}
+    {{- with .Values.monitoring.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "oecophylla.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      oecophylla.io/metrics: envoy
+  namespaceSelector:
+    matchNames: [{{ .Release.Namespace }}]
+  endpoints:
+    - port: admin
+      path: /stats/prometheus
+      interval: 15s
+{{- end }}
