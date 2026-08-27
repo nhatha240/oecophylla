@@ -46,3 +46,64 @@ pub async fn recommend_feed(
     let parsed: RecommendFeedResponse = res.json().await?;
     Ok(parsed.items)
 }
+
+#[cfg(test)]
+mod recommendation_contract_tests {
+    use super::*;
+
+    const VALID_RESPONSE: &str = r#"{
+        "items": [{
+            "post_id": "00000000-0000-0000-0000-000000000001",
+            "score": 0.79,
+            "source": "topic",
+            "reason": "heuristic-rank",
+            "features": {
+                "schema_version": "rank-features-v1",
+                "topic_relevance": 0.8,
+                "freshness": 0.7,
+                "safety_score": 0.9,
+                "candidate_source": "topic",
+                "is_followed_author": null,
+                "author_affinity": null,
+                "heuristic_score": 0.79,
+                "ml_score": null
+            }
+        }],
+        "model_version": "heuristic-v1",
+        "generated_at": "2026-08-27T00:00:00Z"
+    }"#;
+
+    #[test]
+    fn recommendation_contract_decodes_versioned_feature_snapshot() {
+        let response: RecommendFeedResponse = serde_json::from_str(VALID_RESPONSE).unwrap();
+
+        assert_eq!(response.model_version, "heuristic-v1");
+        assert_eq!(response.items.len(), 1);
+        let features = &response.items[0].features;
+        assert_eq!(features.schema_version, "rank-features-v1");
+        assert_eq!(features.candidate_source, "topic");
+        assert_eq!(features.author_affinity, None);
+        assert_eq!(features.ml_score, None);
+        assert_eq!(features.is_followed_author, None);
+    }
+
+    #[test]
+    fn recommendation_contract_rejects_missing_feature_schema_version() {
+        let payload = VALID_RESPONSE.replace(
+            "\"schema_version\": \"rank-features-v1\",",
+            "",
+        );
+
+        assert!(serde_json::from_str::<RecommendFeedResponse>(&payload).is_err());
+    }
+
+    #[test]
+    fn recommendation_contract_rejects_missing_model_version() {
+        let payload = VALID_RESPONSE.replace(
+            "\"model_version\": \"heuristic-v1\",",
+            "",
+        );
+
+        assert!(serde_json::from_str::<RecommendFeedResponse>(&payload).is_err());
+    }
+}
