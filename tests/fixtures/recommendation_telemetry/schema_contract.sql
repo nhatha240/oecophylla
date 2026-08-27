@@ -245,6 +245,164 @@ BEGIN
     EXCEPTION
         WHEN check_violation THEN NULL;
     END;
+
+    BEGIN
+        INSERT INTO recommendation_impressions (
+            request_id, user_id, post_id, position, feed_source,
+            candidate_source, model_version, feature_snapshot
+        ) VALUES (
+            '00000000-0000-7000-8000-000000000147',
+            '00000000-0000-7000-8000-000000000131',
+            '00000000-0000-7000-8000-000000000133',
+            1,
+            'personalized',
+            'topic',
+            'heuristic-v1',
+            '{}'::jsonb
+        );
+        RAISE EXCEPTION 'snapshot without schema_version unexpectedly succeeded';
+    EXCEPTION
+        WHEN check_violation THEN NULL;
+    END;
+
+    BEGIN
+        INSERT INTO recommendation_impressions (
+            request_id, user_id, post_id, position, feed_source,
+            candidate_source, model_version, feature_snapshot
+        ) VALUES (
+            '00000000-0000-7000-8000-000000000148',
+            '00000000-0000-7000-8000-000000000131',
+            '00000000-0000-7000-8000-000000000133',
+            1,
+            'personalized',
+            'topic',
+            'heuristic-v1',
+            jsonb_build_object(
+                'schema_version', 'rank-features-v1',
+                'padding', repeat('x', 17000)
+            )
+        );
+        RAISE EXCEPTION 'oversized feature snapshot unexpectedly succeeded';
+    EXCEPTION
+        WHEN check_violation THEN NULL;
+    END;
+
+    BEGIN
+        INSERT INTO behavior_events (
+            client_event_id, user_id, post_id, event_type, metadata
+        ) VALUES (
+            '00000000-0000-7000-8000-000000000149',
+            '00000000-0000-7000-8000-000000000131',
+            '00000000-0000-7000-8000-000000000133',
+            'click',
+            jsonb_build_object('padding', repeat('x', 9000))
+        );
+        RAISE EXCEPTION 'oversized event metadata unexpectedly succeeded';
+    EXCEPTION
+        WHEN check_violation THEN NULL;
+    END;
+
+    BEGIN
+        INSERT INTO behavior_events (
+            client_event_id, user_id, post_id, event_type, dwell_ms
+        ) VALUES (
+            '00000000-0000-7000-8000-000000000150',
+            '00000000-0000-7000-8000-000000000131',
+            '00000000-0000-7000-8000-000000000133',
+            'click',
+            10000
+        );
+        RAISE EXCEPTION 'dwell_ms on click unexpectedly succeeded';
+    EXCEPTION
+        WHEN check_violation THEN NULL;
+    END;
+
+    BEGIN
+        INSERT INTO behavior_events (
+            client_event_id, user_id, post_id, event_type, dwell_ms
+        ) VALUES (
+            '00000000-0000-7000-8000-000000000151',
+            '00000000-0000-7000-8000-000000000131',
+            '00000000-0000-7000-8000-000000000133',
+            'dwell',
+            NULL
+        );
+        RAISE EXCEPTION 'dwell event without dwell_ms unexpectedly succeeded';
+    EXCEPTION
+        WHEN check_violation THEN NULL;
+    END;
+END $$;
+
+-- Required access-path indexes exist in the migrated database.
+DO $$
+DECLARE
+    required_index TEXT;
+BEGIN
+    FOREACH required_index IN ARRAY ARRAY[
+        'idx_recommendation_impressions_user_served',
+        'idx_recommendation_impressions_post_served',
+        'idx_recommendation_impressions_model_served',
+        'idx_behavior_events_user_occurred',
+        'idx_behavior_events_post_occurred',
+        'idx_behavior_events_impression',
+        'idx_behavior_events_type_occurred'
+    ] LOOP
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_indexes
+            WHERE schemaname = current_schema()
+              AND indexname = required_index
+        ) THEN
+            RAISE EXCEPTION 'missing required index %', required_index;
+        END IF;
+    END LOOP;
+END $$;
+
+-- Deleting an impression alone preserves behavior history and nulls only the
+-- optional impression link.
+INSERT INTO recommendation_impressions (
+    id, request_id, user_id, post_id, position, feed_source,
+    candidate_source, model_version, feature_snapshot
+)
+VALUES (
+    '00000000-0000-7000-8000-000000000152',
+    '00000000-0000-7000-8000-000000000153',
+    '00000000-0000-7000-8000-000000000131',
+    '00000000-0000-7000-8000-000000000133',
+    1,
+    'personalized',
+    'recent',
+    'heuristic-v1',
+    '{"schema_version":"rank-features-v1"}'::jsonb
+);
+
+INSERT INTO behavior_events (
+    id, client_event_id, user_id, post_id, impression_id,
+    event_type, occurred_at
+)
+VALUES (
+    '00000000-0000-7000-8000-000000000154',
+    '00000000-0000-7000-8000-000000000155',
+    '00000000-0000-7000-8000-000000000131',
+    '00000000-0000-7000-8000-000000000133',
+    '00000000-0000-7000-8000-000000000152',
+    'visible',
+    '2026-08-27T10:02:00Z'
+);
+
+DELETE FROM recommendation_impressions
+WHERE id = '00000000-0000-7000-8000-000000000152';
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM behavior_events
+        WHERE id = '00000000-0000-7000-8000-000000000154'
+          AND impression_id IS NULL
+    ) THEN
+        RAISE EXCEPTION 'impression deletion did not preserve and detach event';
+    END IF;
 END $$;
 
 -- Privacy deletion: deleting a user removes their telemetry rows.
