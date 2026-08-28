@@ -6,18 +6,50 @@ import json
 import logging
 import time
 from collections import defaultdict
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
+from uuid import UUID
 
 import asyncpg
 import redis.asyncio as redis_async
 from aiokafka import AIOKafkaConsumer
+from prometheus_client import Counter, start_http_server
 
-from .features import apply_topic_delta
+from .features import WEIGHTS, apply_topic_delta
 from .settings import settings as load_settings
 
 logger = logging.getLogger("feature_store_worker")
 
 UUID_KEYS = ("user_id", "reporter_id", "commenter_id")
+IGNORED_EVENT_TYPES = frozenset({"visible", "dwell"})
+
+FEATURE_EVENT_OUTCOMES = Counter(
+    "feature_worker_events_total",
+    "Kafka feature events by processing outcome and event type.",
+    ("outcome", "event_type"),
+)
+
+CLAIM_RECEIPTS_SQL = """
+    WITH incoming AS (
+        SELECT *
+        FROM unnest($1::uuid[], $2::text[], $3::timestamptz[])
+             AS batch(event_id, event_type, occurred_at)
+    )
+    INSERT INTO feature_event_receipts (event_id, user_id, event_type, occurred_at)
+    SELECT batch.event_id, $4::uuid, batch.event_type, batch.occurred_at
+    FROM incoming AS batch
+    ON CONFLICT (event_id) DO NOTHING
+    RETURNING event_id
+"""
+
+
+@dataclass(frozen=True)
+class ApplyResult:
+    vector: dict[str, float]
+    applied_events: list[dict[str, Any]]
+    duplicate_events: list[dict[str, Any]]
+    ignored_events: list[dict[str, Any]]
 
 
 class Worker:
@@ -28,6 +60,7 @@ class Worker:
         self.consumer: AIOKafkaConsumer | None = None
         self._buffer: list[dict[str, Any]] = []
         self._last_flush = time.monotonic()
+        self._metrics_server: Any | None = None
 
     async def start(self) -> None:
         self.pool = await asyncpg.create_pool(
@@ -43,6 +76,7 @@ class Worker:
             value_deserializer=lambda v: json.loads(v.decode("utf-8")),
         )
         await self.consumer.start()
+        self._metrics_server, _thread = start_http_server(self.cfg.metrics_port)
         logger.info("worker started")
 
     async def stop(self) -> None:
@@ -52,6 +86,9 @@ class Worker:
             await self.redis.close()
         if self.pool is not None:
             await self.pool.close()
+        if self._metrics_server is not None:
+            self._metrics_server.shutdown()
+            self._metrics_server.server_close()
 
     async def run(self) -> None:
         assert self.consumer is not None
@@ -102,8 +139,16 @@ class Worker:
 
         per_user = defaultdict(list)
         for env in events:
+            event_type = _event_type(env)
+            if event_type in IGNORED_EVENT_TYPES:
+                _record_outcome("ignored", event_type)
+                continue
+            if event_type not in WEIGHTS:
+                _record_outcome("unknown", event_type or "missing")
+                continue
             user = _extract_user(env)
-            if not user:
+            if not user or _event_id(env) is None:
+                _record_outcome("unknown", event_type)
                 continue
             per_user[user].append(env)
 
@@ -113,14 +158,20 @@ class Worker:
             assert self.redis is not None
             for user_id, user_events in per_user.items():
                 try:
-                    await self._apply_for_user(user_id, user_events)
+                    result = await self._apply_for_user(user_id, user_events)
+                    for env in result.applied_events:
+                        _record_outcome("applied", _event_type(env))
+                    for env in result.duplicate_events:
+                        _record_outcome("duplicate", _event_type(env))
+                    for env in result.ignored_events:
+                        _record_outcome("ignored", _event_type(env))
                 except Exception:  # noqa: BLE001
                     logger.exception("failed to apply features for %s", user_id)
                     failed_events.extend(user_events)
 
-        # Trending sorted set: every event lightly bumps the post regardless of
-        # which user produced it. Trending is approximate, so a failure here is
-        # logged but does not block the offset commit.
+        # Trending is deliberately approximate and is not receipt-deduplicated.
+        # It must never be treated as a ground-truth training label. A failure
+        # here is logged but does not block the Kafka offset commit.
         try:
             await self._update_trending(events)
         except Exception:  # noqa: BLE001
@@ -133,71 +184,115 @@ class Worker:
             return False
         return True
 
-    async def _apply_for_user(self, user_id: str, events: list[dict]) -> None:
+    async def _apply_for_user(
+        self, user_id: str, events: list[dict[str, Any]]
+    ) -> ApplyResult:
         assert self.pool is not None
         assert self.redis is not None
 
+        unique_events: list[dict[str, Any]] = []
+        duplicate_events: list[dict[str, Any]] = []
+        seen_ids: set[UUID] = set()
+        for env in events:
+            event_id = _event_id(env)
+            if event_id is None:
+                continue
+            if event_id in seen_ids:
+                duplicate_events.append(env)
+            else:
+                seen_ids.add(event_id)
+                unique_events.append(env)
+
         async with self.pool.acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT topic_weights FROM user_preference_vectors WHERE user_id=$1",
-                user_id,
-            )
-            vec: dict[str, float] = (
-                {k: float(v) for k, v in json.loads(row["topic_weights"]).items()}
-                if row
-                else {}
-            )
-
-            post_ids = {env.get("data", {}).get("post_id") for env in events}
-            post_ids = {p for p in post_ids if p}
-            topics_by_post: dict[str, list[str]] = {}
-            if post_ids:
-                rows = await conn.fetch(
-                    "SELECT id, topics, tags FROM posts WHERE id = ANY($1::uuid[])",
-                    list(post_ids),
+            async with conn.transaction():
+                claimed_rows = await conn.fetch(
+                    CLAIM_RECEIPTS_SQL,
+                    [_event_id(env) for env in unique_events],
+                    [_event_type(env) for env in unique_events],
+                    [_occurred_at(env) for env in unique_events],
+                    UUID(user_id),
                 )
-                for r in rows:
-                    raw_topics: list[str] = list(r["topics"] or [])
-                    meaningful = [t for t in raw_topics if t and t != "general"]
-                    if meaningful:
-                        resolved = raw_topics
-                    else:
-                        tags: list[str] = list(r["tags"] or [])
-                        resolved = tags if tags else raw_topics
-                    topics_by_post[str(r["id"])] = resolved
+                claimed_ids = {str(row["event_id"]) for row in claimed_rows}
+                applied_events = [
+                    env for env in unique_events if str(_event_id(env)) in claimed_ids
+                ]
+                duplicate_events.extend(
+                    env for env in unique_events if str(_event_id(env)) not in claimed_ids
+                )
 
-            for env in events:
-                etype = env.get("event_type") or env.get("type") or ""
-                pid = env.get("data", {}).get("post_id")
-                topics = topics_by_post.get(str(pid), [])
-                vec = apply_topic_delta(vec, topics, etype)
+                row = await conn.fetchrow(
+                    """
+                    SELECT
+                        EXISTS(SELECT 1 FROM users WHERE id=$1::uuid) AS user_exists,
+                        (SELECT topic_weights
+                         FROM user_preference_vectors
+                         WHERE user_id=$1::uuid) AS topic_weights
+                    """,
+                    user_id,
+                )
+                user_exists = bool(row["user_exists"])
+                vec = _decode_weights(row["topic_weights"])
+                ignored_events: list[dict[str, Any]] = []
+                if not user_exists:
+                    ignored_events = applied_events
+                    applied_events = []
 
-            await conn.execute(
-                """
-                INSERT INTO user_preference_vectors (user_id, topic_weights, updated_at)
-                VALUES ($1, $2::jsonb, now())
-                ON CONFLICT (user_id) DO UPDATE
-                SET topic_weights = EXCLUDED.topic_weights, updated_at = now()
-                """,
-                user_id,
-                json.dumps(vec),
+                if applied_events:
+                    post_ids = {
+                        env.get("data", {}).get("post_id") for env in applied_events
+                    }
+                    post_ids = {post_id for post_id in post_ids if post_id}
+                    topics_by_post: dict[str, list[str]] = {}
+                    if post_ids:
+                        rows = await conn.fetch(
+                            "SELECT id, topics, tags FROM posts WHERE id = ANY($1::uuid[])",
+                            list(post_ids),
+                        )
+                        for post in rows:
+                            raw_topics: list[str] = list(post["topics"] or [])
+                            meaningful = [
+                                topic
+                                for topic in raw_topics
+                                if topic and topic != "general"
+                            ]
+                            if meaningful:
+                                resolved = raw_topics
+                            else:
+                                tags: list[str] = list(post["tags"] or [])
+                                resolved = tags if tags else raw_topics
+                            topics_by_post[str(post["id"])] = resolved
+
+                    for env in applied_events:
+                        event_type = _event_type(env)
+                        post_id = env.get("data", {}).get("post_id")
+                        topics = topics_by_post.get(str(post_id), [])
+                        vec = apply_topic_delta(vec, topics, event_type)
+
+                    await conn.execute(
+                        """
+                        INSERT INTO user_preference_vectors (user_id, topic_weights, updated_at)
+                        VALUES ($1, $2::jsonb, now())
+                        ON CONFLICT (user_id) DO UPDATE
+                        SET topic_weights = EXCLUDED.topic_weights, updated_at = now()
+                        """,
+                        user_id,
+                        json.dumps(vec),
+                    )
+
+        if user_exists:
+            await self.redis.setex(
+                f"pref:{user_id}", self.cfg.pref_ttl_seconds, json.dumps(vec)
             )
-
-        await self.redis.setex(
-            f"pref:{user_id}", self.cfg.pref_ttl_seconds, json.dumps(vec)
-        )
+        return ApplyResult(vec, applied_events, duplicate_events, ignored_events)
 
     async def _update_trending(self, events: list[dict]) -> None:
         assert self.redis is not None
         score_by_post: dict[str, float] = defaultdict(float)
         for env in events:
-            etype = env.get("event_type") or env.get("type") or ""
+            etype = _event_type(env)
             pid = env.get("data", {}).get("post_id")
             if not pid:
                 continue
-            # Map back to interaction weight; negative events erode trending.
-            from .features import WEIGHTS
-
             score_by_post[str(pid)] += WEIGHTS.get(etype, 0.0)
         if not score_by_post:
             return
@@ -215,6 +310,37 @@ def _extract_user(env: dict[str, Any]) -> str | None:
         if data.get(key):
             return str(data[key])
     return None
+
+
+def _event_type(env: dict[str, Any]) -> str:
+    return str(env.get("event_type") or env.get("type") or "")
+
+
+def _event_id(env: dict[str, Any]) -> UUID | None:
+    try:
+        return UUID(str(env.get("event_id")))
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+
+def _occurred_at(env: dict[str, Any]) -> datetime:
+    raw = env.get("occurred_at")
+    if isinstance(raw, str):
+        try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
+        except ValueError:
+            pass
+    return datetime.now(timezone.utc)
+
+
+def _decode_weights(raw: Any) -> dict[str, float]:
+    value = json.loads(raw) if isinstance(raw, str) else raw
+    return {str(key): float(weight) for key, weight in (value or {}).items()}
+
+
+def _record_outcome(outcome: str, event_type: str) -> None:
+    FEATURE_EVENT_OUTCOMES.labels(outcome=outcome, event_type=event_type).inc()
 
 
 async def _main() -> None:

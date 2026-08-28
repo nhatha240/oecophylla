@@ -1,8 +1,8 @@
 use axum::{
-    Json,
     extract::{Path, Query, State},
-    http::{HeaderMap, HeaderValue, StatusCode, header},
-    response::{IntoResponse, Response, Sse, sse::Event},
+    http::{header, HeaderMap, HeaderValue, StatusCode},
+    response::{sse::Event, IntoResponse, Response, Sse},
+    Json,
 };
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use common::{
@@ -237,19 +237,15 @@ pub async fn ingest_behavior_events(
     {
         let kafka = s.kafka.clone();
         let post_key = event.post_id.to_string();
-        let envelope = Envelope::new(
-            "viewed",
-            "interaction-service",
-            BehaviorTelemetryData {
-                user_id: me.id,
-                post_id: event.post_id,
-                client_event_id: event.client_event_id,
-                behavior_event_id: event.id,
-                impression_id: event.impression_id,
-                session_id: event.session_id,
-                occurred_at: event.occurred_at,
-            },
-        );
+        let envelope = viewed_envelope(BehaviorTelemetryData {
+            user_id: me.id,
+            post_id: event.post_id,
+            client_event_id: event.client_event_id,
+            behavior_event_id: event.id,
+            impression_id: event.impression_id,
+            session_id: event.session_id,
+            occurred_at: event.occurred_at,
+        });
         tokio::spawn(async move {
             kafka
                 .produce_json(TOPIC_INTERACTIONS, &post_key, &envelope)

@@ -278,6 +278,7 @@ services:
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: ${REDIS_URL}
       KAFKA_BROKERS: ${KAFKA_BROKERS}
+      METRICS_PORT: 9108
 
   nlp-worker:
     <<: *restart

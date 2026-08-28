@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     trending_ttl_seconds: int = 86400
     flush_interval_seconds: float = 5.0
     flush_batch_size: int = 100
+    metrics_port: int = 9108
 
 
 def settings() -> Settings:

@@ -1,5 +1,4 @@
 use chrono::{DateTime, Utc};
-#[allow(unused_imports)]
 use common::events::Envelope;
 use serde::Serialize;
 use uuid::Uuid;
@@ -45,6 +44,19 @@ pub struct BehaviorTelemetryData {
     pub occurred_at: DateTime<Utc>,
 }
 
+/// Build the telemetry v1 envelope with a durable event identity. Reusing the
+/// append-only behavior row ID makes any producer retry safe for consumers.
+pub fn viewed_envelope(data: BehaviorTelemetryData) -> Envelope<BehaviorTelemetryData> {
+    Envelope {
+        event_id: data.behavior_event_id,
+        event_type: "viewed",
+        event_version: 1,
+        occurred_at: data.occurred_at,
+        producer: "interaction-service",
+        data,
+    }
+}
+
 pub fn weight_for(t: &str) -> f32 {
     match t {
         "like" => env_or("INTERACTION_WEIGHT_LIKE", 1.5),
@@ -73,8 +85,16 @@ mod tests {
         ))
         .unwrap();
         let data = BehaviorTelemetryData {
-            user_id: fixture["data"]["user_id"].as_str().unwrap().parse().unwrap(),
-            post_id: fixture["data"]["post_id"].as_str().unwrap().parse().unwrap(),
+            user_id: fixture["data"]["user_id"]
+                .as_str()
+                .unwrap()
+                .parse()
+                .unwrap(),
+            post_id: fixture["data"]["post_id"]
+                .as_str()
+                .unwrap()
+                .parse()
+                .unwrap(),
             client_event_id: fixture["data"]["client_event_id"]
                 .as_str()
                 .unwrap()
