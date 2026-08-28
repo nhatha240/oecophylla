@@ -250,3 +250,42 @@ pub async fn search(
         next_cursor: next,
     }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::maybe_increment_legacy_view;
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+
+    #[tokio::test]
+    async fn disabled_legacy_counter_is_a_successful_noop() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let observed = calls.clone();
+
+        maybe_increment_legacy_view(false, || async move {
+            observed.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn enabled_legacy_counter_preserves_the_single_increment() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let observed = calls.clone();
+
+        maybe_increment_legacy_view(true, || async move {
+            observed.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+}
