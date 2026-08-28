@@ -14,7 +14,6 @@ from app.evaluate import (
 )
 from app.schemas import EvaluateResponse
 
-
 UTC = timezone.utc
 USER_ID = UUID("00000000-0000-0000-0000-000000000001")
 REQUEST_ID = UUID("00000000-0000-0000-0000-000000000010")
@@ -67,9 +66,7 @@ def event(
 def test_temporal_split_excludes_immature_impressions_and_future_events():
     mature = impression(IMP_A, POST_A, CUTOFF + timedelta(hours=1), position=0)
     immature = impression(IMP_B, POST_B, AS_OF - timedelta(hours=12), position=1)
-    before_cutoff = impression(
-        IMP_C, POST_C, CUTOFF - timedelta(minutes=1), position=2
-    )
+    before_cutoff = impression(IMP_C, POST_C, CUTOFF - timedelta(minutes=1), position=2)
     training = event(None, POST_C, "like", CUTOFF - timedelta(seconds=1))
     label = event(IMP_A, POST_A, "click", mature.served_at + timedelta(hours=2))
     after_window = event(IMP_A, POST_A, "like", mature.served_at + timedelta(hours=25))

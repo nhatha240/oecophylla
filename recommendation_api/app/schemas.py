@@ -65,7 +65,18 @@ class EvaluateRequest(BaseModel):
 
 
 class EvaluateResponse(BaseModel):
-    precision_at_k: float
-    ctr_simulation: float
-    diversity: float
-    fallback_rate: float
+    status: Literal["ok", "insufficient_data"]
+    precision_at_k: Optional[float] = None
+    recall_at_k: Optional[float] = None
+    ndcg_at_k: Optional[float] = None
+    hit_rate: Optional[float] = None
+    catalog_coverage: Optional[float] = None
+    topic_diversity: Optional[float] = None
+    ctr_observed: Optional[float] = None
+    fallback_rate: Optional[float] = None
+    sample_users: int = Field(ge=0)
+    sample_impressions: int = Field(ge=0)
+    cutoff_at: datetime
+    label_window_hours: int = Field(ge=1)
+    ctr_simulation: Optional[float] = Field(default=None, deprecated=True)
+    diversity: Optional[float] = Field(default=None, deprecated=True)

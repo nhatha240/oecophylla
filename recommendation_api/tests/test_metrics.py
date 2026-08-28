@@ -52,9 +52,7 @@ def test_coverage_and_topic_diversity_match_small_fixture():
     assert catalog_coverage(
         [["post-a", "post-b"], ["post-b", "post-c"]], catalog_size=5
     ) == pytest.approx(3 / 5)
-    assert topic_diversity([["ai", "technology"], ["ai"], []]) == pytest.approx(
-        2 / 3
-    )
+    assert topic_diversity([["ai", "technology"], ["ai"], []]) == pytest.approx(2 / 3)
 
 
 @pytest.mark.parametrize("k", [0, -1])

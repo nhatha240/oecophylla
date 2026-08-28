@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import time
 from contextlib import asynccontextmanager
+from datetime import datetime
 from uuid import UUID
 
 from fastapi import FastAPI, HTTPException
@@ -25,9 +26,9 @@ from .schemas import (
     EvaluateResponse,
     RebuildRequest,
     RebuildResponse,
+    RecommendationItem,
     RecommendFeedRequest,
     RecommendFeedResponse,
-    RecommendationItem,
 )
 from .settings import settings as load_settings
 
@@ -113,7 +114,9 @@ async def rebuild_features(body: RebuildRequest) -> RebuildResponse:
     redis: RedisCli = app.state.redis
 
     started = time.perf_counter()
-    targets = [body.user_id] if body.user_id else await all_user_ids_with_interactions(db)
+    targets = (
+        [body.user_id] if body.user_id else await all_user_ids_with_interactions(db)
+    )
     if not targets:
         return RebuildResponse(users_processed=0, duration_ms=0)
 
@@ -127,9 +130,27 @@ async def rebuild_features(body: RebuildRequest) -> RebuildResponse:
 
 
 @app.post("/recommend/evaluate", response_model=EvaluateResponse)
-async def evaluate_endpoint(user_id: UUID, k: int = 10) -> EvaluateResponse:
+async def evaluate_endpoint(
+    user_id: UUID,
+    k: int = 10,
+    cutoff_at: datetime | None = None,
+    label_window_hours: int = 24,
+) -> EvaluateResponse:
     if k < 1 or k > 100:
         raise HTTPException(status_code=400, detail="k must be in [1,100]")
+    if label_window_hours < 1 or label_window_hours > 720:
+        raise HTTPException(
+            status_code=400, detail="label_window_hours must be in [1,720]"
+        )
+    if cutoff_at is not None and cutoff_at.tzinfo is None:
+        raise HTTPException(status_code=400, detail="cutoff_at must include a timezone")
     db: DB = app.state.db
     redis: RedisCli = app.state.redis
-    return await evaluate(db, redis, user_id, k)
+    return await evaluate(
+        db,
+        redis,
+        user_id,
+        k,
+        cutoff_at=cutoff_at,
+        label_window_hours=label_window_hours,
+    )
