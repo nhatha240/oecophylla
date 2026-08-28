@@ -1,0 +1,16 @@
+{
+  "event_id": "0198f36d-0d80-7000-8000-000000000001",
+  "event_type": "viewed",
+  "event_version": 1,
+  "occurred_at": "2026-08-28T03:15:00Z",
+  "producer": "interaction-service",
+  "data": {
+    "user_id": "0198f36d-0d80-7000-8000-000000000002",
+    "post_id": "0198f36d-0d80-7000-8000-000000000003",
+    "client_event_id": "0198f36d-0d80-7000-8000-000000000004",
+    "behavior_event_id": "0198f36d-0d80-7000-8000-000000000001",
+    "impression_id": "0198f36d-0d80-7000-8000-000000000005",
+    "session_id": "0198f36d-0d80-7000-8000-000000000006",
+    "occurred_at": "2026-08-28T03:15:00Z"
+  }
+}

@@ -62,6 +62,55 @@ fn env_or(key: &str, default: f32) -> f32 {
         .unwrap_or(default)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn viewed_envelope_matches_the_shared_v1_contract() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../tests/fixtures/recommendation_telemetry/interaction_viewed_v1.json"
+        ))
+        .unwrap();
+        let data = BehaviorTelemetryData {
+            user_id: fixture["data"]["user_id"].as_str().unwrap().parse().unwrap(),
+            post_id: fixture["data"]["post_id"].as_str().unwrap().parse().unwrap(),
+            client_event_id: fixture["data"]["client_event_id"]
+                .as_str()
+                .unwrap()
+                .parse()
+                .unwrap(),
+            behavior_event_id: fixture["data"]["behavior_event_id"]
+                .as_str()
+                .unwrap()
+                .parse()
+                .unwrap(),
+            impression_id: Some(
+                fixture["data"]["impression_id"]
+                    .as_str()
+                    .unwrap()
+                    .parse()
+                    .unwrap(),
+            ),
+            session_id: Some(
+                fixture["data"]["session_id"]
+                    .as_str()
+                    .unwrap()
+                    .parse()
+                    .unwrap(),
+            ),
+            occurred_at: fixture["data"]["occurred_at"]
+                .as_str()
+                .unwrap()
+                .parse()
+                .unwrap(),
+        };
+
+        let actual = serde_json::to_value(viewed_envelope(data)).unwrap();
+        assert_eq!(actual, fixture);
+    }
+}
+
 pub fn counter_column(t: &str) -> Option<&'static str> {
     match t {
         "like" => Some("like_count"),
