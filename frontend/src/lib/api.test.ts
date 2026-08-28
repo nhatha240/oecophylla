@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { apiFetch, ApiException } from './api';
+import { apiFetch, ApiException, getFeed } from './api';
 
 describe('apiFetch', () => {
   it('sends credentials and x-requested-with', async () => {
@@ -73,5 +73,26 @@ describe('apiFetch', () => {
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('attaches response request and model context to every feed item', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      request_id: 'request-1',
+      model_version: 'model-1',
+      items: [{ id: 'post-1', impression_id: 'impression-1', position: 0 }],
+      next_cursor: null,
+      source: 'personalized',
+      generated_at: '2026-08-28T00:00:00Z',
+    }), { status: 200 }));
+
+    const feed = await getFeed(fetchMock as unknown as typeof fetch);
+
+    expect(feed.items[0]).toMatchObject({
+      id: 'post-1',
+      impression_id: 'impression-1',
+      position: 0,
+      request_id: 'request-1',
+      model_version: 'model-1',
+    });
   });
 });

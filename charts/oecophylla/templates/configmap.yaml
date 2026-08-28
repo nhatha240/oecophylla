@@ -20,6 +20,7 @@ data:
   RECOMMENDATION_SERVICE_URL: {{ printf "http://%s-recommendation-api:8090" (include "oecophylla.fullname" .) | quote }}
   ENVOY_URL: {{ printf "http://%s-envoy:8080" (include "oecophylla.fullname" .) | quote }}
   PUBLIC_API_BASE: {{ .Values.config.publicApiBase | quote }}
+  PUBLIC_RECOMMENDATION_TELEMETRY_ENABLED: {{ .Values.config.publicRecommendationTelemetryEnabled | quote }}
   ORIGIN: {{ .Values.config.origin | quote }}
   PYTHONDONTWRITEBYTECODE: {{ .Values.config.pythonDontWriteBytecode | quote }}
   PYTHONUNBUFFERED: {{ .Values.config.pythonUnbuffered | quote }}

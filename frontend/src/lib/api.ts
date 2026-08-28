@@ -93,7 +93,17 @@ export async function getFeed(fetcher: Fetch, cursor?: string, limit = 20, mode?
   const qs = new URLSearchParams({ limit: String(limit) });
   if (cursor) qs.set('cursor', cursor);
   if (mode) qs.set('mode', mode);
-  return apiFetch<FeedResponse>(fetcher, `/feed?${qs}`);
+  type FeedWireItem = Omit<FeedResponse['items'][number], 'request_id' | 'model_version'>;
+  type FeedWireResponse = Omit<FeedResponse, 'items'> & { items: FeedWireItem[] };
+  const response = await apiFetch<FeedWireResponse>(fetcher, `/feed?${qs}`);
+  return {
+    ...response,
+    items: response.items.map((item) => ({
+      ...item,
+      request_id: response.request_id,
+      model_version: response.model_version,
+    })),
+  };
 }
 
 export async function getMyInteractionsBatch(fetcher: Fetch, postIds: string[]): Promise<BatchMeResponse> {

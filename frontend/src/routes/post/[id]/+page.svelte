@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { env } from '$env/dynamic/public';
   import { onMount, onDestroy } from 'svelte';
   import Icon from '$lib/apple-glass/components/Icon.svelte';
   import CommentItem from '$lib/components/CommentItem.svelte';
@@ -6,6 +7,7 @@
   import ReportDialog from '$lib/components/ReportDialog.svelte';
   import { user } from '$lib/stores/auth';
   import type { Comment } from '$lib/types';
+  import { trackRecommendationDetailView } from '$lib/telemetry/recommendationTelemetry';
 
   export let data: { post: import('$lib/types').Post; me: import('$lib/types').MyInteractions | null; comments: import('$lib/types').Comment[] };
 
@@ -39,6 +41,9 @@
   }
 
   onMount(() => {
+    if (env.PUBLIC_RECOMMENDATION_TELEMETRY_ENABLED === 'true') {
+      trackRecommendationDetailView(data.post.id);
+    }
     es = new EventSource(`/api/v1/posts/${data.post.id}/comments/stream`, { withCredentials: true } as EventSourceInit);
 
     es.addEventListener('open', () => {

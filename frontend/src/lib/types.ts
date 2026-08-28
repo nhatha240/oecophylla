@@ -16,8 +16,14 @@ export interface FeedItem extends Post {
   display_name: string | null;
   avatar_url: string | null;
   rank: FeedRank;
+  impression_id: string | null;
+  position: number;
+  request_id: string;
+  model_version: string;
 }
 export interface FeedResponse {
+  request_id: string;
+  model_version: string;
   items: FeedItem[];
   next_cursor: string | null;
   source: FeedSource;

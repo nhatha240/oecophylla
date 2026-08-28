@@ -31,7 +31,9 @@ describe('RecommendationTelemetryClient', () => {
 
   it('batches a click with its impression context and a stable tab session', async () => {
     const storage = new MemoryStorage();
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ accepted: 1 }), { status: 200 }));
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      new Response(JSON.stringify({ accepted: 1 }), { status: 200 })
+    );
     const ids = [
       '10000000-0000-4000-8000-000000000001',
       '10000000-0000-4000-8000-000000000002',
@@ -44,6 +46,7 @@ describe('RecommendationTelemetryClient', () => {
     });
 
     client.click(context);
+    expect(client.detailContext(context.post_id)).toEqual(context);
     await client.flush();
 
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
@@ -62,7 +65,7 @@ describe('RecommendationTelemetryClient', () => {
 
   it('retries the exact same client event ID after a transport failure', async () => {
     const fetchMock = vi
-      .fn()
+      .fn<(_input: RequestInfo | URL, _init?: RequestInit) => Promise<Response>>()
       .mockRejectedValueOnce(new Error('offline'))
       .mockResolvedValueOnce(new Response(JSON.stringify({ accepted: 1 }), { status: 200 }));
     const ids = [
@@ -85,7 +88,9 @@ describe('RecommendationTelemetryClient', () => {
   });
 
   it('sends a valid qualified detail view without an impression', async () => {
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ accepted: 1 }), { status: 200 }));
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      new Response(JSON.stringify({ accepted: 1 }), { status: 200 })
+    );
     const client = new RecommendationTelemetryClient({
       fetch: fetchMock as typeof fetch,
       storage: new MemoryStorage(),

@@ -47,6 +47,7 @@ config:
   feedResultSize: "50"
   feedCandidatePoolSize: "300"
   publicApiBase: /api/v1
+  publicRecommendationTelemetryEnabled: "false"
   origin: https://oecophylla.example.com
   pythonDontWriteBytecode: "1"
   pythonUnbuffered: "1"

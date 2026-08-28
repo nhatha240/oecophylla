@@ -5,6 +5,7 @@
 
   export let post: Post;
   export let me: MyInteractions | null = null;
+  export let onOpen: (() => void) | null = null;
 
   // Author info — FeedItem extends Post with these fields
   $: authorName =
@@ -90,14 +91,14 @@
           Nguồn đáng tin cậy
         </span>
       {/if}
-      <a href="/post/{post.id}" class="icon-btn" title="Xem chi tiết" style="opacity:0.5;">
+      <a href="/post/{post.id}" class="icon-btn" title="Xem chi tiết" style="opacity:0.5;" on:click={() => onOpen?.()}>
         <Icon name="More" size={16} />
       </a>
     </div>
   </div>
 
   <!-- Title -->
-  <a class="post-title" href="/post/{post.id}">
+  <a class="post-title" href="/post/{post.id}" on:click={() => onOpen?.()}>
     {titleText.length > 160 ? `${titleText.slice(0, 160)}…` : titleText}
   </a>
 
@@ -108,7 +109,7 @@
 
   <!-- Cover image or placeholder -->
   {#if hasMedia}
-    <a href="/post/{post.id}" class="post-cover" style="display:block;margin:10px 0;border-radius:10px;overflow:hidden;aspect-ratio:16/9;">
+    <a href="/post/{post.id}" class="post-cover" style="display:block;margin:10px 0;border-radius:10px;overflow:hidden;aspect-ratio:16/9;" on:click={() => onOpen?.()}>
       <img src={post.media_urls[0]} alt="cover" style="width:100%;height:100%;object-fit:cover;" loading="lazy" />
     </a>
   {:else if post.topics?.length}
