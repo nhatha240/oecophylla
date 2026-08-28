@@ -1,0 +1,133 @@
+{
+  "impressions": [
+    {
+      "id": "00000000-0000-0000-0000-0000000000a1",
+      "request_id": "00000000-0000-0000-0000-0000000010a1",
+      "user_id": "00000000-0000-0000-0000-000000000001",
+      "post_id": "00000000-0000-0000-0000-000000001001",
+      "position": 0,
+      "feed_source": "personalized",
+      "model_version": "heuristic-v1",
+      "served_at": "2026-08-01T00:00:00Z",
+      "feature_snapshot": {"schema_version": "rank-features-v1", "topic_relevance": 0.8, "freshness": 0.9, "safety_score": 1.0, "candidate_source": "topic", "is_followed_author": false, "author_affinity": null, "heuristic_score": 0.68, "ml_score": null}
+    },
+    {
+      "id": "00000000-0000-0000-0000-0000000000b2",
+      "request_id": "00000000-0000-0000-0000-0000000010b2",
+      "user_id": "00000000-0000-0000-0000-000000000001",
+      "post_id": "00000000-0000-0000-0000-000000001002",
+      "position": 0,
+      "feed_source": "personalized",
+      "model_version": "heuristic-v1",
+      "served_at": "2026-08-02T00:00:00Z",
+      "feature_snapshot": {"schema_version": "rank-features-v1", "topic_relevance": 0.7, "freshness": 0.8, "safety_score": 1.0, "candidate_source": "topic", "is_followed_author": false, "author_affinity": null, "heuristic_score": 0.61, "ml_score": null}
+    },
+    {
+      "id": "00000000-0000-0000-0000-0000000000c3",
+      "request_id": "00000000-0000-0000-0000-0000000010c3",
+      "user_id": "00000000-0000-0000-0000-000000000001",
+      "post_id": "00000000-0000-0000-0000-000000001003",
+      "position": 0,
+      "feed_source": "personalized",
+      "model_version": "heuristic-v1",
+      "served_at": "2026-08-03T00:00:00Z",
+      "feature_snapshot": {"schema_version": "rank-features-v1", "topic_relevance": 0.6, "freshness": 0.7, "safety_score": 1.0, "candidate_source": "topic", "is_followed_author": false, "author_affinity": null, "heuristic_score": 0.54, "ml_score": null}
+    },
+    {
+      "id": "00000000-0000-0000-0000-0000000000d4",
+      "request_id": "00000000-0000-0000-0000-0000000010d4",
+      "user_id": "00000000-0000-0000-0000-000000000001",
+      "post_id": "00000000-0000-0000-0000-000000001004",
+      "position": 0,
+      "feed_source": "fallback",
+      "model_version": "fallback-v1",
+      "served_at": "2026-08-04T00:00:00Z",
+      "feature_snapshot": {"schema_version": "rank-features-v1", "topic_relevance": null, "freshness": 0.6, "safety_score": 1.0, "candidate_source": "recent", "is_followed_author": null, "author_affinity": null, "heuristic_score": null, "ml_score": null}
+    },
+    {
+      "id": "00000000-0000-0000-0000-0000000000e5",
+      "request_id": "00000000-0000-0000-0000-0000000010e5",
+      "user_id": "00000000-0000-0000-0000-000000000002",
+      "post_id": "00000000-0000-0000-0000-000000001005",
+      "position": 1,
+      "feed_source": "personalized",
+      "model_version": "heuristic-v1",
+      "served_at": "2026-08-05T00:00:00Z",
+      "current_view_count": 999999,
+      "feature_snapshot": {"schema_version": "rank-features-v1", "topic_relevance": 0.9, "freshness": 0.5, "safety_score": 1.0, "candidate_source": "follow", "is_followed_author": true, "author_affinity": 0.7, "heuristic_score": 0.72, "ml_score": null, "current_view_count": 999999}
+    },
+    {
+      "id": "00000000-0000-0000-0000-0000000000f6",
+      "request_id": "00000000-0000-0000-0000-0000000010f6",
+      "user_id": "00000000-0000-0000-0000-000000000002",
+      "post_id": "00000000-0000-0000-0000-000000001006",
+      "position": 2,
+      "feed_source": "personalized",
+      "model_version": "heuristic-v1",
+      "served_at": "2026-08-06T00:00:00Z",
+      "feature_snapshot": {"schema_version": "rank-features-v1", "topic_relevance": 0.4, "freshness": 0.4, "safety_score": 0.9, "candidate_source": "topic", "is_followed_author": false, "author_affinity": null, "heuristic_score": 0.37, "ml_score": null}
+    },
+    {
+      "id": "00000000-0000-0000-0000-0000000000a7",
+      "request_id": "00000000-0000-0000-0000-0000000010a7",
+      "user_id": "00000000-0000-0000-0000-000000000003",
+      "post_id": "00000000-0000-0000-0000-000000001007",
+      "position": 0,
+      "feed_source": "cache",
+      "model_version": "heuristic-v1",
+      "served_at": "2026-08-07T00:00:00Z",
+      "feature_snapshot": {"schema_version": "rank-features-v1", "topic_relevance": 0.3, "freshness": 0.3, "safety_score": 1.0, "candidate_source": "topic", "is_followed_author": false, "author_affinity": null, "heuristic_score": 0.31, "ml_score": null}
+    },
+    {
+      "id": "00000000-0000-0000-0000-0000000000a7",
+      "request_id": "00000000-0000-0000-0000-0000000010a7",
+      "user_id": "00000000-0000-0000-0000-000000000003",
+      "post_id": "00000000-0000-0000-0000-000000001007",
+      "position": 0,
+      "feed_source": "cache",
+      "model_version": "heuristic-v1",
+      "served_at": "2026-08-07T00:00:00Z",
+      "feature_snapshot": {"schema_version": "rank-features-v1", "topic_relevance": 0.3, "freshness": 0.3, "safety_score": 1.0, "candidate_source": "topic", "is_followed_author": false, "author_affinity": null, "heuristic_score": 0.31, "ml_score": null}
+    },
+    {
+      "id": "00000000-0000-0000-0000-0000000000b8",
+      "request_id": "00000000-0000-0000-0000-0000000010b8",
+      "user_id": "00000000-0000-0000-0000-000000000003",
+      "post_id": "00000000-0000-0000-0000-000000001008",
+      "position": 1,
+      "feed_source": "personalized",
+      "model_version": "heuristic-v1",
+      "served_at": "2026-08-08T00:00:00Z",
+      "feature_snapshot": {"schema_version": "rank-features-v1", "topic_relevance": 0.2, "freshness": 0.2, "safety_score": 1.0, "candidate_source": "topic", "is_followed_author": false, "author_affinity": null, "heuristic_score": 0.24, "ml_score": null}
+    },
+    {
+      "id": "00000000-0000-0000-0000-0000000000c9",
+      "request_id": "00000000-0000-0000-0000-0000000010c9",
+      "user_id": "00000000-0000-0000-0000-000000000003",
+      "post_id": "00000000-0000-0000-0000-000000001009",
+      "position": 2,
+      "feed_source": "personalized",
+      "model_version": "heuristic-v1",
+      "served_at": "2026-08-09T00:00:00Z",
+      "feature_snapshot": {"schema_version": "rank-features-v2", "topic_relevance": 1.0, "freshness": 1.0, "safety_score": 1.0, "candidate_source": "topic", "is_followed_author": false, "author_affinity": null, "heuristic_score": 1.0, "ml_score": null}
+    }
+  ],
+  "events": [
+    {"id": "10000000-0000-0000-0000-0000000000a1", "impression_id": "00000000-0000-0000-0000-0000000000a1", "user_id": "00000000-0000-0000-0000-000000000001", "post_id": "00000000-0000-0000-0000-000000001001", "event_type": "visible", "dwell_ms": null, "occurred_at": "2026-08-01T01:00:00Z"},
+    {"id": "10000000-0000-0000-0000-0000000000a2", "impression_id": "00000000-0000-0000-0000-0000000000a1", "user_id": "00000000-0000-0000-0000-000000000001", "post_id": "00000000-0000-0000-0000-000000001001", "event_type": "view", "dwell_ms": 5000, "occurred_at": "2026-08-01T02:00:00Z"},
+    {"id": "10000000-0000-0000-0000-0000000000c1", "impression_id": "00000000-0000-0000-0000-0000000000c3", "user_id": "00000000-0000-0000-0000-000000000001", "post_id": "00000000-0000-0000-0000-000000001003", "event_type": "visible", "dwell_ms": null, "occurred_at": "2026-08-11T12:00:00Z"},
+    {"id": "10000000-0000-0000-0000-0000000000d1", "impression_id": "00000000-0000-0000-0000-0000000000d4", "user_id": "00000000-0000-0000-0000-000000000001", "post_id": "00000000-0000-0000-0000-000000001004", "event_type": "visible", "dwell_ms": null, "occurred_at": "2026-08-04T01:00:00Z"},
+    {"id": "10000000-0000-0000-0000-0000000000d2", "impression_id": "00000000-0000-0000-0000-0000000000d4", "user_id": "00000000-0000-0000-0000-000000000001", "post_id": "00000000-0000-0000-0000-000000001004", "event_type": "click", "dwell_ms": null, "occurred_at": "2026-08-05T02:00:00Z"},
+    {"id": "10000000-0000-0000-0000-0000000000e1", "impression_id": "00000000-0000-0000-0000-0000000000e5", "user_id": "00000000-0000-0000-0000-000000000002", "post_id": "00000000-0000-0000-0000-000000001005", "event_type": "visible", "dwell_ms": null, "occurred_at": "2026-08-05T01:00:00Z"},
+    {"id": "10000000-0000-0000-0000-0000000000e2", "impression_id": "00000000-0000-0000-0000-0000000000e5", "user_id": "00000000-0000-0000-0000-000000000002", "post_id": "00000000-0000-0000-0000-000000001005", "event_type": "save", "dwell_ms": null, "occurred_at": "2026-08-05T02:00:00Z"},
+    {"id": "10000000-0000-0000-0000-0000000000f1", "impression_id": "00000000-0000-0000-0000-0000000000f6", "user_id": "00000000-0000-0000-0000-000000000002", "post_id": "00000000-0000-0000-0000-000000001006", "event_type": "visible", "dwell_ms": null, "occurred_at": "2026-08-06T01:00:00Z"},
+    {"id": "10000000-0000-0000-0000-0000000000f2", "impression_id": "00000000-0000-0000-0000-0000000000f6", "user_id": "00000000-0000-0000-0000-000000000002", "post_id": "00000000-0000-0000-0000-000000001006", "event_type": "share", "dwell_ms": null, "occurred_at": "2026-08-06T02:00:00Z"},
+    {"id": "10000000-0000-0000-0000-0000000000f3", "impression_id": "00000000-0000-0000-0000-0000000000f6", "user_id": "00000000-0000-0000-0000-000000000002", "post_id": "00000000-0000-0000-0000-000000001006", "event_type": "hide", "dwell_ms": null, "occurred_at": "2026-08-06T03:00:00Z"},
+    {"id": "10000000-0000-0000-0000-0000000000a7", "impression_id": "00000000-0000-0000-0000-0000000000a7", "user_id": "00000000-0000-0000-0000-000000000003", "post_id": "00000000-0000-0000-0000-000000001007", "event_type": "visible", "dwell_ms": null, "occurred_at": "2026-08-07T01:00:00Z"},
+    {"id": "10000000-0000-0000-0000-0000000000a8", "impression_id": "00000000-0000-0000-0000-0000000000a7", "user_id": "00000000-0000-0000-0000-000000000003", "post_id": "00000000-0000-0000-0000-000000001007", "event_type": "click", "dwell_ms": null, "occurred_at": "2026-08-07T02:00:00Z"},
+    {"id": "10000000-0000-0000-0000-0000000000a8", "impression_id": "00000000-0000-0000-0000-0000000000a7", "user_id": "00000000-0000-0000-0000-000000000003", "post_id": "00000000-0000-0000-0000-000000001007", "event_type": "click", "dwell_ms": null, "occurred_at": "2026-08-07T02:00:00Z"},
+    {"id": "10000000-0000-0000-0000-0000000000b1", "impression_id": "00000000-0000-0000-0000-0000000000b8", "user_id": "00000000-0000-0000-0000-000000000003", "post_id": "00000000-0000-0000-0000-000000001008", "event_type": "visible", "dwell_ms": null, "occurred_at": "2026-08-08T01:00:00Z"},
+    {"id": "10000000-0000-0000-0000-0000000000b2", "impression_id": "00000000-0000-0000-0000-0000000000b8", "user_id": "00000000-0000-0000-0000-000000000003", "post_id": "00000000-0000-0000-0000-000000001008", "event_type": "view", "dwell_ms": 12000, "occurred_at": "2026-08-08T02:00:00Z"},
+    {"id": "10000000-0000-0000-0000-0000000000c1", "impression_id": "00000000-0000-0000-0000-0000000000c9", "user_id": "00000000-0000-0000-0000-000000000003", "post_id": "00000000-0000-0000-0000-000000001009", "event_type": "visible", "dwell_ms": null, "occurred_at": "2026-08-09T01:00:00Z"}
+  ]
+}
