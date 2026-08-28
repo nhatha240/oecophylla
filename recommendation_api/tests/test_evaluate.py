@@ -1,17 +1,170 @@
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
+from uuid import UUID
+
+from app.evaluate import (
+    BehaviorRecord,
+    ImpressionRecord,
+    build_temporal_split,
+    evaluate_records,
+)
 from app.schemas import EvaluateResponse
 
 
-def test_evaluate_response_shape():
-    e = EvaluateResponse(
-        precision_at_k=0.0,
-        ctr_simulation=0.0,
-        diversity=0.0,
-        fallback_rate=0.0,
+UTC = timezone.utc
+USER_ID = UUID("00000000-0000-0000-0000-000000000001")
+REQUEST_ID = UUID("00000000-0000-0000-0000-000000000010")
+POST_A = UUID("00000000-0000-0000-0000-0000000000a1")
+POST_B = UUID("00000000-0000-0000-0000-0000000000b2")
+POST_C = UUID("00000000-0000-0000-0000-0000000000c3")
+IMP_A = UUID("00000000-0000-0000-0000-0000000001a1")
+IMP_B = UUID("00000000-0000-0000-0000-0000000001b2")
+IMP_C = UUID("00000000-0000-0000-0000-0000000001c3")
+CUTOFF = datetime(2026, 8, 20, tzinfo=UTC)
+AS_OF = datetime(2026, 8, 23, tzinfo=UTC)
+
+
+def impression(
+    impression_id: UUID,
+    post_id: UUID,
+    served_at: datetime,
+    *,
+    position: int,
+    feed_source: str = "personalized",
+    topics: tuple[str, ...] = ("ai",),
+) -> ImpressionRecord:
+    return ImpressionRecord(
+        id=impression_id,
+        request_id=REQUEST_ID,
+        user_id=USER_ID,
+        post_id=post_id,
+        position=position,
+        feed_source=feed_source,
+        topics=topics,
+        served_at=served_at,
     )
-    dump = e.model_dump()
-    assert dump.keys() == {
+
+
+def event(
+    impression_id: UUID | None,
+    post_id: UUID,
+    event_type: str,
+    occurred_at: datetime,
+) -> BehaviorRecord:
+    return BehaviorRecord(
+        impression_id=impression_id,
+        user_id=USER_ID,
+        post_id=post_id,
+        event_type=event_type,
+        occurred_at=occurred_at,
+    )
+
+
+def test_temporal_split_excludes_immature_impressions_and_future_events():
+    mature = impression(IMP_A, POST_A, CUTOFF + timedelta(hours=1), position=0)
+    immature = impression(IMP_B, POST_B, AS_OF - timedelta(hours=12), position=1)
+    before_cutoff = impression(
+        IMP_C, POST_C, CUTOFF - timedelta(minutes=1), position=2
+    )
+    training = event(None, POST_C, "like", CUTOFF - timedelta(seconds=1))
+    label = event(IMP_A, POST_A, "click", mature.served_at + timedelta(hours=2))
+    after_window = event(IMP_A, POST_A, "like", mature.served_at + timedelta(hours=25))
+    future = event(IMP_A, POST_A, "save", AS_OF + timedelta(seconds=1))
+
+    split = build_temporal_split(
+        [mature, immature, before_cutoff],
+        [training, label, after_window, future],
+        cutoff_at=CUTOFF,
+        label_window_hours=24,
+        as_of=AS_OF,
+    )
+
+    assert split.training_events == (training,)
+    assert split.validation_impressions == (mature,)
+    assert split.label_events_by_impression == {IMP_A: (label,)}
+
+
+def test_observed_ctr_and_fallback_rate_come_from_finalized_impressions():
+    first = impression(IMP_A, POST_A, CUTOFF + timedelta(hours=1), position=0)
+    fallback = impression(
+        IMP_B,
+        POST_B,
+        CUTOFF + timedelta(hours=2),
+        position=1,
+        feed_source="fallback",
+        topics=("business",),
+    )
+    click = event(IMP_A, POST_A, "click", first.served_at + timedelta(hours=1))
+
+    result = evaluate_records(
+        [first, fallback],
+        [click],
+        cutoff_at=CUTOFF,
+        label_window_hours=24,
+        as_of=AS_OF,
+        k=2,
+        catalog_size=10,
+    )
+
+    assert result.status == "ok"
+    assert result.ctr_observed == 0.5
+    assert result.ctr_simulation is None
+    assert result.fallback_rate == 0.5
+    assert result.sample_users == 1
+    assert result.sample_impressions == 2
+    assert result.cutoff_at == CUTOFF
+    assert result.label_window_hours == 24
+
+
+def test_insufficient_data_does_not_publish_misleading_metrics():
+    immature = impression(IMP_A, POST_A, AS_OF - timedelta(hours=1), position=0)
+
+    result = evaluate_records(
+        [immature],
+        [],
+        cutoff_at=CUTOFF,
+        label_window_hours=24,
+        as_of=AS_OF,
+        k=1,
+        catalog_size=10,
+    )
+
+    assert result.status == "insufficient_data"
+    assert result.sample_impressions == 0
+    assert result.precision_at_k is None
+    assert result.recall_at_k is None
+    assert result.ndcg_at_k is None
+    assert result.hit_rate is None
+    assert result.catalog_coverage is None
+    assert result.topic_diversity is None
+    assert result.ctr_observed is None
+    assert result.fallback_rate is None
+
+
+def test_evaluate_response_exposes_temporal_sample_metadata():
+    response = EvaluateResponse(
+        status="insufficient_data",
+        sample_users=0,
+        sample_impressions=0,
+        cutoff_at=CUTOFF,
+        label_window_hours=24,
+    )
+
+    assert response.model_dump().keys() == {
+        "status",
         "precision_at_k",
+        "recall_at_k",
+        "ndcg_at_k",
+        "hit_rate",
+        "catalog_coverage",
+        "topic_diversity",
+        "ctr_observed",
+        "fallback_rate",
+        "sample_users",
+        "sample_impressions",
+        "cutoff_at",
+        "label_window_hours",
         "ctr_simulation",
         "diversity",
-        "fallback_rate",
     }
