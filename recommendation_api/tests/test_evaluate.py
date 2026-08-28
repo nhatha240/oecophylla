@@ -3,10 +3,13 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
+import pytest
+
 from app.evaluate import (
     BehaviorRecord,
     ImpressionRecord,
     build_temporal_split,
+    evaluate,
     evaluate_records,
 )
 from app.schemas import EvaluateResponse
@@ -168,3 +171,57 @@ def test_evaluate_response_exposes_temporal_sample_metadata():
         "ctr_simulation",
         "diversity",
     }
+
+
+@pytest.mark.asyncio
+async def test_database_evaluation_uses_stored_impressions_and_observed_events():
+    served_at = CUTOFF + timedelta(hours=1)
+
+    class FakePool:
+        async def fetch(self, query: str, *_args):
+            if "FROM recommendation_impressions" in query:
+                return [
+                    {
+                        "id": IMP_A,
+                        "request_id": REQUEST_ID,
+                        "user_id": USER_ID,
+                        "post_id": POST_A,
+                        "position": 0,
+                        "feed_source": "fallback",
+                        "topics": ["technology"],
+                        "served_at": served_at,
+                    }
+                ]
+            if "FROM behavior_events" in query:
+                return [
+                    {
+                        "impression_id": IMP_A,
+                        "user_id": USER_ID,
+                        "post_id": POST_A,
+                        "event_type": "click",
+                        "occurred_at": served_at + timedelta(hours=1),
+                    }
+                ]
+            raise AssertionError(query)
+
+        async def fetchval(self, query: str):
+            assert "count(*)" in query
+            return 20
+
+    class FakeDB:
+        pool = FakePool()
+
+    result = await evaluate(
+        FakeDB(),
+        object(),
+        USER_ID,
+        1,
+        cutoff_at=CUTOFF,
+        label_window_hours=24,
+        as_of=AS_OF,
+    )
+
+    assert result.status == "ok"
+    assert result.precision_at_k == 1.0
+    assert result.ctr_observed == 1.0
+    assert result.fallback_rate == 1.0
