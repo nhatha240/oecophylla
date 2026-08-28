@@ -7,6 +7,8 @@ from datetime import datetime
 from uuid import UUID
 
 from fastapi import FastAPI, HTTPException
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from starlette.responses import Response
 
 from .db import DB, RedisCli, fetch_user_vector
 from .evaluate import evaluate
@@ -58,6 +60,11 @@ async def health() -> dict[str, bool]:
     return {"ok": True}
 
 
+@app.get("/metrics")
+async def metrics() -> Response:
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
 @app.post("/recommend/feed/{user_id}", response_model=RecommendFeedResponse)
 async def recommend_feed(
     user_id: UUID, body: RecommendFeedRequest
@@ -68,7 +75,11 @@ async def recommend_feed(
 
     user_vec = await fetch_user_vector(db, redis, user_id)
     candidates = await gather_candidates(
-        db, user_id, user_vec, pool_size=body.candidate_pool or cfg.feed_candidate_pool
+        db,
+        user_id,
+        user_vec,
+        pool_size=body.candidate_pool or cfg.feed_candidate_pool,
+        seen_cooldown_days=cfg.seen_cooldown_days,
     )
     excluded = set(body.exclude_post_ids)
     candidates = [c for c in candidates if c.id not in excluded]

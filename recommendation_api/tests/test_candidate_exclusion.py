@@ -7,6 +7,8 @@ from uuid import UUID
 import pytest
 
 from app import features
+from app import main as recommendation_main
+from app.schemas import RecommendFeedRequest
 from app.settings import Settings
 
 
@@ -21,6 +23,8 @@ class RecordingPool:
 
     async def fetch(self, query: str, *args: object) -> list[dict[str, object]]:
         self.calls.append((query, args))
+        if "WITH exclusion_reasons AS" in query:
+            return []
         return [
             {
                 "id": POST_ID,
@@ -127,3 +131,81 @@ def test_candidate_metrics_are_defined_per_source_and_exclusion_reason():
     assert features.CANDIDATE_SOURCE_REQUESTS._labelnames == ("source",)
     assert features.CANDIDATE_SOURCE_RESULTS._labelnames == ("source",)
     assert features.CANDIDATE_EXCLUSIONS._labelnames == ("reason",)
+
+
+@pytest.mark.asyncio
+async def test_exclusion_metrics_record_each_reason_and_unique_total():
+    class ExclusionPool(RecordingPool):
+        async def fetch(
+            self, query: str, *args: object
+        ) -> list[dict[str, object]]:
+            self.calls.append((query, args))
+            return [
+                {"reason": "hide", "excluded": 1},
+                {"reason": "report", "excluded": 2},
+                {"reason": "seen", "excluded": 3},
+                {"reason": "any", "excluded": 4},
+            ]
+
+    before = {
+        reason: features.CANDIDATE_EXCLUSIONS.labels(reason=reason)._value.get()
+        for reason in ("hide", "report", "seen", "any")
+    }
+    pool = ExclusionPool()
+
+    await features.record_candidate_exclusions(db_with(pool), VIEWER_ID, 7)
+
+    expected_deltas = {"hide": 1, "report": 2, "seen": 3, "any": 4}
+    for reason, expected_delta in expected_deltas.items():
+        after = features.CANDIDATE_EXCLUSIONS.labels(reason=reason)._value.get()
+        assert after - before[reason] == expected_delta
+    assert pool.calls[0][1] == (VIEWER_ID, 7)
+
+
+@pytest.mark.asyncio
+async def test_recommend_endpoint_passes_configured_seen_cooldown(monkeypatch):
+    captured: dict[str, object] = {}
+
+    async def fake_fetch_user_vector(_db, _redis, _user_id):
+        return {}
+
+    async def fake_gather_candidates(
+        _db,
+        _user_id,
+        _user_vec,
+        pool_size,
+        *,
+        seen_cooldown_days,
+    ):
+        captured["pool_size"] = pool_size
+        captured["seen_cooldown_days"] = seen_cooldown_days
+        return []
+
+    monkeypatch.setattr(
+        recommendation_main, "fetch_user_vector", fake_fetch_user_vector
+    )
+    monkeypatch.setattr(
+        recommendation_main, "gather_candidates", fake_gather_candidates
+    )
+    recommendation_main.app.state.db = object()
+    recommendation_main.app.state.redis = object()
+    recommendation_main.app.state.cfg = SimpleNamespace(
+        feed_candidate_pool=300,
+        seen_cooldown_days=11,
+    )
+
+    response = await recommendation_main.recommend_feed(
+        VIEWER_ID,
+        RecommendFeedRequest(limit=10, candidate_pool=30),
+    )
+
+    assert response.items == []
+    assert captured == {"pool_size": 30, "seen_cooldown_days": 11}
+
+
+@pytest.mark.asyncio
+async def test_metrics_endpoint_exports_candidate_metrics():
+    response = await recommendation_main.metrics()
+
+    assert response.media_type.startswith("text/plain")
+    assert b"recommendation_candidate_exclusions_total" in response.body

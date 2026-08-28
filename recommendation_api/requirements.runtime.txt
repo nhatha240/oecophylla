@@ -5,3 +5,4 @@ pydantic-settings==2.*
 asyncpg==0.30.*
 redis==5.*
 httpx==0.28.*
+prometheus-client==0.22.*
