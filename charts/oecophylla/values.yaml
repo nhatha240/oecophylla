@@ -110,11 +110,17 @@ components:
     replicas: 2
     port: 8003
     probePath: /health
+    env:
+      - name: LEGACY_VIEW_COUNTER_ENABLED
+        value: "false"
   interaction-service:
     image: { repository: ghcr.io/your-org/oecophylla/interaction-service, tag: "1.0.0", pullPolicy: IfNotPresent }
     replicas: 2
     port: 8004
     probePath: /health
+    env:
+      - name: BEHAVIOR_VIEW_COUNTER_ENABLED
+        value: "false"
   feed-service:
     image: { repository: ghcr.io/your-org/oecophylla/feed-service, tag: "1.0.0", pullPolicy: IfNotPresent }
     replicas: 2

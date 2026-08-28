@@ -159,6 +159,7 @@ services:
       migrate:   { condition: service_completed_successfully }
     environment:
       <<: *svc_env
+      LEGACY_VIEW_COUNTER_ENABLED: ${LEGACY_VIEW_COUNTER_ENABLED:-false}
 
   interaction-service:
     <<: *restart

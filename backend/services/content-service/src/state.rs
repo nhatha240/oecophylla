@@ -10,4 +10,5 @@ pub struct AppState {
     pub redis: RedisPool,
     pub kafka: Producer,
     pub cfg: Arc<SharedConfig>,
+    pub legacy_view_counter_enabled: bool,
 }

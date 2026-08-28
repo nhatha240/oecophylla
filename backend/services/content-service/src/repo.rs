@@ -173,7 +173,9 @@ pub async fn delete(db: &PgPool, id: Uuid) -> Result<bool, AppError> {
         == 1)
 }
 
-pub async fn increment_view(db: &PgPool, id: Uuid) -> Result<(), AppError> {
+/// Compatibility-only counter for `POST /posts/{id}/view`.
+/// The handler must gate this behind `LEGACY_VIEW_COUNTER_ENABLED`.
+pub async fn increment_legacy_view(db: &PgPool, id: Uuid) -> Result<(), AppError> {
     sqlx::query("UPDATE posts SET view_count = view_count + 1 WHERE id = $1")
         .bind(id)
         .execute(db)

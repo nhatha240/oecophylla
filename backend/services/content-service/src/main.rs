@@ -31,6 +31,7 @@ async fn main() -> anyhow::Result<()> {
         redis,
         kafka,
         cfg: Arc::new(cfg.clone()),
+        legacy_view_counter_enabled: env_flag("LEGACY_VIEW_COUNTER_ENABLED", false),
     };
 
     let app = Router::new()
@@ -51,4 +52,40 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!(?addr, "content-service listening");
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+fn env_flag(key: &str, default: bool) -> bool {
+    let value = std::env::var(key).ok();
+    parse_flag(value.as_deref(), default)
+}
+
+fn parse_flag(value: Option<&str>, default: bool) -> bool {
+    value
+        .map(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+        .unwrap_or(default)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_flag;
+
+    #[test]
+    fn legacy_counter_defaults_to_disabled() {
+        assert!(!parse_flag(None, false));
+    }
+
+    #[test]
+    fn counter_flag_accepts_explicit_rollout_values() {
+        for enabled in ["1", "true", "TRUE", "yes", "on"] {
+            assert!(parse_flag(Some(enabled), false), "{enabled}");
+        }
+        for disabled in ["0", "false", "no", "off", "invalid"] {
+            assert!(!parse_flag(Some(disabled), true), "{disabled}");
+        }
+    }
 }

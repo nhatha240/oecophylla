@@ -11,6 +11,7 @@ use common::{
     models::{AuthUser, PostStatus, UserRole},
 };
 use serde::Deserialize;
+use std::future::Future;
 use uuid::Uuid;
 
 use crate::{cursor, repo, state::AppState};
@@ -188,8 +189,22 @@ pub async fn delete_post(
 }
 
 pub async fn view(State(s): State<AppState>, Path(id): Path<Uuid>) -> AppResult<impl IntoResponse> {
-    repo::increment_view(&s.db, id).await?;
+    maybe_increment_legacy_view(s.legacy_view_counter_enabled, || {
+        repo::increment_legacy_view(&s.db, id)
+    })
+    .await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+async fn maybe_increment_legacy_view<F, Fut>(enabled: bool, increment: F) -> AppResult<()>
+where
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = AppResult<()>>,
+{
+    if enabled {
+        increment().await?;
+    }
+    Ok(())
 }
 
 // --- GET /api/v1/search ---
