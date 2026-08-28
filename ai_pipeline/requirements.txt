@@ -1,0 +1,4 @@
+asyncpg==0.30.*
+pyarrow>=18,<24
+pytest==8.*
+pytest-cov==7.*
