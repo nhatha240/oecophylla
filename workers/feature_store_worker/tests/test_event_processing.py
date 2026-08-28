@@ -143,6 +143,17 @@ async def test_viewed_envelope_updates_preference_exactly_once_on_replay(monkeyp
     assert ("duplicate", "viewed", 1) in counter.records
 
 
+async def test_duplicate_event_inside_one_kafka_batch_is_only_applied_once(monkeypatch):
+    worker, conn, _redis, counter = worker_with_fakes(monkeypatch)
+    worker._buffer = [VIEWED_FIXTURE, VIEWED_FIXTURE]
+
+    assert await worker._flush() is True
+
+    assert conn.vector == {"ai": 0.5}
+    assert conn.vector_updates == 1
+    assert ("duplicate", "viewed", 1) in counter.records
+
+
 async def test_replay_after_redis_failure_does_not_apply_vector_twice(monkeypatch):
     worker, conn, redis, _counter = worker_with_fakes(monkeypatch, redis_fail_once=True)
     worker._buffer = [VIEWED_FIXTURE]
