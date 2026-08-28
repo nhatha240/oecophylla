@@ -50,6 +50,8 @@ static_resources:
                           route:  { cluster: user_cluster, prefix_rewrite: "/api/v1/users/" }
                         - match: { prefix: "/api/v1/users" }
                           route:  { cluster: user_cluster }
+                        - match: { prefix: "/api/v1/interactions/events/batch" }
+                          route:  { cluster: interaction_cluster }
                         - match: { prefix: "/api/v1/interactions/me/batch" }
                           route:  { cluster: interaction_cluster }
                         # SSE trending stream — disable response buffering + long idle timeout

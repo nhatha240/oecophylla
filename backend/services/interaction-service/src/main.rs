@@ -1,14 +1,14 @@
 use axum::{
+    Router,
     middleware::{from_fn, from_fn_with_state},
     routing::{delete, get, post},
-    Router,
 };
 use common::{
     config::SharedConfig,
     db::pg_pool,
     kafka::Producer,
     middleware::{
-        rate_limit::{enforce_rate_limit, RateLimitPolicy, RateLimitState},
+        rate_limit::{RateLimitPolicy, RateLimitState, enforce_rate_limit},
         trace::init_tracing,
     },
     redis::redis_pool,
@@ -42,6 +42,12 @@ async fn main() -> anyhow::Result<()> {
         kafka,
         cfg: Arc::new(cfg.clone()),
         comment_fanout: Arc::new(CommentFanout::new()),
+        behavior_view_counter_enabled: env_flag("BEHAVIOR_VIEW_COUNTER_ENABLED", false),
+        positive_dwell_ms: std::env::var("POSITIVE_DWELL_MS")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .filter(|value| (5_000..=1_800_000).contains(value))
+            .unwrap_or(10_000),
     };
 
     let rl = |key_prefix: &'static str, max: u32| RateLimitState {
@@ -107,14 +113,28 @@ async fn main() -> anyhow::Result<()> {
             enforce_rate_limit,
         ));
 
-    let app = Router::new()
+    let behavior_events = Router::new()
+        .route(
+            "/api/v1/interactions/events/batch",
+            post(handlers::ingest_behavior_events),
+        )
+        .layer(from_fn_with_state(
+            rl("behavior_events", 600),
+            enforce_rate_limit,
+        ));
+
+    let mut app = Router::new()
         .route("/health", get(|| async { "ok" }))
         .route("/metrics", get(common::metrics::metrics_handler))
         .merge(saved)
         .merge(toggles)
         .merge(report)
         .merge(comments)
-        .merge(me_routes)
+        .merge(me_routes);
+    if env_flag("BEHAVIOR_EVENTS_ENABLED", true) {
+        app = app.merge(behavior_events);
+    }
+    let app = app
         .layer(from_fn(common::middleware::metrics_layer::track_metrics))
         .with_state(state);
 
@@ -123,4 +143,15 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!(?addr, "interaction-service listening");
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+fn env_flag(key: &str, default: bool) -> bool {
+    std::env::var(key)
+        .map(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+        .unwrap_or(default)
 }

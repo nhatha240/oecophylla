@@ -172,6 +172,9 @@ services:
       migrate:   { condition: service_completed_successfully }
     environment:
       <<: *svc_env
+      BEHAVIOR_EVENTS_ENABLED: ${BEHAVIOR_EVENTS_ENABLED:-true}
+      BEHAVIOR_VIEW_COUNTER_ENABLED: ${BEHAVIOR_VIEW_COUNTER_ENABLED:-false}
+      POSITIVE_DWELL_MS: ${POSITIVE_DWELL_MS:-10000}
 
   feed-service:
     <<: *restart

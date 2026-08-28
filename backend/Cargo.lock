@@ -1557,6 +1557,7 @@ dependencies = [
  "common",
  "deadpool-redis",
  "futures-util",
+ "metrics",
  "once_cell",
  "regex",
  "reqwest",

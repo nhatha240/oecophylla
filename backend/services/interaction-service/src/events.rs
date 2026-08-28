@@ -1,16 +1,49 @@
-use serde::Serialize;
-use uuid::Uuid;
+use chrono::{DateTime, Utc};
 #[allow(unused_imports)]
 use common::events::Envelope;
+use serde::Serialize;
+use uuid::Uuid;
 
 pub const TOPIC_INTERACTIONS: &str = "oecophylla.interactions";
 
 #[derive(Serialize)]
-pub struct ToggleData { pub user_id: Uuid, pub post_id: Uuid, pub post_author_id: Uuid, pub weight: f32 }
+pub struct ToggleData {
+    pub user_id: Uuid,
+    pub post_id: Uuid,
+    pub post_author_id: Uuid,
+    pub client_event_id: Uuid,
+    pub weight: f32,
+}
 #[derive(Serialize)]
-pub struct ReportData { pub reporter_id: Uuid, pub post_id: Uuid, pub post_author_id: Uuid, pub reason: String, pub report_id: Uuid }
+pub struct ReportData {
+    pub reporter_id: Uuid,
+    pub post_id: Uuid,
+    pub post_author_id: Uuid,
+    pub reason: String,
+    pub report_id: Uuid,
+    pub client_event_id: Uuid,
+}
 #[derive(Serialize)]
-pub struct CommentData { pub commenter_id: Uuid, pub post_id: Uuid, pub post_author_id: Uuid, pub comment_id: Uuid, pub parent_comment_id: Option<Uuid>, pub content_preview: String }
+pub struct CommentData {
+    pub commenter_id: Uuid,
+    pub post_id: Uuid,
+    pub post_author_id: Uuid,
+    pub comment_id: Uuid,
+    pub parent_comment_id: Option<Uuid>,
+    pub content_preview: String,
+    pub client_event_id: Uuid,
+}
+
+#[derive(Serialize)]
+pub struct BehaviorTelemetryData {
+    pub user_id: Uuid,
+    pub post_id: Uuid,
+    pub client_event_id: Uuid,
+    pub behavior_event_id: Uuid,
+    pub impression_id: Option<Uuid>,
+    pub session_id: Option<Uuid>,
+    pub occurred_at: DateTime<Utc>,
+}
 
 pub fn weight_for(t: &str) -> f32 {
     match t {
@@ -23,9 +56,17 @@ pub fn weight_for(t: &str) -> f32 {
     }
 }
 fn env_or(key: &str, default: f32) -> f32 {
-    std::env::var(key).ok().and_then(|v| v.parse().ok()).unwrap_or(default)
+    std::env::var(key)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(default)
 }
 
 pub fn counter_column(t: &str) -> Option<&'static str> {
-    match t { "like" => Some("like_count"), "save" => Some("save_count"), "share" => Some("share_count"), _ => None }
+    match t {
+        "like" => Some("like_count"),
+        "save" => Some("save_count"),
+        "share" => Some("share_count"),
+        _ => None,
+    }
 }

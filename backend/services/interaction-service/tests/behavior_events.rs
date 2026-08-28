@@ -6,6 +6,7 @@ use common::{auth::issue_access, models::UserRole};
 use reqwest::{Client, StatusCode};
 use serde_json::{Value, json};
 use sqlx::{PgPool, Row, postgres::PgPoolOptions};
+use std::process::Command;
 use uuid::Uuid;
 
 const ENVOY: &str = "http://localhost:8080";
@@ -127,6 +128,44 @@ fn telemetry_event(
     })
 }
 
+fn kafka_topic_snapshot() -> String {
+    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let output = Command::new("docker")
+        .current_dir(repo_root)
+        .args([
+            "compose",
+            "--env-file",
+            ".env.example",
+            "-f",
+            "compose.yaml",
+            "-f",
+            "compose.dev.yaml",
+            "exec",
+            "-T",
+            "kafka",
+            "/opt/kafka/bin/kafka-console-consumer.sh",
+            "--bootstrap-server",
+            "kafka:9092",
+            "--topic",
+            "oecophylla.interactions",
+            "--partition",
+            "0",
+            "--offset",
+            "earliest",
+            "--max-messages",
+            "10000",
+            "--timeout-ms",
+            "2000",
+        ])
+        .output()
+        .expect("read Kafka interaction topic");
+    format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    )
+}
+
 #[tokio::test]
 async fn behavior_batch_is_authenticated_partial_idempotent_and_append_only() {
     let db = test_pool().await;
@@ -235,6 +274,35 @@ async fn behavior_batch_is_authenticated_partial_idempotent_and_append_only() {
     );
     assert_eq!(stored_views, 1);
 
+    let under_guardrail_id = Uuid::now_v7();
+    let under_guardrail_view = telemetry_event(
+        under_guardrail_id,
+        post_id,
+        Some(viewer_impression),
+        "view",
+        Some(5_000),
+        json!({ "continuous_visible_ms": 5_000, "trigger": "feed" }),
+    );
+    let (status, under_guardrail) = post_batch(&viewer, json!([under_guardrail_view])).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(under_guardrail["accepted"], 1);
+    let stored_dwell: i32 =
+        sqlx::query_scalar("SELECT dwell_ms FROM behavior_events WHERE client_event_id = $1")
+            .bind(under_guardrail_id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(stored_dwell, 5_000, "sub-positive view remains telemetry");
+    let kafka_events = kafka_topic_snapshot();
+    assert!(
+        kafka_events.contains(&view_id.to_string()),
+        "positive view should publish viewed envelope; Kafka output: {kafka_events}"
+    );
+    assert!(
+        !kafka_events.contains(&under_guardrail_id.to_string()),
+        "view below positive dwell guardrail must not publish a preference signal"
+    );
+
     let old_dwell_id = Uuid::now_v7();
     let mut old_dwell = telemetry_event(
         old_dwell_id,
@@ -306,11 +374,55 @@ async fn behavior_batch_is_authenticated_partial_idempotent_and_append_only() {
         .send()
         .await
         .unwrap();
+    viewer
+        .post(format!("{ENVOY}/api/v1/posts/{post_id}/share"))
+        .send()
+        .await
+        .unwrap();
+    viewer
+        .delete(format!("{ENVOY}/api/v1/posts/{post_id}/share"))
+        .send()
+        .await
+        .unwrap();
+    viewer
+        .post(format!("{ENVOY}/api/v1/posts/{post_id}/hide"))
+        .send()
+        .await
+        .unwrap();
+    viewer
+        .delete(format!("{ENVOY}/api/v1/posts/{post_id}/hide"))
+        .send()
+        .await
+        .unwrap();
+    let report = viewer
+        .post(format!("{ENVOY}/api/v1/posts/{post_id}/report"))
+        .json(&json!({ "reason": "spam" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(report.status(), StatusCode::CREATED);
+    let duplicate_report = viewer
+        .post(format!("{ENVOY}/api/v1/posts/{post_id}/report"))
+        .json(&json!({ "reason": "spam" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(duplicate_report.status(), StatusCode::CONFLICT);
+    let comment = viewer
+        .post(format!("{ENVOY}/api/v1/posts/{post_id}/comments"))
+        .json(&json!({ "content": "append-only behavior comment" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(comment.status(), StatusCode::OK);
 
     let action_rows = sqlx::query(
         "SELECT event_type, count(*) AS count FROM behavior_events \
          WHERE user_id = $1 AND post_id = $2 \
-           AND event_type IN ('like', 'unlike', 'save', 'unsave') \
+           AND event_type IN ( \
+             'like', 'unlike', 'save', 'unsave', 'share', 'unshare', \
+             'hide', 'unhide', 'report', 'comment' \
+           ) \
          GROUP BY event_type",
     )
     .bind(viewer_id)
@@ -331,9 +443,56 @@ async fn behavior_batch_is_authenticated_partial_idempotent_and_append_only() {
     assert_eq!(action_counts.get("unlike"), Some(&1));
     assert_eq!(action_counts.get("save"), Some(&1));
     assert_eq!(action_counts.get("unsave"), Some(&1));
+    assert_eq!(action_counts.get("share"), Some(&1));
+    assert_eq!(action_counts.get("unshare"), Some(&1));
+    assert_eq!(action_counts.get("hide"), Some(&1));
+    assert_eq!(action_counts.get("unhide"), Some(&1));
+    assert_eq!(action_counts.get("report"), Some(&1));
+    assert_eq!(action_counts.get("comment"), Some(&1));
 
     sqlx::query("DELETE FROM users WHERE id = ANY($1::uuid[])")
         .bind(vec![viewer_id, other_id, author_id])
+        .execute(&db)
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires Kafka stopped after interaction-service has started"]
+async fn kafka_failure_keeps_committed_behavior_event() {
+    let db = test_pool().await;
+    let author_id = Uuid::now_v7();
+    let viewer_id = Uuid::now_v7();
+    let post_id = Uuid::now_v7();
+    insert_user(&db, author_id, "kafka_fail_author").await;
+    insert_user(&db, viewer_id, "kafka_fail_viewer").await;
+    insert_post(&db, post_id, author_id).await;
+
+    let client_event_id = Uuid::now_v7();
+    let qualified_view = telemetry_event(
+        client_event_id,
+        post_id,
+        None,
+        "view",
+        Some(10_000),
+        json!({ "continuous_visible_ms": 10_000, "trigger": "feed" }),
+    );
+    let (status, response) = post_batch(&client(Some(viewer_id)), json!([qualified_view])).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(response["accepted"], 1);
+    let stored: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM behavior_events WHERE client_event_id = $1")
+            .bind(client_event_id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(
+        stored, 1,
+        "Kafka availability must not control DB durability"
+    );
+
+    sqlx::query("DELETE FROM users WHERE id = ANY($1::uuid[])")
+        .bind(vec![viewer_id, author_id])
         .execute(&db)
         .await
         .unwrap();

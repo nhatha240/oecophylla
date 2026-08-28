@@ -2,8 +2,220 @@ use chrono::{DateTime, Utc};
 use common::{error::AppError, ids::new_id, models::AuthUser};
 use serde::Serialize;
 use sqlx::{Postgres, Transaction};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
+
+#[derive(Debug)]
+pub struct NewBehaviorEvent {
+    pub id: Uuid,
+    pub client_event_id: Uuid,
+    pub post_id: Uuid,
+    pub impression_id: Option<Uuid>,
+    pub session_id: Option<Uuid>,
+    pub event_type: String,
+    pub dwell_ms: Option<i32>,
+    pub metadata: String,
+    pub occurred_at: DateTime<Utc>,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct InsertedBehaviorEvent {
+    pub id: Uuid,
+    pub client_event_id: Uuid,
+    pub post_id: Uuid,
+    pub impression_id: Option<Uuid>,
+    pub session_id: Option<Uuid>,
+    pub event_type: String,
+    pub occurred_at: DateTime<Utc>,
+}
+
+pub async fn valid_impression_ids(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    references: &[(Uuid, Uuid)],
+) -> Result<HashSet<Uuid>, AppError> {
+    if references.is_empty() {
+        return Ok(HashSet::new());
+    }
+    let impression_ids = references.iter().map(|item| item.0).collect::<Vec<_>>();
+    let post_ids = references.iter().map(|item| item.1).collect::<Vec<_>>();
+    let rows: Vec<Uuid> = sqlx::query_scalar(
+        r#"
+        SELECT DISTINCT impression.id
+        FROM UNNEST($1::uuid[], $2::uuid[]) AS requested(impression_id, post_id)
+        JOIN recommendation_impressions impression
+          ON impression.id = requested.impression_id
+         AND impression.post_id = requested.post_id
+         AND impression.user_id = $3
+        "#,
+    )
+    .bind(impression_ids)
+    .bind(post_ids)
+    .bind(user_id)
+    .fetch_all(&mut **tx)
+    .await?;
+    Ok(rows.into_iter().collect())
+}
+
+pub async fn existing_post_ids(
+    tx: &mut Transaction<'_, Postgres>,
+    post_ids: &[Uuid],
+) -> Result<HashSet<Uuid>, AppError> {
+    if post_ids.is_empty() {
+        return Ok(HashSet::new());
+    }
+    let rows: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM posts WHERE id = ANY($1::uuid[])")
+        .bind(post_ids)
+        .fetch_all(&mut **tx)
+        .await?;
+    Ok(rows.into_iter().collect())
+}
+
+pub async fn insert_behavior_events(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    events: &[NewBehaviorEvent],
+) -> Result<Vec<InsertedBehaviorEvent>, AppError> {
+    if events.is_empty() {
+        return Ok(vec![]);
+    }
+    let ids = events.iter().map(|event| event.id).collect::<Vec<_>>();
+    let client_event_ids = events
+        .iter()
+        .map(|event| event.client_event_id)
+        .collect::<Vec<_>>();
+    let post_ids = events.iter().map(|event| event.post_id).collect::<Vec<_>>();
+    let impression_ids = events
+        .iter()
+        .map(|event| event.impression_id)
+        .collect::<Vec<_>>();
+    let session_ids = events
+        .iter()
+        .map(|event| event.session_id)
+        .collect::<Vec<_>>();
+    let event_types = events
+        .iter()
+        .map(|event| event.event_type.as_str())
+        .collect::<Vec<_>>();
+    let dwell_ms = events
+        .iter()
+        .map(|event| event.dwell_ms)
+        .collect::<Vec<_>>();
+    let metadata = events
+        .iter()
+        .map(|event| event.metadata.as_str())
+        .collect::<Vec<_>>();
+    let occurred_at = events
+        .iter()
+        .map(|event| event.occurred_at)
+        .collect::<Vec<_>>();
+
+    Ok(sqlx::query_as::<_, InsertedBehaviorEvent>(
+        r#"
+        INSERT INTO behavior_events (
+            id, client_event_id, user_id, post_id, impression_id, session_id,
+            event_type, dwell_ms, metadata, occurred_at
+        )
+        SELECT
+            batch.id,
+            batch.client_event_id,
+            $1,
+            batch.post_id,
+            batch.impression_id,
+            batch.session_id,
+            batch.event_type,
+            batch.dwell_ms,
+            batch.metadata::jsonb,
+            batch.occurred_at
+        FROM UNNEST(
+            $2::uuid[],
+            $3::uuid[],
+            $4::uuid[],
+            $5::uuid[],
+            $6::uuid[],
+            $7::text[],
+            $8::integer[],
+            $9::text[],
+            $10::timestamptz[]
+        ) AS batch(
+            id,
+            client_event_id,
+            post_id,
+            impression_id,
+            session_id,
+            event_type,
+            dwell_ms,
+            metadata,
+            occurred_at
+        )
+        ON CONFLICT (client_event_id) DO NOTHING
+        RETURNING
+            id, client_event_id, post_id, impression_id, session_id,
+            event_type, occurred_at
+        "#,
+    )
+    .bind(user_id)
+    .bind(ids)
+    .bind(client_event_ids)
+    .bind(post_ids)
+    .bind(impression_ids)
+    .bind(session_ids)
+    .bind(event_types)
+    .bind(dwell_ms)
+    .bind(metadata)
+    .bind(occurred_at)
+    .fetch_all(&mut **tx)
+    .await?)
+}
+
+pub async fn bump_view_counts(
+    tx: &mut Transaction<'_, Postgres>,
+    post_ids: &[Uuid],
+) -> Result<(), AppError> {
+    if post_ids.is_empty() {
+        return Ok(());
+    }
+    sqlx::query(
+        r#"
+        UPDATE posts post
+        SET view_count = post.view_count + counted.total
+        FROM (
+            SELECT post_id, count(*)::bigint AS total
+            FROM UNNEST($1::uuid[]) AS item(post_id)
+            GROUP BY post_id
+        ) counted
+        WHERE post.id = counted.post_id
+        "#,
+    )
+    .bind(post_ids)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+pub async fn insert_canonical_behavior_event(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    post_id: Uuid,
+    event_type: &str,
+) -> Result<Uuid, AppError> {
+    let event_id = Uuid::now_v7();
+    sqlx::query(
+        r#"
+        INSERT INTO behavior_events (
+            id, client_event_id, user_id, post_id, event_type, metadata
+        )
+        VALUES ($1, $1, $2, $3, $4, '{"source":"canonical_api"}'::jsonb)
+        "#,
+    )
+    .bind(event_id)
+    .bind(user_id)
+    .bind(post_id)
+    .bind(event_type)
+    .execute(&mut **tx)
+    .await?;
+    Ok(event_id)
+}
 
 // === interactions ===
 
@@ -141,13 +353,13 @@ pub async fn insert_comment(
             None => {
                 return Err(AppError::NotFound {
                     kind: "parent_comment".into(),
-                })
+                });
             }
             Some(Some(_)) => {
                 return Err(AppError::Validation {
                     field: "parent_comment_id".into(),
                     message: "cannot reply more than one level deep".into(),
-                })
+                });
             }
             Some(None) => { /* OK */ }
         }
