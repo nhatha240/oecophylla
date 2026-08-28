@@ -31,12 +31,18 @@ class FakeConnection:
         self.receipts: set[str] = set()
         self.vector: dict[str, float] = {}
         self.vector_updates = 0
+        self.user_exists = True
 
     def transaction(self) -> FakeTransaction:
         return FakeTransaction(self)
 
     async def fetchrow(self, query: str, *_args: object):
         assert self.in_transaction
+        if "FROM users" in query:
+            return {
+                "user_exists": self.user_exists,
+                "topic_weights": json.dumps(self.vector) if self.vector else None,
+            }
         if "user_preference_vectors" in query:
             return {"topic_weights": json.dumps(self.vector)} if self.vector else None
         raise AssertionError(f"unexpected fetchrow query: {query}")
@@ -59,6 +65,8 @@ class FakeConnection:
         assert self.in_transaction
         if "user_preference_vectors" not in query:
             raise AssertionError(f"unexpected execute query: {query}")
+        if not self.user_exists:
+            raise ValueError("foreign key violation for deleted user")
         self.vector = json.loads(str(_args[1]))
         self.vector_updates += 1
 
@@ -206,3 +214,16 @@ async def test_unknown_event_is_counted_and_skipped_safely(monkeypatch):
     assert conn.vector == {}
     assert conn.vector_updates == 0
     assert ("unknown", "future_signal", 1) in counter.records
+
+
+async def test_event_for_deleted_user_is_receipted_and_not_retried(monkeypatch):
+    worker, conn, redis, counter = worker_with_fakes(monkeypatch)
+    conn.user_exists = False
+    worker._buffer = [VIEWED_FIXTURE]
+
+    assert await worker._flush() is True
+
+    assert str(VIEWED_FIXTURE["event_id"]) in conn.receipts
+    assert conn.vector_updates == 0
+    assert redis.cached == {}
+    assert ("ignored", "viewed", 1) in counter.records
