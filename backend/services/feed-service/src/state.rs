@@ -11,6 +11,7 @@ pub struct FeedConfig {
     pub feed_cache_ttl_seconds: usize,
     pub feed_result_size: usize,
     pub feed_candidate_pool: usize,
+    pub impression_logging_enabled: bool,
 }
 
 impl FeedConfig {
@@ -34,6 +35,14 @@ impl FeedConfig {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(300),
+            impression_logging_enabled: std::env::var("IMPRESSION_LOGGING_ENABLED")
+                .map(|value| {
+                    matches!(
+                        value.trim().to_ascii_lowercase().as_str(),
+                        "1" | "true" | "yes" | "on"
+                    )
+                })
+                .unwrap_or(true),
         }
     }
 }

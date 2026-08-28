@@ -6,7 +6,7 @@ use common::{auth::issue_access, models::UserRole};
 use deadpool_redis::redis::AsyncCommands;
 use reqwest::{Client, StatusCode};
 use serde_json::Value;
-use sqlx::{postgres::PgPoolOptions, PgPool, Row};
+use sqlx::{PgPool, Row, postgres::PgPoolOptions};
 use uuid::Uuid;
 
 const ENVOY: &str = "http://localhost:8080";
@@ -20,9 +20,8 @@ fn database_url() -> String {
 }
 
 fn redis_url() -> String {
-    std::env::var("TEST_REDIS_URL").unwrap_or_else(|_| {
-        "redis://:CHANGE_ME__use_openssl_rand_base64_24@localhost:6379".into()
-    })
+    std::env::var("TEST_REDIS_URL")
+        .unwrap_or_else(|_| "redis://:CHANGE_ME__use_openssl_rand_base64_24@localhost:6379".into())
 }
 
 async fn test_pool() -> PgPool {
@@ -141,15 +140,25 @@ struct ImpressionRow {
     snapshot: Value,
 }
 
-fn assert_response_impressions(body: &Value, expected_len: usize) -> Uuid {
+fn assert_response_impressions(body: &Value, expected_len: usize, context: &str) -> Uuid {
     let request_id = Uuid::parse_str(body["request_id"].as_str().expect("request_id string"))
         .expect("request_id UUID");
     let items = body["items"].as_array().expect("items array");
-    assert_eq!(items.len(), expected_len);
+    assert_eq!(
+        items.len(),
+        expected_len,
+        "unexpected {context} response: {body}"
+    );
     for (position, item) in items.iter().enumerate() {
         assert_eq!(item["position"], position);
-        assert!(Uuid::parse_str(item["impression_id"].as_str().expect("impression_id string"))
-            .is_ok());
+        assert!(
+            Uuid::parse_str(
+                item["impression_id"]
+                    .as_str()
+                    .expect("impression_id string")
+            )
+            .is_ok()
+        );
     }
     request_id
 }
@@ -177,7 +186,7 @@ async fn served_impressions_are_batched_after_hydration_and_fail_open() {
     let (status, first) = get_feed(&client, "limit=3").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(first["model_version"], "heuristic-v1");
-    let first_request_id = assert_response_impressions(&first, 3);
+    let first_request_id = assert_response_impressions(&first, 3, "personalized");
     let first_rows = impression_rows(&db, first_request_id).await;
     assert_eq!(first_rows.len(), 3);
     for (position, row) in first_rows.iter().enumerate() {
@@ -194,7 +203,14 @@ async fn served_impressions_are_batched_after_hydration_and_fail_open() {
         assert!(row.score.is_some());
     }
 
-    let hidden_post_id = Uuid::parse_str(first["items"][1]["id"].as_str().unwrap()).unwrap();
+    let hidden_post_id = first["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|item| item["id"].as_str())
+        .filter_map(|id| Uuid::parse_str(id).ok())
+        .find(|id| post_ids.contains(id))
+        .expect("personalized response should contain a followed-author fixture post");
     sqlx::query("UPDATE posts SET status = 'hidden' WHERE id = $1")
         .bind(hidden_post_id)
         .execute(&db)
@@ -205,7 +221,7 @@ async fn served_impressions_are_batched_after_hydration_and_fail_open() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(cached["source"], "cache");
     assert_eq!(cached["model_version"], "heuristic-v1");
-    let cached_request_id = assert_response_impressions(&cached, 2);
+    let cached_request_id = assert_response_impressions(&cached, 2, "cached");
     assert_ne!(cached_request_id, first_request_id);
     let cached_rows = impression_rows(&db, cached_request_id).await;
     assert_eq!(cached_rows.len(), 2);
@@ -222,20 +238,22 @@ async fn served_impressions_are_batched_after_hydration_and_fail_open() {
     let (status, following) = get_feed(&client, "mode=following&limit=3").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(following["model_version"], "following-v1");
-    let following_request_id = assert_response_impressions(&following, 2);
+    let following_request_id = assert_response_impressions(&following, 2, "following");
     let following_rows = impression_rows(&db, following_request_id).await;
-    assert!(following_rows
-        .iter()
-        .all(|row| row.feed_source == "following"
-            && row.candidate_source == "following"
-            && row.snapshot["heuristic_score"].is_null()));
+    assert!(
+        following_rows
+            .iter()
+            .all(|row| row.feed_source == "following"
+                && row.candidate_source == "following"
+                && row.snapshot["heuristic_score"].is_null())
+    );
 
     let redis_client = deadpool_redis::redis::Client::open(redis_url()).unwrap();
     let mut redis = redis_client
         .get_multiplexed_async_connection()
         .await
         .unwrap();
-    let trending_post_id = post_ids[2];
+    let trending_post_id = cached_rows[0].post_id;
     let _: usize = redis
         .zadd("trending:24h", trending_post_id.to_string(), 1_000_000_f64)
         .await
@@ -243,7 +261,7 @@ async fn served_impressions_are_batched_after_hydration_and_fail_open() {
     let (status, trending) = get_feed(&client, "mode=trending&limit=1").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(trending["model_version"], "trending-v1");
-    let trending_request_id = assert_response_impressions(&trending, 1);
+    let trending_request_id = assert_response_impressions(&trending, 1, "trending");
     let trending_rows = impression_rows(&db, trending_request_id).await;
     assert_eq!(trending_rows[0].candidate_source, "trending");
     let _: usize = redis
@@ -294,11 +312,13 @@ async fn served_impressions_are_batched_after_hydration_and_fail_open() {
 
     assert_eq!(failure_status, StatusCode::OK);
     let failed_request_id = Uuid::parse_str(failed["request_id"].as_str().unwrap()).unwrap();
-    assert!(failed["items"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .all(|item| item["impression_id"].is_null()));
+    assert!(
+        failed["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|item| item["impression_id"].is_null())
+    );
     assert!(impression_rows(&db, failed_request_id).await.is_empty());
 
     sqlx::query("DELETE FROM users WHERE id = ANY($1::uuid[])")

@@ -10,13 +10,13 @@ pub struct RecommendFeedRequest {
     pub exclude_post_ids: Vec<Uuid>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum RankFeatureSchemaVersion {
     #[serde(rename = "rank-features-v1")]
     V1,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RankFeatureSnapshot {
     pub schema_version: RankFeatureSchemaVersion,
     #[serde(deserialize_with = "deserialize_required_nullable")]

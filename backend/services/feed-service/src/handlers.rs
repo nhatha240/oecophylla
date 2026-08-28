@@ -3,15 +3,15 @@ use std::convert::Infallible;
 use std::time::Duration;
 
 use axum::{
-    extract::{Query, State},
-    http::{header, HeaderMap, HeaderValue},
-    response::{
-        sse::{Event, KeepAlive, Sse},
-        IntoResponse,
-    },
     Json,
+    extract::{Query, State},
+    http::{HeaderMap, HeaderValue, header},
+    response::{
+        IntoResponse,
+        sse::{Event, KeepAlive, Sse},
+    },
 };
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use common::{
     auth::verify_access,
     error::{AppError, AppResult},
@@ -24,17 +24,19 @@ use uuid::Uuid;
 use crate::{
     cache::{self, get_cached_feed, set_cached_feed, trending_ids},
     recommendation::{
-        recommend_feed, RankFeatureSnapshot, RecommendFeedRequest, RecommendationItem,
+        RankFeatureSnapshot, RecommendFeedRequest, RecommendationItem, recommend_feed,
     },
-    repo,
+    repo::{self, NewRecommendationImpression},
     state::AppState,
-    types::{
-        CachedFeed, CachedFeedItem, FeedItem, FeedPostRow, FeedQuery, FeedRank, FeedResponse,
-    },
+    types::{CachedFeed, CachedFeedItem, FeedItem, FeedPostRow, FeedQuery, FeedRank, FeedResponse},
 };
 
 const DEFAULT_PAGE_SIZE: usize = 20;
 const MAX_PAGE_SIZE: usize = 50;
+const FOLLOWING_MODEL_VERSION: &str = "following-v1";
+const TRENDING_MODEL_VERSION: &str = "trending-v1";
+const FALLBACK_TRENDING_MODEL_VERSION: &str = "fallback-trending-v1";
+const FALLBACK_RECENT_MODEL_VERSION: &str = "fallback-recent-v1";
 
 fn current(s: &AppState, h: &HeaderMap) -> Option<AuthUser> {
     let raw = h.get(axum::http::header::COOKIE)?.to_str().ok()?;
@@ -54,17 +56,14 @@ pub async fn get_feed(
     h: HeaderMap,
 ) -> AppResult<Json<FeedResponse>> {
     let me = current(&s, &h).ok_or(AppError::Unauthorized)?;
-    let limit = q
-        .limit
-        .unwrap_or(DEFAULT_PAGE_SIZE)
-        .clamp(1, MAX_PAGE_SIZE);
+    let limit = q.limit.unwrap_or(DEFAULT_PAGE_SIZE).clamp(1, MAX_PAGE_SIZE);
 
     if q.mode.as_deref() == Some("following") {
         return following_feed_handler(&s, me.id, q.cursor.as_deref(), limit).await;
     }
 
     if q.mode.as_deref() == Some("trending") {
-        return trending_feed_handler(&s, q.cursor.as_deref(), limit).await;
+        return trending_feed_handler(&s, me.id, q.cursor.as_deref(), limit).await;
     }
 
     let cursor_offset = parse_cursor(q.cursor.as_deref());
@@ -94,6 +93,9 @@ pub async fn get_feed(
                     reason: meta.reason.clone(),
                 },
                 post,
+                impression_id: None,
+                position: 0,
+                feature_snapshot: meta.features.clone(),
             })
         })
         .collect::<Vec<_>>();
@@ -104,12 +106,16 @@ pub async fn get_feed(
         None
     };
 
-    Ok(Json(FeedResponse {
+    Ok(finalize_feed_response(
+        &s,
+        me.id,
         items,
         next_cursor,
         source,
-        generated_at: cached.generated_at,
-    }))
+        cached.model_version,
+        cached.generated_at,
+    )
+    .await)
 }
 
 async fn following_feed_handler(
@@ -122,7 +128,9 @@ async fn following_feed_handler(
         let mut parts = c.splitn(2, '|');
         let ts = parts.next()?;
         let id = parts.next()?;
-        let dt = chrono::DateTime::parse_from_rfc3339(ts).ok()?.with_timezone(&Utc);
+        let dt = chrono::DateTime::parse_from_rfc3339(ts)
+            .ok()?
+            .with_timezone(&Utc);
         let uuid = Uuid::parse_str(id).ok()?;
         Some((dt, uuid))
     });
@@ -132,36 +140,47 @@ async fn following_feed_handler(
         .map_err(AppError::Other)?;
 
     let next = if rows.len() == limit {
-        rows.last().map(|r| {
-            format!("{}|{}", r.created_at.to_rfc3339(), r.id)
-        })
+        rows.last()
+            .map(|r| format!("{}|{}", r.created_at.to_rfc3339(), r.id))
     } else {
         None
     };
 
     let items = rows
         .into_iter()
-        .map(|post| FeedItem {
-            rank: FeedRank {
-                score: 0.0,
-                source: "following".into(),
-                reason: "follow-graph".into(),
-            },
-            post,
+        .map(|post| {
+            let mut feature_snapshot = RankFeatureSnapshot::unranked("following");
+            feature_snapshot.safety_score = Some(post.safety_score as f64);
+            FeedItem {
+                rank: FeedRank {
+                    score: 0.0,
+                    source: "following".into(),
+                    reason: "follow-graph".into(),
+                },
+                post,
+                impression_id: None,
+                position: 0,
+                feature_snapshot,
+            }
         })
         .collect();
 
-    Ok(Json(FeedResponse {
+    Ok(finalize_feed_response(
+        s,
+        user_id,
         items,
-        next_cursor: next,
-        source: "following".into(),
-        generated_at: Utc::now(),
-    }))
+        next,
+        "following".into(),
+        FOLLOWING_MODEL_VERSION.into(),
+        Utc::now(),
+    )
+    .await)
 }
 
 /// Fallback ladder: cache → recommendation-api → Redis trending → recent published.
 async fn trending_feed_handler(
     s: &AppState,
+    user_id: Uuid,
     cursor: Option<&str>,
     limit: usize,
 ) -> AppResult<Json<FeedResponse>> {
@@ -173,12 +192,16 @@ async fn trending_feed_handler(
         .map_err(AppError::Other)?;
 
     if scored.is_empty() {
-        return Ok(Json(FeedResponse {
-            items: vec![],
-            next_cursor: None,
-            source: "trending".into(),
-            generated_at: Utc::now(),
-        }));
+        return Ok(finalize_feed_response(
+            s,
+            user_id,
+            vec![],
+            None,
+            "trending".into(),
+            TRENDING_MODEL_VERSION.into(),
+            Utc::now(),
+        )
+        .await);
     }
 
     let total = scored.len();
@@ -199,6 +222,8 @@ async fn trending_feed_handler(
         .into_iter()
         .filter_map(|post| {
             let score = score_map.get(&post.id).copied().unwrap_or(0.0);
+            let mut feature_snapshot = RankFeatureSnapshot::unranked("trending");
+            feature_snapshot.safety_score = Some(post.safety_score as f64);
             Some(FeedItem {
                 rank: FeedRank {
                     score: score as f32,
@@ -206,6 +231,9 @@ async fn trending_feed_handler(
                     reason: "redis-zset".into(),
                 },
                 post,
+                impression_id: None,
+                position: 0,
+                feature_snapshot,
             })
         })
         .collect::<Vec<_>>();
@@ -216,12 +244,16 @@ async fn trending_feed_handler(
         None
     };
 
-    Ok(Json(FeedResponse {
+    Ok(finalize_feed_response(
+        s,
+        user_id,
         items,
         next_cursor,
-        source: "trending".into(),
-        generated_at: Utc::now(),
-    }))
+        "trending".into(),
+        TRENDING_MODEL_VERSION.into(),
+        Utc::now(),
+    )
+    .await)
 }
 
 /// Fallback ladder: cache → recommendation-api → Redis trending → recent published.
@@ -249,7 +281,7 @@ async fn load_or_build_feed(s: &AppState, user_id: Uuid) -> (CachedFeed, String)
     .await
     {
         Ok(result) if !result.items.is_empty() => {
-            let cached = build_cached_feed("personalized", result.items);
+            let cached = build_cached_feed("personalized", result.model_version, result.items);
             persist(s, user_id, &cached).await;
             (cached, "personalized".into())
         }
@@ -275,7 +307,7 @@ async fn fallback_feed(s: &AppState, user_id: Uuid) -> (CachedFeed, String) {
                     features: RankFeatureSnapshot::unranked("trending"),
                 })
                 .collect();
-            let cached = build_cached_feed("fallback", items);
+            let cached = build_cached_feed("fallback", FALLBACK_TRENDING_MODEL_VERSION, items);
             persist(s, user_id, &cached).await;
             return (cached, "fallback".into());
         }
@@ -286,15 +318,19 @@ async fn fallback_feed(s: &AppState, user_id: Uuid) -> (CachedFeed, String) {
         .unwrap_or_default();
     let items = rows
         .iter()
-        .map(|p: &FeedPostRow| RecommendationItem {
-            post_id: p.id,
-            score: 0.0,
-            source: "recent".into(),
-            reason: "fallback-recent".into(),
-            features: RankFeatureSnapshot::unranked("recent"),
+        .map(|p: &FeedPostRow| {
+            let mut features = RankFeatureSnapshot::unranked("recent");
+            features.safety_score = Some(p.safety_score as f64);
+            RecommendationItem {
+                post_id: p.id,
+                score: 0.0,
+                source: "recent".into(),
+                reason: "fallback-recent".into(),
+                features,
+            }
         })
         .collect();
-    let cached = build_cached_feed("fallback", items);
+    let cached = build_cached_feed("fallback", FALLBACK_RECENT_MODEL_VERSION, items);
     // Cache the fallback at a shorter TTL by reusing the configured TTL — when
     // the recommender comes back online the cache-invalidator wipes per-user
     // entries on interactions.
@@ -302,10 +338,15 @@ async fn fallback_feed(s: &AppState, user_id: Uuid) -> (CachedFeed, String) {
     (cached, "fallback".into())
 }
 
-fn build_cached_feed(source: &str, items: Vec<RecommendationItem>) -> CachedFeed {
+fn build_cached_feed(
+    source: &str,
+    model_version: impl Into<String>,
+    items: Vec<RecommendationItem>,
+) -> CachedFeed {
     CachedFeed {
         generated_at: Utc::now(),
         source: source.into(),
+        model_version: model_version.into(),
         items: items
             .into_iter()
             .map(|i| CachedFeedItem {
@@ -313,9 +354,97 @@ fn build_cached_feed(source: &str, items: Vec<RecommendationItem>) -> CachedFeed
                 score: i.score,
                 source: i.source,
                 reason: i.reason,
+                features: i.features,
             })
             .collect(),
     }
+}
+
+async fn finalize_feed_response(
+    s: &AppState,
+    user_id: Uuid,
+    mut items: Vec<FeedItem>,
+    next_cursor: Option<String>,
+    source: String,
+    model_version: String,
+    generated_at: DateTime<Utc>,
+) -> Json<FeedResponse> {
+    let request_id = Uuid::now_v7();
+    for (position, item) in items.iter_mut().enumerate() {
+        item.position = position;
+        item.impression_id = None;
+    }
+
+    if s.feed_cfg.impression_logging_enabled && !items.is_empty() {
+        let impression_ids = (0..items.len()).map(|_| Uuid::now_v7()).collect::<Vec<_>>();
+        let pending = items
+            .iter()
+            .zip(&impression_ids)
+            .map(|(item, impression_id)| {
+                Ok(NewRecommendationImpression {
+                    id: *impression_id,
+                    post_id: item.post.id,
+                    position: item.position as i16,
+                    candidate_source: item.feature_snapshot.candidate_source.clone(),
+                    score: Some(item.rank.score),
+                    feature_snapshot: serde_json::to_string(&item.feature_snapshot)?,
+                })
+            })
+            .collect::<anyhow::Result<Vec<_>>>();
+
+        let persist_result = match pending {
+            Ok(ref impressions) => {
+                repo::insert_recommendation_impressions(
+                    &s.db,
+                    request_id,
+                    user_id,
+                    &source,
+                    &model_version,
+                    impressions,
+                )
+                .await
+            }
+            Err(err) => Err(err),
+        };
+
+        match persist_result {
+            Ok(()) => {
+                for (item, impression_id) in items.iter_mut().zip(impression_ids) {
+                    item.impression_id = Some(impression_id);
+                }
+                metrics::counter!(
+                    "feed_impressions_persisted_total",
+                    "feed_source" => source.clone(),
+                )
+                .increment(items.len() as u64);
+            }
+            Err(err) => {
+                tracing::error!(
+                    error = %err,
+                    %request_id,
+                    %user_id,
+                    feed_source = %source,
+                    model_version = %model_version,
+                    item_count = items.len(),
+                    "failed to persist served impressions; returning feed without impression IDs"
+                );
+                metrics::counter!(
+                    "feed_impression_persist_failures_total",
+                    "feed_source" => source.clone(),
+                )
+                .increment(1);
+            }
+        }
+    }
+
+    Json(FeedResponse {
+        request_id,
+        model_version,
+        items,
+        next_cursor,
+        source,
+        generated_at,
+    })
 }
 
 async fn persist(s: &AppState, user_id: Uuid, feed: &CachedFeed) {
@@ -336,10 +465,8 @@ pub async fn trending_stream(State(s): State<AppState>) -> impl IntoResponse {
     let interval = Duration::from_secs(30);
 
     // Stream that ticks every 30s, skipping the first immediate tick.
-    let tick_stream = futures_util::StreamExt::skip(
-        IntervalStream::new(tokio::time::interval(interval)),
-        1,
-    );
+    let tick_stream =
+        futures_util::StreamExt::skip(IntervalStream::new(tokio::time::interval(interval)), 1);
 
     let redis = s.redis.clone();
 
@@ -348,7 +475,10 @@ pub async fn trending_stream(State(s): State<AppState>) -> impl IntoResponse {
         let redis = redis.clone();
         async move {
             let ids = match cache::trending_ids(&redis, 20).await {
-                Ok(scored) => scored.iter().map(|(id, _)| id.to_string()).collect::<Vec<_>>(),
+                Ok(scored) => scored
+                    .iter()
+                    .map(|(id, _)| id.to_string())
+                    .collect::<Vec<_>>(),
                 Err(err) => {
                     tracing::warn!(error = %err, "trending stream: redis read failed, sending empty");
                     vec![]
@@ -360,10 +490,7 @@ pub async fn trending_stream(State(s): State<AppState>) -> impl IntoResponse {
     });
 
     let heartbeat_stream = futures_util::StreamExt::map(
-        futures_util::StreamExt::skip(
-            IntervalStream::new(tokio::time::interval(interval)),
-            1,
-        ),
+        futures_util::StreamExt::skip(IntervalStream::new(tokio::time::interval(interval)), 1),
         |_| Ok::<Event, Infallible>(Event::default().event("heartbeat").data("ping")),
     );
 
@@ -410,9 +537,7 @@ pub struct TrendingTopic {
 
 /// Aggregate the most frequent topics from the current top trending posts.
 pub async fn trending_topics(State(s): State<AppState>) -> AppResult<Json<Vec<TrendingTopic>>> {
-    let scored = trending_ids(&s.redis, 50)
-        .await
-        .map_err(AppError::Other)?;
+    let scored = trending_ids(&s.redis, 50).await.map_err(AppError::Other)?;
 
     if scored.is_empty() {
         return Ok(Json(vec![]));

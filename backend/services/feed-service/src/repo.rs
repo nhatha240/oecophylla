@@ -5,6 +5,118 @@ use uuid::Uuid;
 
 use crate::types::FeedPostRow;
 
+#[derive(Debug)]
+pub struct NewRecommendationImpression {
+    pub id: Uuid,
+    pub post_id: Uuid,
+    pub position: i16,
+    pub candidate_source: String,
+    pub score: Option<f32>,
+    pub feature_snapshot: String,
+}
+
+/// Insert one served page with a single set-based statement. The request,
+/// authenticated user, feed source and model version are shared by every row.
+pub async fn insert_recommendation_impressions(
+    db: &PgPool,
+    request_id: Uuid,
+    user_id: Uuid,
+    feed_source: &str,
+    model_version: &str,
+    impressions: &[NewRecommendationImpression],
+) -> anyhow::Result<()> {
+    if impressions.is_empty() {
+        return Ok(());
+    }
+
+    let ids = impressions.iter().map(|item| item.id).collect::<Vec<_>>();
+    let post_ids = impressions
+        .iter()
+        .map(|item| item.post_id)
+        .collect::<Vec<_>>();
+    let positions = impressions
+        .iter()
+        .map(|item| item.position)
+        .collect::<Vec<_>>();
+    let candidate_sources = impressions
+        .iter()
+        .map(|item| item.candidate_source.as_str())
+        .collect::<Vec<_>>();
+    let scores = impressions
+        .iter()
+        .map(|item| item.score)
+        .collect::<Vec<_>>();
+    let feature_snapshots = impressions
+        .iter()
+        .map(|item| item.feature_snapshot.as_str())
+        .collect::<Vec<_>>();
+
+    let result = sqlx::query(
+        r#"
+        INSERT INTO recommendation_impressions (
+            id,
+            request_id,
+            user_id,
+            post_id,
+            position,
+            feed_source,
+            candidate_source,
+            score,
+            model_version,
+            feature_snapshot
+        )
+        SELECT
+            batch.id,
+            $1,
+            $2,
+            batch.post_id,
+            batch.position,
+            $3,
+            batch.candidate_source,
+            batch.score,
+            $4,
+            batch.feature_snapshot::jsonb
+        FROM UNNEST(
+            $5::uuid[],
+            $6::uuid[],
+            $7::smallint[],
+            $8::text[],
+            $9::real[],
+            $10::text[]
+        ) AS batch(
+            id,
+            post_id,
+            position,
+            candidate_source,
+            score,
+            feature_snapshot
+        )
+        "#,
+    )
+    .bind(request_id)
+    .bind(user_id)
+    .bind(feed_source)
+    .bind(model_version)
+    .bind(ids)
+    .bind(post_ids)
+    .bind(positions)
+    .bind(candidate_sources)
+    .bind(scores)
+    .bind(feature_snapshots)
+    .execute(db)
+    .await
+    .context("insert recommendation impressions batch")?;
+
+    if result.rows_affected() != impressions.len() as u64 {
+        anyhow::bail!(
+            "inserted {} recommendation impressions, expected {}",
+            result.rows_affected(),
+            impressions.len()
+        );
+    }
+    Ok(())
+}
+
 /// Hydrate posts in the order of `ids`, dropping any whose status is not
 /// `published` so caller never serves hidden/flagged content.
 pub async fn hydrate_posts(db: &PgPool, ids: &[Uuid]) -> anyhow::Result<Vec<FeedPostRow>> {
@@ -52,9 +164,8 @@ pub async fn following_feed(
     limit: i64,
 ) -> anyhow::Result<Vec<FeedPostRow>> {
     let rows: Vec<FeedPostRow> = match cursor {
-        Some((ts, id)) => {
-            sqlx::query_as(
-                r#"
+        Some((ts, id)) => sqlx::query_as(
+            r#"
                 SELECT
                     p.id, p.author_id, u.username, u.display_name, u.avatar_url,
                     p.content, p.media_urls, p.tags, p.topics, p.safety_score,
@@ -69,18 +180,16 @@ pub async fn following_feed(
                 ORDER BY p.created_at DESC
                 LIMIT $4
                 "#,
-            )
-            .bind(user_id)
-            .bind(ts)
-            .bind(id)
-            .bind(limit)
-            .fetch_all(db)
-            .await
-            .context("following_feed")?
-        }
-        None => {
-            sqlx::query_as(
-                r#"
+        )
+        .bind(user_id)
+        .bind(ts)
+        .bind(id)
+        .bind(limit)
+        .fetch_all(db)
+        .await
+        .context("following_feed")?,
+        None => sqlx::query_as(
+            r#"
                 SELECT
                     p.id, p.author_id, u.username, u.display_name, u.avatar_url,
                     p.content, p.media_urls, p.tags, p.topics, p.safety_score,
@@ -94,13 +203,12 @@ pub async fn following_feed(
                 ORDER BY p.created_at DESC
                 LIMIT $2
                 "#,
-            )
-            .bind(user_id)
-            .bind(limit)
-            .fetch_all(db)
-            .await
-            .context("following_feed")?
-        }
+        )
+        .bind(user_id)
+        .bind(limit)
+        .fetch_all(db)
+        .await
+        .context("following_feed")?,
     };
     Ok(rows)
 }

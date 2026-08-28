@@ -2,6 +2,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::recommendation::RankFeatureSnapshot;
+
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct FeedPostRow {
     pub id: Uuid,
@@ -34,10 +36,16 @@ pub struct FeedItem {
     #[serde(flatten)]
     pub post: FeedPostRow,
     pub rank: FeedRank,
+    pub impression_id: Option<Uuid>,
+    pub position: usize,
+    #[serde(skip)]
+    pub feature_snapshot: RankFeatureSnapshot,
 }
 
 #[derive(Debug, Serialize)]
 pub struct FeedResponse {
+    pub request_id: Uuid,
+    pub model_version: String,
     pub items: Vec<FeedItem>,
     pub next_cursor: Option<String>,
     pub source: String,
@@ -58,11 +66,13 @@ pub struct CachedFeedItem {
     pub score: f32,
     pub source: String,
     pub reason: String,
+    pub features: RankFeatureSnapshot,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CachedFeed {
     pub generated_at: DateTime<Utc>,
     pub source: String,
+    pub model_version: String,
     pub items: Vec<CachedFeedItem>,
 }
