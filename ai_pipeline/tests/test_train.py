@@ -14,7 +14,6 @@ from ai_pipeline.artifact import ArtifactIntegrityError, load_artifact
 from ai_pipeline.model import FEATURE_COLUMNS
 from ai_pipeline.train import DatasetValidationError, train_from_dataset
 
-
 REPO_ROOT = Path(__file__).parents[2]
 
 
@@ -125,9 +124,10 @@ def test_training_is_deterministic_and_manifest_is_auditable(tmp_path: Path):
         "recall",
         "roc_auc",
     }
-    assert first["files"]["model.joblib"]["sha256"] == second["files"][
-        "model.joblib"
-    ]["sha256"]
+    assert (
+        first["files"]["model.joblib"]["sha256"]
+        == second["files"]["model.joblib"]["sha256"]
+    )
     assert first["validation_metrics"] == second["validation_metrics"]
 
 
