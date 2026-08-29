@@ -88,6 +88,8 @@ def test_only_serving_time_feature_allowlist_is_exported(config: DatasetConfig):
     assert exported["topic_relevance"] == 0.9
     assert "current_view_count" not in exported
     assert set(exported).isdisjoint({"user_id", "post_id", "impression_id"})
+    assert len(exported["request_group"]) == 64
+    assert exported["request_group"] != "00000000-0000-0000-0000-0000000010e5"
     assert row.user_group != row.audit_user_id
     assert row.post_group != row.audit_post_id
 

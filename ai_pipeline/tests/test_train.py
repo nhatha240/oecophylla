@@ -29,6 +29,7 @@ def _row(index: int, split: str, *, one_class: bool = False) -> dict[str, Any]:
         "sample_id": f"raw-user-secret-{index}",
         "user_group": f"raw-user-secret-group-{index % 5}",
         "post_group": f"raw-post-secret-group-{index}",
+        "request_group": f"request-{index // 4}",
         "split": split,
         "label": 1 if positive else -1,
         "label_name": "positive" if positive else "negative",
@@ -129,6 +130,11 @@ def test_training_is_deterministic_and_manifest_is_auditable(tmp_path: Path):
         == second["files"]["model.joblib"]["sha256"]
     )
     assert first["validation_metrics"] == second["validation_metrics"]
+
+
+def test_serving_feature_contract_excludes_rank_outcomes():
+    assert "position" not in FEATURE_COLUMNS
+    assert "ml_score" not in FEATURE_COLUMNS
 
 
 def test_pipeline_fits_train_only_and_handles_unknown_category(tmp_path: Path):
