@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import os
+import subprocess
 
 
 REPO_ROOT = Path(__file__).parents[1]
@@ -90,6 +92,25 @@ def test_cutover_defaults_prevent_two_view_counter_writers():
     assert "LEGACY_VIEW_COUNTER_ENABLED" in values
     assert "BEHAVIOR_VIEW_COUNTER_ENABLED" in values
     assert "must not both be true" in smoke
+
+
+def test_trace_smoke_runs_on_system_bash_and_rejects_double_writer():
+    environment = os.environ | {
+        "SKIP_DATABASE_TRACE": "true",
+        "LEGACY_VIEW_COUNTER_ENABLED": "true",
+        "BEHAVIOR_VIEW_COUNTER_ENABLED": "true",
+    }
+    result = subprocess.run(
+        ["bash", "scripts/smoke_ai_telemetry.sh"],
+        cwd=REPO_ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "must not both be true" in result.stderr
 
 
 def test_product_status_remains_honest_until_release_gate_has_evidence():

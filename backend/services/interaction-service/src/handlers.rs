@@ -259,6 +259,18 @@ pub async fn ingest_behavior_events(
     metrics::counter!("behavior_events_accepted_total").increment(accepted as u64);
     metrics::counter!("behavior_events_duplicate_total").increment(duplicate as u64);
     metrics::counter!("behavior_events_rejected_total").increment(rejected as u64);
+    for event in &inserted {
+        let lag_seconds = now
+            .signed_duration_since(event.occurred_at)
+            .num_milliseconds()
+            .max(0) as f64
+            / 1000.0;
+        metrics::histogram!(
+            "behavior_event_ingest_lag_seconds",
+            "event_type" => event.event_type.clone(),
+        )
+        .record(lag_seconds);
+    }
     Ok(Json(BehaviorBatchResponse {
         accepted,
         duplicate,

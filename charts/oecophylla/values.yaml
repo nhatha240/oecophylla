@@ -238,6 +238,12 @@ modelArtifact:
   existingClaim: ""
   mountPath: /models
 
+telemetryRetention:
+  enabled: false
+  schedule: "17 3 * * *"
+  days: 180
+  image: postgres:18-trixie
+
 nodeSelector: {}
 tolerations: []
 affinity: {}

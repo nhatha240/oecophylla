@@ -4,6 +4,8 @@ Social network with intelligent news feed recommendation and multi-layer content
 Phases 0–4 shipped — see `CLAUDE.md` "Current State" for what is live and what is still open.
 Original foundation spec: `docs/superpowers/specs/2026-05-25-foundation-identity-content-design.md`.
 
+Current AI status: Oecophylla runs a heuristic recommendation system with an ML experimentation pipeline. ML serving is opt-in and remains gated until a temporal holdout comparison, privacy checks, and an end-to-end telemetry trace provide enough release evidence.
+
 ## Quick start
 
 ```bash

@@ -40,7 +40,56 @@ spec:
           emptyDir:
             sizeLimit: {{ .Values.componentDefaults.tmpSizeLimit }}
 {{- end }}
-{{- if and .Values.migrations.enabled .Values.topicInitialization.enabled }}
+{{- if .Values.telemetryRetention.enabled }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "oecophylla.fullname" . }}-telemetry-retention
+  labels:
+    {{- include "oecophylla.labels" . | nindent 4 }}
+    app.kubernetes.io/component: telemetry-retention
+spec:
+  schedule: {{ .Values.telemetryRetention.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 3
+      ttlSecondsAfterFinished: 3600
+      template:
+        metadata:
+          labels:
+            {{- include "oecophylla.selectorLabels" (dict "root" . "name" "telemetry-retention") | nindent 12 }}
+        spec:
+          restartPolicy: Never
+          serviceAccountName: {{ include "oecophylla.serviceAccountName" . }}
+          automountServiceAccountToken: false
+          securityContext:
+            {{- toYaml .Values.podSecurityContext | nindent 12 }}
+          containers:
+            - name: prune
+              image: {{ .Values.telemetryRetention.image | quote }}
+              command: ["/bin/sh", "-ec"]
+              args:
+                - >-
+                  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c
+                  "SELECT * FROM prune_recommendation_telemetry(
+                  INTERVAL '{{ .Values.telemetryRetention.days }} days');"
+              envFrom:
+                - secretRef: { name: {{ include "oecophylla.secretName" . }} }
+              securityContext:
+                {{- toYaml .Values.securityContext | nindent 16 }}
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir:
+                sizeLimit: {{ .Values.componentDefaults.tmpSizeLimit }}
+{{- end }}
+{{- if and (or .Values.migrations.enabled .Values.telemetryRetention.enabled) .Values.topicInitialization.enabled }}
 ---
 {{- end }}
 {{- if .Values.topicInitialization.enabled }}

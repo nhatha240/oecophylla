@@ -1,0 +1,68 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Impression persistence",
+      "targets": [
+        {"refId": "A", "expr": "sum(rate(feed_impressions_persisted_total[5m]))", "legendFormat": "persisted"},
+        {"refId": "B", "expr": "sum(rate(feed_impression_persist_failures_total[5m]))", "legendFormat": "failed"}
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Behavior event outcomes",
+      "targets": [
+        {"refId": "A", "expr": "sum by (event_type) (rate(behavior_events_accepted_total[5m]))", "legendFormat": "accepted {{event_type}}"},
+        {"refId": "B", "expr": "sum by (reason) (rate(behavior_events_duplicate_total[5m]))", "legendFormat": "duplicate {{reason}}"},
+        {"refId": "C", "expr": "sum by (reason) (rate(behavior_events_rejected_total[5m]))", "legendFormat": "rejected {{reason}}"}
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Behavior ingest lag p95",
+      "targets": [
+        {"refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(behavior_event_ingest_lag_seconds_bucket[5m])))", "legendFormat": "seconds"}
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Candidate exclusions",
+      "targets": [
+        {"refId": "A", "expr": "sum by (reason) (rate(recommendation_candidate_exclusions_total[5m]))", "legendFormat": "{{reason}}"}
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Model lifecycle and fallback",
+      "targets": [
+        {"refId": "A", "expr": "sum by (outcome) (rate(recommendation_model_load_total[5m]))", "legendFormat": "load {{outcome}}"},
+        {"refId": "B", "expr": "sum by (outcome) (rate(recommendation_model_predict_total[5m]))", "legendFormat": "predict {{outcome}}"},
+        {"refId": "C", "expr": "sum by (reason) (rate(recommendation_model_fallback_total[5m]))", "legendFormat": "fallback {{reason}}"}
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Feed responses by source and model",
+      "targets": [
+        {"refId": "A", "expr": "sum by (feed_source, model_version) (rate(feed_responses_total[5m]))", "legendFormat": "{{feed_source}} / {{model_version}}"}
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["oecophylla", "ai", "telemetry"],
+  "templating": {"list": []},
+  "time": {"from": "now-6h", "to": "now"},
+  "timezone": "browser",
+  "title": "Oecophylla AI Telemetry",
+  "uid": "oecophylla-ai-telemetry",
+  "version": 1
+}

@@ -3,13 +3,13 @@ use std::convert::Infallible;
 use std::time::Duration;
 
 use axum::{
-    Json,
     extract::{Query, State},
-    http::{HeaderMap, HeaderValue, header},
+    http::{header, HeaderMap, HeaderValue},
     response::{
-        IntoResponse,
         sse::{Event, KeepAlive, Sse},
+        IntoResponse,
     },
+    Json,
 };
 use chrono::{DateTime, Utc};
 use common::{
@@ -24,7 +24,7 @@ use uuid::Uuid;
 use crate::{
     cache::{self, get_cached_feed, set_cached_feed, trending_ids},
     recommendation::{
-        RankFeatureSnapshot, RecommendFeedRequest, RecommendationItem, recommend_feed,
+        recommend_feed, RankFeatureSnapshot, RecommendFeedRequest, RecommendationItem,
     },
     repo::{self, NewRecommendationImpression},
     state::AppState,
@@ -436,6 +436,13 @@ async fn finalize_feed_response(
             }
         }
     }
+
+    metrics::counter!(
+        "feed_responses_total",
+        "feed_source" => source.clone(),
+        "model_version" => model_version.clone(),
+    )
+    .increment(1);
 
     Json(FeedResponse {
         request_id,
