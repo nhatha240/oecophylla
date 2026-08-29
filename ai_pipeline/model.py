@@ -11,13 +11,11 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 NUMERIC_FEATURES = (
-    "position",
     "topic_relevance",
     "freshness",
     "safety_score",
     "author_affinity",
     "heuristic_score",
-    "ml_score",
 )
 CATEGORICAL_FEATURES = (
     "feed_source",

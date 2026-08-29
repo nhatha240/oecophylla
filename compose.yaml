@@ -240,6 +240,10 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: ${REDIS_URL}
+      RANKER_MODE: ${RANKER_MODE:-heuristic}
+      MODEL_ARTIFACT_PATH: ${MODEL_ARTIFACT_PATH:-/models/current}
+    volumes:
+      - ./artifacts/models:/models:ro
 
   analytics-service:
     <<: *restart

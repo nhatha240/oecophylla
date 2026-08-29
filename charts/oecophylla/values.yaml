@@ -142,6 +142,11 @@ components:
     replicas: 2
     port: 8090
     probePath: /health
+    env:
+      - name: RANKER_MODE
+        value: heuristic
+      - name: MODEL_ARTIFACT_PATH
+        value: /models/current
   analytics-service:
     image: { repository: ghcr.io/your-org/oecophylla/analytics-service, tag: "1.0.0", pullPolicy: IfNotPresent }
     replicas: 1
@@ -227,6 +232,11 @@ monitoring:
   serviceMonitor:
     enabled: false
     labels: {}
+
+modelArtifact:
+  enabled: false
+  existingClaim: ""
+  mountPath: /models
 
 nodeSelector: {}
 tolerations: []

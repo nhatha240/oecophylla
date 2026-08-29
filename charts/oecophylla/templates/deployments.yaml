@@ -58,6 +58,11 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+          {{- if and (eq $name "recommendation-api") $.Values.modelArtifact.enabled }}
+            - name: model-artifact
+              mountPath: {{ $.Values.modelArtifact.mountPath }}
+              readOnly: true
+          {{- end }}
       {{- end }}
       containers:
         - name: {{ $name }}
@@ -122,6 +127,11 @@ spec:
         - name: tmp
           emptyDir:
             sizeLimit: {{ $.Values.componentDefaults.tmpSizeLimit }}
+      {{- if and (eq $name "recommendation-api") $.Values.modelArtifact.enabled }}
+        - name: model-artifact
+          persistentVolumeClaim:
+            claimName: {{ required "modelArtifact.existingClaim is required" $.Values.modelArtifact.existingClaim }}
+      {{- end }}
       {{- if eq $component.configVolume "envoy" }}
         - name: envoy-config
           configMap:

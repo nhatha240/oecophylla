@@ -78,6 +78,7 @@ class DatasetRow:
     sample_id: str
     user_group: str | None
     post_group: str | None
+    request_group: str | None
     split: SplitName
     label: int
     label_name: LabelName
@@ -103,6 +104,7 @@ class DatasetRow:
             "sample_id": self.sample_id,
             "user_group": self.user_group,
             "post_group": self.post_group,
+            "request_group": self.request_group,
             "split": self.split,
             "label": self.label,
             "label_name": self.label_name,

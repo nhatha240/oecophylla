@@ -193,16 +193,19 @@ def build_samples(
             sample_id = _hash_identity(impression.id, salt)
             user_group = _hash_identity(impression.user_id, salt)
             post_group = _hash_identity(impression.post_id, salt)
+            request_group = _hash_identity(impression.request_id, salt)
         else:
             sample_id = f"sample-{len(rows) + 1:09d}"
             user_group = None
             post_group = None
+            request_group = None
 
         rows.append(
             DatasetRow(
                 sample_id=sample_id,
                 user_group=user_group,
                 post_group=post_group,
+                request_group=request_group,
                 split="train",
                 label=LABEL_VALUES[label_name],
                 label_name=label_name,

@@ -19,6 +19,7 @@ from .features import (
     upsert_user_vector,
     utc_now,
 )
+from .model_ranker import RankerRuntime
 from .ranking import (
     HEURISTIC_MODEL_VERSION,
     build_rank_feature_snapshot,
@@ -45,6 +46,9 @@ async def lifespan(app: FastAPI):
     app.state.db = db
     app.state.redis = redis
     app.state.cfg = cfg
+    app.state.ranker = RankerRuntime.initialize(
+        cfg.ranker_mode, cfg.model_artifact_path
+    )
     try:
         yield
     finally:
@@ -107,14 +111,18 @@ async def recommend_feed(
                 features=features,
             )
         )
+    runtime: RankerRuntime = getattr(
+        app.state, "ranker", RankerRuntime(mode="heuristic")
+    )
+    decision = runtime.score(scored)
     primary = {str(c.id): c.primary_topic for c in candidates}
     author = {str(c.id): str(c.author_id) for c in candidates}
     top = diversity_rerank(
-        scored, primary_topic=primary, author_id=author, limit=body.limit
+        decision.items, primary_topic=primary, author_id=author, limit=body.limit
     )
     return RecommendFeedResponse(
         items=top,
-        model_version=HEURISTIC_MODEL_VERSION,
+        model_version=decision.model_version,
         generated_at=utc_now(),
     )
 

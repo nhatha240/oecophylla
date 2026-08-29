@@ -1,3 +1,6 @@
+from pathlib import Path
+from typing import Literal
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -11,6 +14,8 @@ class Settings(BaseSettings):
     feed_result_size: int = 50
     half_life_hours: float = 36.0
     seen_cooldown_days: int = Field(default=7, ge=0, le=3650)
+    ranker_mode: Literal["heuristic", "ml", "shadow"] = "heuristic"
+    model_artifact_path: Path = Path("/models/current")
 
 
 def settings() -> Settings:

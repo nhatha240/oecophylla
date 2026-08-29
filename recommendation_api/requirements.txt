@@ -5,6 +5,10 @@ pydantic-settings==2.*
 asyncpg==0.30.*
 redis==5.*
 httpx==0.28.*
+joblib>=1.4,<2
+numpy>=2,<3
 prometheus-client==0.22.*
 pytest==8.*
 pytest-asyncio==0.25.*
+pytest-cov==7.*
+scikit-learn>=1.6,<2
