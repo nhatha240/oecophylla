@@ -28,27 +28,46 @@ if [[ "${SKIP_DATABASE_TRACE:-false}" == "true" ]]; then
   exit 0
 fi
 
-if ! docker compose ps --status running --services | grep -qx postgres; then
+compose_command=(docker compose)
+if [[ ! -f .env && -f .env.example ]]; then
+  compose_command+=(--env-file .env.example)
+fi
+
+if ! "${compose_command[@]}" ps --status running --services | grep -qx postgres; then
   echo "postgres is not running; full trace is INCONCLUSIVE" >&2
   exit 2
 fi
 
 trace="$({
-  docker compose exec -T postgres \
+  "${compose_command[@]}" exec -T postgres \
     psql -U "${POSTGRES_USER:-oecophylla}" -d "${POSTGRES_DB:-oecophylla}" \
       -v ON_ERROR_STOP=1 -Atc "
         SELECT json_build_object(
           'request_id', impression.request_id,
           'impression_id', impression.id,
+          'score', impression.score,
           'model_version', impression.model_version,
           'feature_snapshot', impression.feature_snapshot,
-          'event_types', array_agg(event.event_type ORDER BY event.occurred_at)
+          'event_types', array_agg(DISTINCT event.event_type ORDER BY event.event_type)
         )
         FROM recommendation_impressions impression
         JOIN behavior_events event ON event.impression_id = impression.id
         WHERE event.event_type IN ('visible', 'view', 'dwell')
+          AND impression.feature_snapshot ?& ARRAY[
+            'schema_version',
+            'topic_relevance',
+            'freshness',
+            'safety_score',
+            'candidate_source',
+            'is_followed_author',
+            'author_affinity',
+            'heuristic_score',
+            'ml_score'
+          ]
         GROUP BY impression.id
         HAVING bool_or(event.event_type = 'visible')
+           AND bool_or(event.event_type = 'view')
+           AND bool_or(event.event_type = 'dwell')
         ORDER BY max(event.occurred_at) DESC
         LIMIT 1;
       "
@@ -60,4 +79,4 @@ if [[ -z "$trace" ]]; then
 fi
 
 echo "$trace"
-echo "telemetry trace passed; verify its hashed request_group in the generated dataset before release"
+echo "telemetry trace is dataset-eligible; generate the temporal dataset and verify its hashed request_group before release"

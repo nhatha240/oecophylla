@@ -26,7 +26,7 @@
       "type": "timeseries",
       "title": "Behavior ingest lag p95",
       "targets": [
-        {"refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(behavior_event_ingest_lag_seconds_bucket[5m])))", "legendFormat": "seconds"}
+        {"refId": "A", "expr": "max(behavior_event_ingest_lag_seconds{quantile=\"0.95\"})", "legendFormat": "seconds"}
       ]
     },
     {

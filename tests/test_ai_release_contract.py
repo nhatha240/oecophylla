@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import os
 import subprocess
+from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).parents[1]
@@ -62,6 +62,16 @@ def test_required_ai_telemetry_metrics_have_dashboard_and_alerts():
     assert "recommendation_model_fallback_total" in alerts
     assert "behavior_events_rejected_total" in alerts
     assert "behavior_event_ingest_lag_seconds" in alerts
+    assert 'behavior_event_ingest_lag_seconds{quantile="0.95"}' in alerts
+    dashboard_expressions = {
+        target["expr"]
+        for panel in dashboard["panels"]
+        for target in panel.get("targets", [])
+    }
+    assert (
+        'max(behavior_event_ingest_lag_seconds{quantile="0.95"})'
+        in dashboard_expressions
+    )
     assert len(dashboard["panels"]) >= 6
 
 
@@ -76,6 +86,8 @@ def test_top_level_ai_targets_and_trace_smoke_are_reproducible():
     assert "recommendation_impressions" in smoke
     assert "behavior_events" in smoke
     assert "feature_snapshot" in smoke
+    assert "event.event_type = 'dwell'" in smoke
+    assert "topic_relevance" in smoke
     assert "RANKER_MODE=heuristic" in smoke
 
 

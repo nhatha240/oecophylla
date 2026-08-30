@@ -54,7 +54,7 @@ async fn insert_post(db: &PgPool, id: Uuid, author_id: Uuid, offset_seconds: i32
             id, author_id, content, topics, safety_score, status, created_at
         )
         VALUES (
-            $1, $2, $3, ARRAY['ai']::text[], 0.9, 'published',
+            $1, $2, $3, ARRAY['ai']::text[], 1.0, 'published',
             NOW() + make_interval(secs => $4)
         )
         "#,

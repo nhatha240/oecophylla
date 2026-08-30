@@ -33,9 +33,7 @@ groups:
           description: More than 10 percent of behavior-event ingest attempts are being rejected.
 
       - alert: BehaviorEventIngestLagHigh
-        expr: >-
-          histogram_quantile(0.95,
-          sum by (le) (rate(behavior_event_ingest_lag_seconds_bucket[10m]))) > 300
+        expr: max(behavior_event_ingest_lag_seconds{quantile="0.95"}) > 300
         for: 15m
         labels:
           severity: warning
