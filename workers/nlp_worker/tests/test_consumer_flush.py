@@ -13,12 +13,16 @@ class FakeConsumer:
         self._envelope = envelope
         self._iterated = False
         self._getmany_calls = 0
+        self.commit_calls = 0
 
     async def start(self) -> None:
         return None
 
     async def stop(self) -> None:
         return None
+
+    async def commit(self) -> None:
+        self.commit_calls += 1
 
     async def getmany(self, timeout_ms: int, max_records: int) -> dict:
         del max_records
@@ -54,7 +58,14 @@ async def test_run_consumer_flushes_single_message_after_interval(monkeypatch):
 
     consumer = FakeConsumer(envelope)
     monkeypatch.setattr(kafka_consumer.asyncpg, "connect", AsyncMock(return_value=conn))
-    monkeypatch.setattr(kafka_consumer, "AIOKafkaConsumer", lambda *args, **kwargs: consumer)
+    consumer_kwargs: dict = {}
+
+    def build_consumer(*args, **kwargs):
+        del args
+        consumer_kwargs.update(kwargs)
+        return consumer
+
+    monkeypatch.setattr(kafka_consumer, "AIOKafkaConsumer", build_consumer)
 
     cfg = Settings(flush_interval_seconds=0.01, flush_batch_size=50)
     task = asyncio.create_task(kafka_consumer.run_consumer(cfg))
@@ -62,6 +73,8 @@ async def test_run_consumer_flushes_single_message_after_interval(monkeypatch):
 
     try:
         conn.execute.assert_called_once()
+        assert consumer_kwargs["enable_auto_commit"] is False
+        assert consumer.commit_calls == 1
     finally:
         task.cancel()
         with pytest.raises(asyncio.CancelledError):

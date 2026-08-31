@@ -124,3 +124,30 @@ async def test_exhausted_fallback_does_not_advance_resume_checkpoint() -> None:
     assert result.failed == 1
     assert checkpoint.saved == []
     assert source.seen_cursors == [None, "1"]
+
+
+@pytest.mark.asyncio
+async def test_unrecoverable_batch_failure_stops_before_later_checkpoint() -> None:
+    source = FakeSource(records(4))
+    processor = FakeProcessor(fallback_for="1")
+    checkpoint = MemoryCheckpoint()
+    runner = BatchRebuilder(
+        source,
+        processor,
+        checkpoint,
+        RebuildConfig(
+            batch_size=2,
+            max_retries=0,
+            concurrency=1,
+            retry_delay_seconds=0,
+        ),
+    )
+
+    result = await runner.run()
+
+    assert result.processed == 2
+    assert result.failed == 1
+    assert result.fallback == 1
+    assert checkpoint.saved == []
+    assert checkpoint.load() is None
+    assert source.seen_cursors == [None]
