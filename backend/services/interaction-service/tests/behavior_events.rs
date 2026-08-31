@@ -9,6 +9,9 @@ use sqlx::{PgPool, Row, postgres::PgPoolOptions};
 use std::process::Command;
 use uuid::Uuid;
 
+#[path = "../src/label_contract.rs"]
+mod label_contract;
+
 const ENVOY: &str = "http://localhost:8080";
 const JWT_SECRET: &str = "CHANGE_ME__min_32_chars__use_openssl_rand_hex_32";
 
@@ -164,6 +167,36 @@ fn kafka_topic_snapshot() -> String {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     )
+}
+
+#[test]
+fn rust_resolver_matches_the_shared_label_v2_fixture() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../../tests/fixtures/recommendation_telemetry/label-v2-cases.json"
+    ))
+    .unwrap();
+    let threshold = fixture["qualified_read_ms"].as_i64().unwrap();
+    for case in fixture["label_cases"].as_array().unwrap() {
+        let result = label_contract::derive_label_v2(
+            case["events"].as_array().unwrap(),
+            fixture["event_defaults"].as_object().unwrap(),
+            threshold,
+            case["label_window_closed"].as_bool().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            result.semantic,
+            case["expected"]["semantic"],
+            "{}",
+            case["id"]
+        );
+        assert_eq!(
+            result.training_target,
+            case["expected"]["training_target"].as_i64(),
+            "{}",
+            case["id"]
+        );
+    }
 }
 
 #[tokio::test]

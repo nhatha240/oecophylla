@@ -13,8 +13,13 @@ import pytest
 from ai_pipeline.build_dataset import build_samples, write_artifact
 from ai_pipeline.config import DatasetConfig
 from ai_pipeline.schemas import BehaviorEvent, Impression
+from recommendation_label import derive_label
 
 FIXTURE = Path(__file__).parent / "fixtures" / "telemetry_v1.json"
+LABEL_V2_FIXTURE = (
+    Path(__file__).parents[2]
+    / "tests/fixtures/recommendation_telemetry/label-v2-cases.json"
+)
 
 
 def load_fixture() -> tuple[list[Impression], list[BehaviorEvent]]:
@@ -98,6 +103,36 @@ def test_visible_exposure_and_label_v1_boundaries(config: DatasetConfig):
     )
     assert by_post["00000000-0000-0000-0000-000000001007"].label_name == "positive"
     assert by_post["00000000-0000-0000-0000-000000001008"].label_name == "positive"
+
+
+def test_shared_label_v2_fixture_is_the_dataset_label_source():
+    fixture = json.loads(LABEL_V2_FIXTURE.read_text())
+    for case in fixture["label_cases"]:
+        result = derive_label(
+            case["events"],
+            label_version="v2",
+            qualified_read_ms=fixture["qualified_read_ms"],
+            label_window_closed=case["label_window_closed"],
+            defaults=fixture["event_defaults"],
+        )
+        assert result.semantic == case["expected"]["semantic"], case["id"]
+        assert result.training_target == case["expected"]["training_target"], case["id"]
+
+
+def test_label_v2_uses_binary_targets_and_versioned_metadata(
+    config: DatasetConfig, tmp_path: Path
+):
+    impressions, events = load_fixture()
+    v2_config = replace(config, recommendation_label_version="v2")
+    result = build_samples(impressions, events, v2_config)
+    assert {row.label for row in result.rows} <= {0, 1}
+
+    metadata_path = write_artifact(
+        result, v2_config, tmp_path / "v2.parquet", code_version="test"
+    )
+    metadata = json.loads(metadata_path.read_text())
+    assert metadata["label_definition_version"] == "engagement-label-v2"
+    assert metadata["qualified_read_ms"] == 10_000
 
 
 def test_immature_and_unsupported_schema_rows_are_excluded(config: DatasetConfig):

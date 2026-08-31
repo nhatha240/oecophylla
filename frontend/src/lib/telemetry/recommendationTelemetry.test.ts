@@ -105,9 +105,35 @@ describe('RecommendationTelemetryClient', () => {
     const body = JSON.parse(String((fetchMock.mock.calls[0]?.[1] as RequestInit).body));
     expect(body.events[0]).toMatchObject({
       impression_id: null,
+      event_version: 'v2',
       event_type: 'view',
-      dwell_ms: null,
+      dwell_ms: 0,
       metadata: { continuous_visible_ms: 0, trigger: 'detail' },
     });
+  });
+
+  it('persists the same measured duration for view and dwell telemetry', async () => {
+    const fetchMock = vi.fn(async () => new Response('{}', { status: 200 }));
+    const ids = [
+      '40000000-0000-4000-8000-000000000001',
+      '40000000-0000-4000-8000-000000000002',
+      '40000000-0000-4000-8000-000000000003',
+    ];
+    const client = new RecommendationTelemetryClient({
+      fetch: fetchMock as typeof fetch,
+      storage: new MemoryStorage(),
+      randomUUID: () => ids.shift()!,
+      labelVersion: 'v2',
+    });
+
+    client.view(context, 'feed', 10_000);
+    client.dwell(context, 12_500, 'viewport_exit');
+    await client.flush();
+
+    const body = JSON.parse(String((fetchMock.mock.calls[0]?.[1] as RequestInit).body));
+    expect(body.events).toEqual([
+      expect.objectContaining({ event_version: 'v2', event_type: 'view', dwell_ms: 10_000 }),
+      expect.objectContaining({ event_version: 'v2', event_type: 'dwell', dwell_ms: 12_500 }),
+    ]);
   });
 });
