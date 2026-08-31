@@ -70,11 +70,13 @@ pub fn viewed_envelope(data: BehaviorTelemetryData) -> Envelope<BehaviorTelemetr
     }
 }
 
-/// Build the v2 qualified-read envelope. Its durable behavior row ID is the
-/// Kafka identity, so retries are idempotent at every consumer.
+/// Build the v2 qualified-read envelope. Recommendation-attributed reads use
+/// the impression as their semantic identity, collapsing a threshold `view`
+/// and later `dwell` into one feature delta. Direct-entry reads fall back to
+/// the durable behavior row ID.
 pub fn qualified_read_envelope(data: QualifiedReadData) -> Envelope<QualifiedReadData> {
     Envelope {
-        event_id: data.behavior_event_id,
+        event_id: data.impression_id.unwrap_or(data.behavior_event_id),
         event_type: "qualified_read",
         event_version: 2,
         occurred_at: data.occurred_at,
