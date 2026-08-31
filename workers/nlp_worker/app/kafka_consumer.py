@@ -8,6 +8,7 @@ import asyncpg
 
 from .settings import Settings
 from .infer import infer_topics
+from .runtime import build_service
 
 logger = logging.getLogger("nlp_worker.consumer")
 
@@ -50,6 +51,7 @@ async def _run_once(cfg: Settings) -> None:
     conn = await asyncpg.connect(cfg.database_url)
     consumer = AIOKafkaConsumer(
         cfg.content_created_topic,
+        cfg.content_updated_topic,
         bootstrap_servers=cfg.kafka_brokers,
         group_id=cfg.consumer_group,
         auto_offset_reset="earliest",
@@ -58,6 +60,7 @@ async def _run_once(cfg: Settings) -> None:
     )
     await consumer.start()
     logger.info("nlp-worker consumer started")
+    embedding_service, repository = build_service(conn, cfg)
     batch = []
     last_flush = time.monotonic()
     timeout_ms = max(1, int(cfg.flush_interval_seconds * 1000))
@@ -75,28 +78,47 @@ async def _run_once(cfg: Settings) -> None:
                 len(batch) >= cfg.flush_batch_size
                 or elapsed >= cfg.flush_interval_seconds
             ):
-                await _process_batch(conn, batch)
+                await _process_batch(conn, batch, embedding_service, repository)
                 batch.clear()
                 last_flush = time.monotonic()
     finally:
         if batch:
-            await _process_batch(conn, batch)
+            await _process_batch(conn, batch, embedding_service, repository)
         await consumer.stop()
         await conn.close()
 
 
-async def _process_batch(conn: asyncpg.Connection, messages: list) -> None:
+async def _process_batch(
+    conn: asyncpg.Connection,
+    messages: list,
+    embedding_service=None,
+    repository=None,
+) -> None:
     for msg in messages:
         try:
-            await _process_one(conn, msg.value)
-        except Exception as e:
-            logger.error("Failed to process message: %s", e, exc_info=True)
+            await _process_one(conn, msg.value, embedding_service, repository)
+        except Exception:
+            logger.error("content feature processing failed", exc_info=True)
 
 
-async def _process_one(conn: asyncpg.Connection, envelope: dict) -> None:
+async def _process_one(
+    conn: asyncpg.Connection,
+    envelope: dict,
+    embedding_service=None,
+    repository=None,
+) -> None:
     data = envelope.get("data", {})
     post_id = data.get("post_id")
     if not post_id:
+        return
+
+    if embedding_service is not None and repository is not None:
+        record = await repository.get_post(post_id)
+        if record is None:
+            logger.warning("content event references a missing post")
+            return
+        result = await embedding_service.process(record)
+        logger.info("content feature processing completed with outcome=%s", result.status)
         return
 
     # Idempotency check: skip if topics already set
@@ -105,12 +127,12 @@ async def _process_one(conn: asyncpg.Connection, envelope: dict) -> None:
         post_id,
     )
     if row is None:
-        logger.warning("Post %s not found, skipping", post_id)
+        logger.warning("content event references a missing post")
         return
 
     existing_topics = row["topics"] or []
     if existing_topics:
-        logger.debug("Post %s already has topics %s, skipping", post_id, existing_topics)
+        logger.debug("post already has keyword topics; skipping legacy topic inference")
         return
 
     content = row["content"] or ""
@@ -122,4 +144,4 @@ async def _process_one(conn: asyncpg.Connection, envelope: dict) -> None:
         topics,
         post_id,
     )
-    logger.info("Post %s → topics %s (result=%s)", post_id, topics, result)
+    logger.info("legacy keyword topic inference completed (result=%s)", result)

@@ -3,3 +3,9 @@ aiokafka==0.12.*
 cramjam>=2.8
 pydantic==2.*
 pydantic-settings==2.*
+prometheus-client==0.22.*
+huggingface-hub==0.36.2
+sentence-transformers==5.1.0
+transformers==4.57.6
+tokenizers==0.22.2
+torch==2.13.0

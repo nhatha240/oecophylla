@@ -1,4 +1,5 @@
 import asyncio
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -44,9 +45,12 @@ async def test_run_consumer_flushes_single_message_after_interval(monkeypatch):
     envelope = {"data": {"post_id": "00000000-0000-0000-0000-000000000003"}}
     conn = AsyncMock()
     conn.fetchrow.return_value = {
+        "id": "00000000-0000-0000-0000-000000000003",
         "content": "Bài viết về trí tuệ nhân tạo",
         "topics": [],
+        "updated_at": datetime(2026, 8, 31, tzinfo=UTC),
     }
+    conn.fetchval.return_value = False
     conn.execute.return_value = "UPDATE 1"
 
     consumer = FakeConsumer(envelope)

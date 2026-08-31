@@ -4,6 +4,8 @@ import asyncio
 import logging
 import signal
 
+from prometheus_client import start_http_server
+
 from .settings import Settings
 from .kafka_consumer import run_consumer
 
@@ -13,11 +15,14 @@ logger = logging.getLogger("nlp_worker")
 async def run() -> None:
     cfg = Settings()
     logger.info(
-        "nlp-worker starting; brokers=%s topic=%s group=%s",
+        "nlp-worker starting; brokers=%s topics=%s,%s group=%s encoder_enabled=%s",
         cfg.kafka_brokers,
         cfg.content_created_topic,
+        cfg.content_updated_topic,
         cfg.consumer_group,
+        cfg.embedding_inference_enabled,
     )
+    start_http_server(cfg.metrics_port)
     stop = asyncio.Event()
 
     def _stop(*_: object) -> None:
