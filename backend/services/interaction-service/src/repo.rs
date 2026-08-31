@@ -26,6 +26,7 @@ pub struct InsertedBehaviorEvent {
     pub impression_id: Option<Uuid>,
     pub session_id: Option<Uuid>,
     pub event_type: String,
+    pub dwell_ms: Option<i32>,
     pub occurred_at: DateTime<Utc>,
 }
 
@@ -151,7 +152,7 @@ pub async fn insert_behavior_events(
         ON CONFLICT (client_event_id) DO NOTHING
         RETURNING
             id, client_event_id, post_id, impression_id, session_id,
-            event_type, occurred_at
+            event_type, dwell_ms, occurred_at
         "#,
     )
     .bind(user_id)

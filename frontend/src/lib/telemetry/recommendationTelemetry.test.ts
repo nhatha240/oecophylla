@@ -97,6 +97,7 @@ describe('RecommendationTelemetryClient', () => {
       randomUUID: vi.fn()
         .mockReturnValueOnce('30000000-0000-4000-8000-000000000001')
         .mockReturnValueOnce('30000000-0000-4000-8000-000000000002'),
+      labelVersion: 'v2',
     });
 
     client.view({ ...context, impression_id: null, request_id: null, model_version: null, position: null }, 'detail', 0);
@@ -113,7 +114,9 @@ describe('RecommendationTelemetryClient', () => {
   });
 
   it('persists the same measured duration for view and dwell telemetry', async () => {
-    const fetchMock = vi.fn(async () => new Response('{}', { status: 200 }));
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      new Response('{}', { status: 200 })
+    );
     const ids = [
       '40000000-0000-4000-8000-000000000001',
       '40000000-0000-4000-8000-000000000002',

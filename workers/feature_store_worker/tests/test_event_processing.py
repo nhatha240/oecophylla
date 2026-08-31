@@ -174,6 +174,8 @@ async def test_feature_worker_dual_reads_v1_and_v2_qualified_read_events(monkeyp
     worker, conn, _redis, _counter = worker_with_fakes(monkeypatch)
     qualified = event("0198f36d-0d80-7000-8000-000000000042", "qualified_read")
     qualified["event_version"] = 2
+    qualified["data"]["duration_ms"] = LABEL_V2_FIXTURE["qualified_read_ms"]
+    qualified["data"]["source_event_type"] = "view"
     worker._buffer = [VIEWED_FIXTURE, qualified]
 
     assert await worker._flush() is True

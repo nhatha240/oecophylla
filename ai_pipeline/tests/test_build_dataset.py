@@ -80,7 +80,7 @@ def config() -> DatasetConfig:
         end=datetime(2026, 8, 10, tzinfo=timezone.utc),
         extraction_time=datetime(2026, 8, 12, tzinfo=timezone.utc),
         label_window_hours=24,
-        positive_dwell_ms=10_000,
+        qualified_read_ms=10_000,
         identity_mode="hash",
         hash_salt="fixture-salt",
     )
@@ -200,7 +200,11 @@ def test_drop_identity_mode_exports_no_stable_identity(config: DatasetConfig):
             "start must be before end",
         ),
         ({"label_window_hours": 0}, "label_window_hours must be positive"),
-        ({"positive_dwell_ms": 0}, "positive_dwell_ms must be positive"),
+        ({"qualified_read_ms": 0}, "qualified_read_ms must be positive"),
+        (
+            {"recommendation_label_version": "v3"},
+            "recommendation_label_version must be v1 or v2",
+        ),
         ({"hash_salt": None}, "hash_salt is required"),
         ({"identity_mode": "invalid"}, "identity_mode must be hash or drop"),
         ({"train_fraction": 0}, "train_fraction must be between zero and one"),

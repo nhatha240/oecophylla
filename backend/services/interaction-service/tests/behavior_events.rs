@@ -4,8 +4,8 @@
 use chrono::{Duration, Utc};
 use common::{auth::issue_access, models::UserRole};
 use reqwest::{Client, StatusCode};
-use serde_json::{Value, json};
-use sqlx::{PgPool, Row, postgres::PgPoolOptions};
+use serde_json::{json, Value};
+use sqlx::{postgres::PgPoolOptions, PgPool, Row};
 use std::process::Command;
 use uuid::Uuid;
 
@@ -185,8 +185,7 @@ fn rust_resolver_matches_the_shared_label_v2_fixture() {
         )
         .unwrap();
         assert_eq!(
-            result.semantic,
-            case["expected"]["semantic"],
+            result.semantic, case["expected"]["semantic"],
             "{}",
             case["id"]
         );
@@ -301,9 +300,13 @@ async fn behavior_batch_is_authenticated_partial_idempotent_and_append_only() {
     .fetch_one(&db)
     .await
     .unwrap();
+    let view_counter_enabled = std::env::var("BEHAVIOR_VIEW_COUNTER_ENABLED")
+        .map(|value| value.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
     assert_eq!(
-        view_count, 1,
-        "retry must not increment the view counter twice"
+        view_count,
+        i64::from(view_counter_enabled),
+        "retry must not increment the rollout-selected view counter twice"
     );
     assert_eq!(stored_views, 1);
 

@@ -44,6 +44,19 @@ pub struct BehaviorTelemetryData {
     pub occurred_at: DateTime<Utc>,
 }
 
+#[derive(Serialize)]
+pub struct QualifiedReadData {
+    pub user_id: Uuid,
+    pub post_id: Uuid,
+    pub client_event_id: Uuid,
+    pub behavior_event_id: Uuid,
+    pub impression_id: Option<Uuid>,
+    pub session_id: Option<Uuid>,
+    pub occurred_at: DateTime<Utc>,
+    pub duration_ms: i32,
+    pub source_event_type: String,
+}
+
 /// Build the telemetry v1 envelope with a durable event identity. Reusing the
 /// append-only behavior row ID makes any producer retry safe for consumers.
 pub fn viewed_envelope(data: BehaviorTelemetryData) -> Envelope<BehaviorTelemetryData> {
@@ -51,6 +64,19 @@ pub fn viewed_envelope(data: BehaviorTelemetryData) -> Envelope<BehaviorTelemetr
         event_id: data.behavior_event_id,
         event_type: "viewed",
         event_version: 1,
+        occurred_at: data.occurred_at,
+        producer: "interaction-service",
+        data,
+    }
+}
+
+/// Build the v2 qualified-read envelope. Its durable behavior row ID is the
+/// Kafka identity, so retries are idempotent at every consumer.
+pub fn qualified_read_envelope(data: QualifiedReadData) -> Envelope<QualifiedReadData> {
+    Envelope {
+        event_id: data.behavior_event_id,
+        event_type: "qualified_read",
+        event_version: 2,
         occurred_at: data.occurred_at,
         producer: "interaction-service",
         data,
@@ -128,6 +154,29 @@ mod tests {
 
         let actual = serde_json::to_value(viewed_envelope(data)).unwrap();
         assert_eq!(actual, fixture);
+    }
+
+    #[test]
+    fn qualified_read_v2_uses_the_behavior_row_as_its_idempotency_key() {
+        let behavior_event_id = Uuid::now_v7();
+        let occurred_at = Utc::now();
+        let envelope = qualified_read_envelope(QualifiedReadData {
+            user_id: Uuid::now_v7(),
+            post_id: Uuid::now_v7(),
+            client_event_id: Uuid::now_v7(),
+            behavior_event_id,
+            impression_id: Some(Uuid::now_v7()),
+            session_id: Some(Uuid::now_v7()),
+            occurred_at,
+            duration_ms: 10_000,
+            source_event_type: "dwell".into(),
+        });
+
+        assert_eq!(envelope.event_id, behavior_event_id);
+        assert_eq!(envelope.event_type, "qualified_read");
+        assert_eq!(envelope.event_version, 2);
+        assert_eq!(envelope.data.duration_ms, 10_000);
+        assert_eq!(envelope.data.source_event_type, "dwell");
     }
 }
 

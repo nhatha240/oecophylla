@@ -21,6 +21,7 @@ interface BehaviorEvent {
   impression_id: string | null;
   session_id: string;
   event_type: 'visible' | 'view' | 'click' | 'dwell';
+  event_version: 'v1' | 'v2';
   dwell_ms: number | null;
   metadata: Record<string, string | number>;
   occurred_at: string;
@@ -45,6 +46,7 @@ interface TelemetryClientOptions {
   randomUUID?: () => string;
   now?: () => Date;
   flushDelayMs?: number;
+  labelVersion?: 'v1' | 'v2';
 }
 
 interface StoredDetailContext {
@@ -59,6 +61,7 @@ export class RecommendationTelemetryClient implements TelemetryRecorder {
   private readonly now: () => Date;
   private readonly flushDelayMs: number;
   private readonly sessionId: string;
+  private readonly labelVersion: 'v1' | 'v2';
   private readonly visibleKeys = new Set<string>();
   private readonly viewKeys = new Set<string>();
   private queue: BehaviorEvent[] = [];
@@ -71,6 +74,7 @@ export class RecommendationTelemetryClient implements TelemetryRecorder {
     this.randomUUID = options.randomUUID ?? (() => crypto.randomUUID());
     this.now = options.now ?? (() => new Date());
     this.flushDelayMs = options.flushDelayMs ?? 250;
+    this.labelVersion = options.labelVersion ?? 'v1';
     this.sessionId = this.loadSessionId();
   }
 
@@ -87,8 +91,9 @@ export class RecommendationTelemetryClient implements TelemetryRecorder {
     const key = this.eventKey(context);
     if (this.viewKeys.has(key)) return;
     this.viewKeys.add(key);
-    this.enqueue(context, 'view', null, {
-      continuous_visible_ms: clampMilliseconds(continuousVisibleMs),
+    const durationMs = clampMilliseconds(continuousVisibleMs);
+    this.enqueue(context, 'view', durationMs, {
+      continuous_visible_ms: durationMs,
       trigger,
     });
   }
@@ -199,6 +204,7 @@ export class RecommendationTelemetryClient implements TelemetryRecorder {
       impression_id: context.impression_id,
       session_id: this.sessionId,
       event_type: eventType,
+      event_version: this.labelVersion,
       dwell_ms: dwellMs,
       metadata,
       occurred_at: this.now().toISOString(),
@@ -222,23 +228,32 @@ export function clampMilliseconds(value: number): number {
 
 let browserClient: RecommendationTelemetryClient | null = null;
 
-export function getRecommendationTelemetryClient(): RecommendationTelemetryClient | null {
+export function getRecommendationTelemetryClient(
+  labelVersion: 'v1' | 'v2' = 'v1',
+): RecommendationTelemetryClient | null {
   if (typeof window === 'undefined') return null;
   if (!browserClient) {
     browserClient = new RecommendationTelemetryClient({
       fetch: window.fetch.bind(window),
       storage: window.sessionStorage,
+      labelVersion,
     });
   }
   return browserClient;
 }
 
-export function trackRecommendationClick(context: RecommendationContext): void {
-  getRecommendationTelemetryClient()?.click(context);
+export function trackRecommendationClick(
+  context: RecommendationContext,
+  labelVersion: 'v1' | 'v2' = 'v1',
+): void {
+  getRecommendationTelemetryClient(labelVersion)?.click(context);
 }
 
-export function trackRecommendationDetailView(postId: string): void {
-  const client = getRecommendationTelemetryClient();
+export function trackRecommendationDetailView(
+  postId: string,
+  labelVersion: 'v1' | 'v2' = 'v1',
+): void {
+  const client = getRecommendationTelemetryClient(labelVersion);
   if (!client) return;
   client.view(client.detailContext(postId), 'detail', 0);
   void client.flush();

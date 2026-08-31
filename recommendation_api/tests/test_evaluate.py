@@ -256,7 +256,11 @@ async def test_database_evaluation_uses_stored_impressions_and_observed_events()
                         "user_id": USER_ID,
                         "post_id": POST_A,
                         "event_type": "click",
+                        "id": UUID("10000000-0000-0000-0000-000000000001"),
+                        "dwell_ms": None,
+                        "metadata": {},
                         "occurred_at": served_at + timedelta(hours=1),
+                        "ingested_at": served_at + timedelta(hours=1),
                     }
                 ]
             raise AssertionError(query)

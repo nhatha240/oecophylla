@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     seen_cooldown_days: int = Field(default=7, ge=0, le=3650)
     ranker_mode: Literal["heuristic", "ml", "shadow"] = "heuristic"
     model_artifact_path: Path = Path("/models/current")
+    recommendation_label_version: Literal["v1", "v2"] = "v1"
+    qualified_read_ms: int = Field(default=10_000, gt=0, le=1_800_000)
 
 
 def settings() -> Settings:

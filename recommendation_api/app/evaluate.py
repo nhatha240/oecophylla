@@ -6,6 +6,8 @@ from datetime import datetime, timedelta, timezone
 from statistics import fmean
 from uuid import UUID
 
+from recommendation_label import QUALIFIED_READ_MS, LabelVersion, derive_label
+
 from .db import DB, RedisCli
 from .metrics import (
     catalog_coverage,
@@ -16,9 +18,6 @@ from .metrics import (
     topic_diversity,
 )
 from .schemas import EvaluateResponse
-
-POSITIVE_LABEL_EVENTS = frozenset({"view", "click", "like", "save", "share", "comment"})
-
 
 @dataclass(frozen=True)
 class ImpressionRecord:
@@ -39,6 +38,10 @@ class BehaviorRecord:
     post_id: UUID
     event_type: str
     occurred_at: datetime
+    dwell_ms: int | None = None
+    metadata: dict[str, object] | None = None
+    event_id: UUID | None = None
+    ingested_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -133,6 +136,8 @@ def evaluate_records(
     as_of: datetime,
     k: int,
     catalog_size: int,
+    recommendation_label_version: LabelVersion = "v1",
+    qualified_read_ms: int = QUALIFIED_READ_MS,
 ) -> EvaluateResponse:
     """Evaluate historical serving decisions against finalized observed labels."""
     if k <= 0:
@@ -173,10 +178,13 @@ def evaluate_records(
         relevant_ids = {
             impression.post_id
             for impression in ranked_impressions
-            if any(
-                event.event_type in POSITIVE_LABEL_EVENTS
-                for event in split.label_events_by_impression.get(impression.id, ())
-            )
+            if derive_label(
+                split.label_events_by_impression.get(impression.id, ()),
+                label_version=recommendation_label_version,
+                qualified_read_ms=qualified_read_ms,
+                label_window_closed=True,
+            ).training_target
+            == 1
         }
         top_impressions = ranked_impressions[:k]
         recommendation_lists.append([item.post_id for item in top_impressions])
@@ -231,6 +239,8 @@ async def evaluate(
     cutoff_at: datetime | None = None,
     label_window_hours: int = 24,
     as_of: datetime | None = None,
+    recommendation_label_version: LabelVersion = "v1",
+    qualified_read_ms: int = QUALIFIED_READ_MS,
 ) -> EvaluateResponse:
     """Evaluate persisted serving snapshots; never rebuild ranks with future state."""
     evaluation_time = as_of or datetime.now(timezone.utc)
@@ -260,7 +270,8 @@ async def evaluate(
     )
     event_rows = await db.pool.fetch(
         """
-        SELECT impression_id, user_id, post_id, event_type, occurred_at
+        SELECT id, impression_id, user_id, post_id, event_type, dwell_ms,
+               metadata, occurred_at, ingested_at
         FROM behavior_events
         WHERE user_id = $1
           AND occurred_at <= $2
@@ -294,6 +305,10 @@ async def evaluate(
             post_id=row["post_id"],
             event_type=str(row["event_type"]),
             occurred_at=row["occurred_at"],
+            dwell_ms=(int(row["dwell_ms"]) if row["dwell_ms"] is not None else None),
+            metadata=dict(row["metadata"] or {}),
+            event_id=row["id"],
+            ingested_at=row["ingested_at"],
         )
         for row in event_rows
     ]
@@ -305,4 +320,6 @@ async def evaluate(
         as_of=evaluation_time,
         k=k,
         catalog_size=catalog_size,
+        recommendation_label_version=recommendation_label_version,
+        qualified_read_ms=qualified_read_ms,
     )

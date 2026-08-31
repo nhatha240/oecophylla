@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     kafka_brokers: str = "kafka:9092"
     interactions_topic: str = "oecophylla.interactions"
     consumer_group: str = "oecophylla.feature-store.v1"
+    qualified_read_ms: int = 10_000
 
     pref_ttl_seconds: int = 1800
     trending_ttl_seconds: int = 86400

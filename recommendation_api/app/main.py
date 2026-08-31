@@ -165,6 +165,7 @@ async def evaluate_endpoint(
         raise HTTPException(status_code=400, detail="cutoff_at must include a timezone")
     db: DB = app.state.db
     redis: RedisCli = app.state.redis
+    cfg = app.state.cfg
     return await evaluate(
         db,
         redis,
@@ -172,4 +173,6 @@ async def evaluate_endpoint(
         k,
         cutoff_at=cutoff_at,
         label_window_hours=label_window_hours,
+        recommendation_label_version=cfg.recommendation_label_version,
+        qualified_read_ms=cfg.qualified_read_ms,
     )
