@@ -4,8 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-
-import app.kafka_consumer as kafka_consumer
+from app import kafka_consumer
 from app.settings import Settings
 
 

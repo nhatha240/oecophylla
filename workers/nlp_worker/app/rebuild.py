@@ -5,10 +5,11 @@ import asyncio
 import json
 import logging
 import os
-from datetime import UTC, datetime
+from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Callable, Protocol
+from typing import Protocol
 
 import asyncpg
 
@@ -88,14 +89,16 @@ class BatchRebuilder:
                 break
             semaphore = asyncio.Semaphore(self.config.concurrency)
 
-            async def one(record: PostRecord) -> ProcessResult | None:
-                async with semaphore:
+            async def one(
+                record: PostRecord, gate: asyncio.Semaphore = semaphore
+            ) -> ProcessResult | None:
+                async with gate:
                     for attempt in range(self.config.max_retries + 1):
                         try:
                             result = await self.processor.process(record)
                             if result.status != "fallback" or attempt >= self.config.max_retries:
                                 return result
-                        except Exception:
+                        except Exception:  # noqa: BLE001 -- bounded retry boundary
                             if attempt >= self.config.max_retries:
                                 return None
                         await asyncio.sleep(self.config.retry_delay_seconds * (2**attempt))

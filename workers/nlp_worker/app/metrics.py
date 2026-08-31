@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram
 from functools import lru_cache
+
+from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram
 
 from .content_features import ENCODER_VERSION
 

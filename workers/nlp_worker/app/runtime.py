@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from .embedding_worker import EmbeddingService
 from .content_features import ENCODER_VERSION
+from .embedding_worker import EmbeddingService
 from .metrics import default_metrics
 from .model import PinnedSentenceEncoder
 from .repository import AsyncpgFeatureRepository

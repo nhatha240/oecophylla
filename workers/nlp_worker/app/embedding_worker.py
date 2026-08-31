@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Callable, Literal, Protocol
+from typing import Literal, Protocol
 
 from .content_features import (
     CONTENT_HASH_VERSION,
@@ -115,7 +116,7 @@ class EmbeddingService:
         except ValueError:
             logger.warning("invalid embedding; retaining keyword topic fallback")
             return self._fallback("validation")
-        except Exception:  # model failures must never block topic fallback
+        except Exception:  # noqa: BLE001 -- safe fallback boundary for model runtimes
             logger.warning("embedding unavailable; retaining keyword topic fallback")
             return self._fallback("model")
         finally:
@@ -134,7 +135,7 @@ class EmbeddingService:
         )
         try:
             inserted = await self.repository.insert_feature(feature)
-        except Exception:
+        except Exception:  # noqa: BLE001 -- storage failure must preserve serving fallback
             logger.warning("embedding storage failed; retaining keyword topic fallback")
             return self._fallback("storage")
         if inserted:

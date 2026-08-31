@@ -3,12 +3,12 @@ import json
 import logging
 import time
 
-from aiokafka import AIOKafkaConsumer
 import asyncpg
+from aiokafka import AIOKafkaConsumer
 
-from .settings import Settings
 from .infer import infer_topics
 from .runtime import build_service
+from .settings import Settings
 
 logger = logging.getLogger("nlp_worker.consumer")
 
@@ -31,12 +31,10 @@ async def run_consumer(cfg: Settings) -> None:
             return  # clean completion (only happens if the loop is broken out of)
         except asyncio.CancelledError:
             raise
-        except Exception as exc:  # noqa: BLE001 — log and retry any connection error
-            logger.error(
-                "nlp-worker consumer error; reconnecting in %ss: %s",
+        except Exception:
+            logger.exception(
+                "nlp-worker consumer error; reconnecting in %ss",
                 RECONNECT_DELAY_SECONDS,
-                exc,
-                exc_info=True,
             )
             await asyncio.sleep(RECONNECT_DELAY_SECONDS)
 
@@ -98,7 +96,7 @@ async def _process_batch(
         try:
             await _process_one(conn, msg.value, embedding_service, repository)
         except Exception:
-            logger.error("content feature processing failed", exc_info=True)
+            logger.exception("content feature processing failed")
 
 
 async def _process_one(

@@ -1,6 +1,5 @@
 import pytest
-
-import app.main as main
+from app import main
 
 
 @pytest.mark.asyncio

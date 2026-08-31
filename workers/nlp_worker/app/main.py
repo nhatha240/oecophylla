@@ -6,8 +6,8 @@ import signal
 
 from prometheus_client import start_http_server
 
-from .settings import Settings
 from .kafka_consumer import run_consumer
+from .settings import Settings
 
 logger = logging.getLogger("nlp_worker")
 

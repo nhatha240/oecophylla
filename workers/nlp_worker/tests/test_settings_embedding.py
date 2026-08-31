@@ -1,8 +1,7 @@
 import pytest
-from pydantic import ValidationError
-
 from app.content_features import ENCODER_ARTIFACT_SHA256, ENCODER_VERSION
 from app.settings import Settings
+from pydantic import ValidationError
 
 
 def test_embedding_settings_are_pinned_to_t4a_contract() -> None:

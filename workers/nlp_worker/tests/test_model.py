@@ -4,8 +4,7 @@ import hashlib
 from pathlib import Path
 
 import pytest
-
-import app.model as model
+from app import model
 from app.content_features import EMBEDDING_DIMENSION, ENCODER_ARTIFACT
 
 

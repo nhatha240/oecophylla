@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-
 from app.embedding_worker import PostRecord, ProcessResult
 from app.rebuild import BatchRebuilder, RebuildConfig
 

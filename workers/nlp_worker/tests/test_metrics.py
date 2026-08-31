@@ -1,7 +1,6 @@
-from prometheus_client import CollectorRegistry, generate_latest
-
 from app.content_features import ENCODER_VERSION
 from app.metrics import EmbeddingMetrics
+from prometheus_client import CollectorRegistry, generate_latest
 
 
 def test_embedding_metrics_expose_required_versioned_signals() -> None:

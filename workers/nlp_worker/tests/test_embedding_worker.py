@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
-
 from app.content_features import EMBEDDING_DIMENSION, ENCODER_VERSION
 from app.embedding_worker import EmbeddingService, PostRecord
 

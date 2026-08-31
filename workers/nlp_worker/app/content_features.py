@@ -36,7 +36,7 @@ def normalize_content(value: str) -> str:
 
 def content_hash(value: str) -> str:
     normalized = normalize_content(value)
-    material = f"{CONTENT_HASH_VERSION}\n{normalized}".encode("utf-8")
+    material = f"{CONTENT_HASH_VERSION}\n{normalized}".encode()
     return hashlib.sha256(material).hexdigest()
 
 

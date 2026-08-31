@@ -2,7 +2,6 @@ import hashlib
 import math
 
 import pytest
-
 from app.content_features import (
     CONTENT_HASH_VERSION,
     EMBEDDING_DIMENSION,
@@ -34,7 +33,7 @@ def test_normalization_is_deterministic_and_preserves_vietnamese() -> None:
     assert normalize_content(normalized) == normalized
 
     expected = hashlib.sha256(
-        f"{CONTENT_HASH_VERSION}\n{normalized}".encode("utf-8")
+        f"{CONTENT_HASH_VERSION}\n{normalized}".encode()
     ).hexdigest()
     assert content_hash(decomposed) == expected
 
