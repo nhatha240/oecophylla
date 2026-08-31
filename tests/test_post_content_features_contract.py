@@ -137,7 +137,9 @@ def test_runtime_sql_fixture_exercises_constraints_and_existing_post_fallback():
         "non-normalized topics",
         "duplicate feature",
         "immutable feature",
+        "immutable encoder",
         "multiple encoder versions",
         "existing post without features",
+        "future feature",
     ):
         assert expected in normalized
