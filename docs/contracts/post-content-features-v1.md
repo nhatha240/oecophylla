@@ -13,6 +13,15 @@ The selected encoder is
 The complete repository revision, rather than a mutable branch name, is the
 `encoder_version` written to storage and payloads.
 
+Every encoder identity has the canonical form
+`repository/name@revision`, where repository and name preserve their declared
+ASCII case and each matches `[A-Za-z0-9][A-Za-z0-9._-]*`; revision is exactly
+40 lowercase hexadecimal characters. Branch names, tags, shortened hashes,
+uppercase hashes, missing repository/name components, and an identity that
+does not equal `model_repository + "@" + model_revision` are rejected. Passing
+that syntax is not sufficient: the identity must also exist in the immutable
+`post_content_encoder_versions` registry.
+
 | Property | Pinned value |
 | --- | --- |
 | Repository | `intfloat/multilingual-e5-small` |
@@ -93,6 +102,11 @@ data for that identity are rejected. A changed content hash or encoder version
 creates a new immutable row. Rows are never updated in place. This preserves
 content and encoder revisions and permits multiple supported encoder versions;
 a new supported encoder is registered only by a forward migration.
+
+Feature revisions also cannot be deleted directly. Deleting the owning post is
+the sole deletion path and removes all of that post's feature revisions through
+the tested foreign-key cascade. This retains normal account/content deletion
+semantics without permitting selective historical-feature erasure.
 
 ## Temporal use and fallback
 

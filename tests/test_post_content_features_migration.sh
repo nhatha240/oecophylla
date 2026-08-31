@@ -24,7 +24,9 @@ docker run --name "$container_name" \
 ready=false
 for _attempt in {1..30}; do
   if docker exec "$container_name" \
-    pg_isready -U oecophylla_contract -d oecophylla_contract >/dev/null 2>&1; then
+    psql -v ON_ERROR_STOP=1 -At \
+      -U oecophylla_contract -d oecophylla_contract \
+      -c "SELECT 1" >/dev/null 2>&1; then
     ready=true
     break
   fi

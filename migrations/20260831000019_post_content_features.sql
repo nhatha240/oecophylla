@@ -77,9 +77,15 @@ $$;
 
 CREATE TABLE post_content_encoder_versions (
     encoder_version       TEXT PRIMARY KEY
-                          CHECK (length(btrim(encoder_version)) BETWEEN 1 AND 160),
+                          CHECK (
+                              encoder_version ~
+                              '^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*@[0-9a-f]{40}$'
+                          ),
     model_repository      TEXT NOT NULL
-                          CHECK (length(btrim(model_repository)) BETWEEN 1 AND 160),
+                          CHECK (
+                              model_repository ~
+                              '^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$'
+                          ),
     model_revision        TEXT NOT NULL CHECK (model_revision ~ '^[0-9a-f]{40}$'),
     model_artifact_sha256 TEXT NOT NULL
                           CHECK (model_artifact_sha256 ~ '^[0-9a-f]{64}$'),
@@ -88,7 +94,10 @@ CREATE TABLE post_content_encoder_versions (
     embedding_dimension  SMALLINT NOT NULL CHECK (embedding_dimension = 384),
     preprocessing_version TEXT NOT NULL
                           CHECK (preprocessing_version = 'post-content-normalization-v1'),
-    created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT ck_post_content_encoder_canonical_identity
+        CHECK (encoder_version = model_repository || '@' || model_revision)
 );
 
 INSERT INTO post_content_encoder_versions (
@@ -142,13 +151,19 @@ RETURNS TRIGGER
 LANGUAGE plpgsql
 AS $$
 BEGIN
+    -- A parent post deletion invokes this trigger below the FK cascade trigger
+    -- (depth > 1). Permit that lifecycle cascade, but reject direct deletion.
+    IF TG_OP = 'DELETE' AND pg_trigger_depth() > 1 THEN
+        RETURN OLD;
+    END IF;
+
     RAISE EXCEPTION 'post content feature rows are immutable; insert a new content hash or encoder version'
         USING ERRCODE = '55000';
 END;
 $$;
 
 CREATE TRIGGER trg_post_content_features_immutable
-    BEFORE UPDATE ON post_content_features
+    BEFORE UPDATE OR DELETE ON post_content_features
     FOR EACH ROW EXECUTE FUNCTION prevent_post_content_feature_mutation();
 
 CREATE FUNCTION prevent_post_content_encoder_mutation()
