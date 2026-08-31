@@ -1,0 +1,293 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contract_version": "engagement-label-v2",
+  "label_version": "v2",
+  "description": "Canonical behavior-to-label semantics for recommendation telemetry, feature events, datasets, and evaluation.",
+  "semantics": {
+    "exposure": {
+      "training_target": null,
+      "description": "The candidate was verifiably visible, but the label window is still open or no outcome has been finalized."
+    },
+    "click": {
+      "training_target": 1,
+      "description": "The user deliberately opened a served candidate. Visibility is not a prerequisite."
+    },
+    "qualified_read": {
+      "training_target": 1,
+      "description": "Validated view or dwell duration met the inclusive qualified-read threshold."
+    },
+    "positive": {
+      "training_target": 1,
+      "description": "An active like or comment expresses positive engagement."
+    },
+    "strong_positive": {
+      "training_target": 1,
+      "description": "An active save or share expresses strong positive engagement."
+    },
+    "negative": {
+      "training_target": 0,
+      "description": "A visible candidate reached the end of its label window without an active positive or strong-negative outcome."
+    },
+    "strong_negative": {
+      "training_target": 0,
+      "description": "An active hide or accepted report expresses explicit strong negative feedback."
+    }
+  },
+  "rollout_flags": {
+    "RECOMMENDATION_LABEL_VERSION": {
+      "type": "enum",
+      "allowed": [
+        "v1",
+        "v2"
+      ],
+      "default": "v1",
+      "controls": "Dataset and evaluator label derivation."
+    },
+    "FEATURE_EVENT_VERSION": {
+      "type": "enum",
+      "allowed": [
+        "v1",
+        "v2"
+      ],
+      "default": "v1",
+      "controls": "Feature-event producer and consumer semantics."
+    },
+    "QUALIFIED_READ_MS": {
+      "type": "positive_integer",
+      "default": 10000,
+      "unit": "milliseconds",
+      "controls": "Inclusive duration threshold for view and dwell events."
+    }
+  },
+  "thresholds": {
+    "qualified_read_ms": {
+      "flag": "QUALIFIED_READ_MS",
+      "comparison": ">=",
+      "unit": "milliseconds",
+      "applies_to": [
+        "view.continuous_visible_ms",
+        "dwell.dwell_ms"
+      ]
+    }
+  },
+  "required_fields": {
+    "all_events": [
+      "event_id",
+      "event_version",
+      "event_type",
+      "user_id",
+      "request_id",
+      "post_id",
+      "occurred_at",
+      "ingested_at"
+    ],
+    "by_event": {
+      "visible": [
+        "viewport_ratio"
+      ],
+      "view": [
+        "continuous_visible_ms"
+      ],
+      "click": [
+        "target"
+      ],
+      "dwell": [
+        "dwell_ms"
+      ],
+      "like": [],
+      "unlike": [],
+      "save": [],
+      "unsave": [],
+      "share": [],
+      "unshare": [],
+      "comment": [],
+      "hide": [],
+      "unhide": [],
+      "report": []
+    }
+  },
+  "events": {
+    "visible": {
+      "producer": "browser_telemetry",
+      "semantic": "exposure",
+      "condition": "viewport_ratio >= 0.5 continuously for at least 800 ms",
+      "reversible": false
+    },
+    "click": {
+      "producer": "browser_telemetry",
+      "semantic": "click",
+      "condition": "deliberate navigation from a served candidate to its detail view",
+      "reversible": false
+    },
+    "view": {
+      "producer": "browser_telemetry",
+      "semantic": "qualified_read",
+      "condition": "continuous_visible_ms >= QUALIFIED_READ_MS",
+      "below_threshold_semantic": "exposure",
+      "reversible": false
+    },
+    "dwell": {
+      "producer": "browser_telemetry",
+      "semantic": "qualified_read",
+      "condition": "dwell_ms >= QUALIFIED_READ_MS",
+      "below_threshold_semantic": "exposure",
+      "reversible": false
+    },
+    "like": {
+      "producer": "canonical_server_action",
+      "semantic": "positive",
+      "condition": "like state changed from inactive to active",
+      "reversible": true
+    },
+    "unlike": {
+      "producer": "canonical_server_action",
+      "semantic": "exposure",
+      "condition": "like state changed from active to inactive",
+      "reverses": "like"
+    },
+    "comment": {
+      "producer": "canonical_server_action",
+      "semantic": "positive",
+      "condition": "a valid comment was created",
+      "reversible": false
+    },
+    "save": {
+      "producer": "canonical_server_action",
+      "semantic": "strong_positive",
+      "condition": "save state changed from inactive to active",
+      "reversible": true
+    },
+    "unsave": {
+      "producer": "canonical_server_action",
+      "semantic": "exposure",
+      "condition": "save state changed from active to inactive",
+      "reverses": "save"
+    },
+    "share": {
+      "producer": "canonical_server_action",
+      "semantic": "strong_positive",
+      "condition": "share state changed from inactive to active",
+      "reversible": true
+    },
+    "unshare": {
+      "producer": "canonical_server_action",
+      "semantic": "exposure",
+      "condition": "share state changed from active to inactive",
+      "reverses": "share"
+    },
+    "hide": {
+      "producer": "canonical_server_action",
+      "semantic": "strong_negative",
+      "condition": "hide state changed from inactive to active",
+      "reversible": true
+    },
+    "unhide": {
+      "producer": "canonical_server_action",
+      "semantic": "exposure",
+      "condition": "hide state changed from active to inactive",
+      "reverses": "hide"
+    },
+    "report": {
+      "producer": "canonical_server_action",
+      "semantic": "strong_negative",
+      "condition": "a valid report was accepted",
+      "reversible": false
+    },
+    "implicit_skip": {
+      "producer": "label_finalizer",
+      "semantic": "negative",
+      "condition": "a visible event exists, the label window is closed, and no higher-precedence active semantic exists",
+      "raw_event": false,
+      "reversible": false
+    }
+  },
+  "precedence": [
+    "strong_negative",
+    "strong_positive",
+    "positive",
+    "qualified_read",
+    "click",
+    "negative",
+    "exposure"
+  ],
+  "resolution": {
+    "ordering": [
+      "occurred_at",
+      "ingested_at",
+      "event_id"
+    ],
+    "steps": [
+      "Reject malformed or conflicting duplicate events.",
+      "Ignore identical duplicate event retries.",
+      "Apply state-transition reversals in event order.",
+      "Select the highest-precedence active semantic.",
+      "Finalize a visible candidate as negative only after its label window closes."
+    ],
+    "click_requires_visible": false,
+    "report_is_irreversible": true,
+    "reversal_is_not_negative_feedback": true
+  },
+  "reversals": {
+    "unlike": "like",
+    "unsave": "save",
+    "unshare": "share",
+    "unhide": "hide"
+  },
+  "event_deduplication": {
+    "identity_field": "event_id",
+    "scope": "global",
+    "identical_duplicate": "ignore_success",
+    "conflicting_duplicate": "reject",
+    "canonical_action_rule": "Emit an event only for a successful state transition and retain its stable event_id for retries."
+  },
+  "request_identity": {
+    "online": {
+      "notation": "(user_id, request_id)",
+      "fields": [
+        "user_id",
+        "request_id"
+      ]
+    },
+    "offline": {
+      "expression": "H(salt:user_id:request_id)",
+      "algorithm": "HMAC-SHA-256",
+      "salt_requirement": "secret and dataset-version-specific",
+      "raw_identity_exported": false
+    },
+    "request_fingerprint": {
+      "immutable": true,
+      "algorithm": "SHA-256",
+      "canonicalization": "RFC 8785 JSON Canonicalization Scheme",
+      "request_metadata_fields": [
+        "feed_source",
+        "model_version",
+        "feature_schema_version"
+      ],
+      "ordered_candidate_fields": [
+        "position",
+        "post_id"
+      ],
+      "candidate_order": "ascending position",
+      "expression": "SHA-256(canonical_json(request_metadata, ordered_candidates))"
+    },
+    "candidate_retry_identity_fields": [
+      "user_id",
+      "request_id",
+      "position",
+      "post_id"
+    ],
+    "candidate_retry_payload_fingerprint": "SHA-256(canonical_json(candidate_row))",
+    "collision_policy": {
+      "different_request_fingerprint": "reject_request",
+      "duplicate_position": "reject_request",
+      "duplicate_post_id": "reject_request",
+      "identical_candidate_retry": "deduplicate_success",
+      "conflicting_candidate_retry": "reject_request"
+    }
+  },
+  "compatibility": {
+    "v1_readable": true,
+    "mixed_label_versions_in_training_run": false,
+    "activation_rule": "Keep both rollout flags at v1 until every enabled producer and consumer passes the shared fixture matrix."
+  }
+}
