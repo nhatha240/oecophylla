@@ -381,7 +381,7 @@ def write_artifact(
         "split_policy": {
             "atomic_unit": "canonical_request",
             "boundary": (
-                "chronological_request_count_with_timestamp_ties_kept_together"
+                "chronological_request_count_with_timestamp_ties_assigned_to_later_split"
             ),
             "request_identity": (
                 "HMAC-SHA256(hash_salt,user_id:request_id)"

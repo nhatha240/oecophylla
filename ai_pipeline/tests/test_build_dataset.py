@@ -365,7 +365,9 @@ def test_metadata_records_group_boundary_policy_and_candidate_distributions(
 
     assert metadata["split_policy"] == {
         "atomic_unit": "canonical_request",
-        "boundary": "chronological_request_count_with_timestamp_ties_kept_together",
+        "boundary": (
+            "chronological_request_count_with_timestamp_ties_assigned_to_later_split"
+        ),
         "internal_grouping": "canonical_user_and_request_identity_in_memory_only",
         "legacy_compatibility": "request_group_rekeyed_from_sha256_request_id",
         "request_identity": "HMAC-SHA256(hash_salt,user_id:request_id)",

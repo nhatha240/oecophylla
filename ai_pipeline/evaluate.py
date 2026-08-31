@@ -91,7 +91,8 @@ def _evaluate_scores(
 
     per_request: dict[str, list[float]] = defaultdict(list)
     top_posts: set[str] = set()
-    for candidates in grouped.values():
+    for request_group in sorted(grouped):
+        candidates = grouped[request_group]
         ranked = sorted(
             candidates,
             key=lambda pair: (
@@ -240,7 +241,7 @@ def compare_holdout(
     elif ml["ndcg_at_k"] >= baseline["ndcg_at_k"] + win_delta:
         conclusion = "win"
 
-    confidence_intervals = None
+    confidence_intervals: dict[str, list[float] | None] | None = None
     if request_count >= 30:
         confidence_intervals = {}
         for index, metric in enumerate(
