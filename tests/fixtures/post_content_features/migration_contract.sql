@@ -150,6 +150,13 @@ BEGIN
     END;
 
     BEGIN
+        DELETE FROM post_content_features
+        WHERE post_id = '20000000-0000-4000-8000-000000000001';
+        RAISE EXCEPTION 'direct feature delete was accepted';
+    EXCEPTION WHEN SQLSTATE '55000' THEN NULL;
+    END;
+
+    BEGIN
         INSERT INTO post_content_features (
             post_id, encoder_version, embedding, normalized_topics,
             content_hash, source_updated_at, computed_at
@@ -166,6 +173,64 @@ BEGIN
 END;
 $$;
 
+DO $$
+BEGIN
+    BEGIN
+        INSERT INTO post_content_encoder_versions (
+            encoder_version, model_repository, model_revision,
+            model_artifact_sha256, license_spdx, embedding_dimension,
+            preprocessing_version
+        ) VALUES (
+            'malformed encoder version', 'fixture/encoder', repeat('1', 40),
+            repeat('2', 64), 'MIT', 384, 'post-content-normalization-v1'
+        );
+        RAISE EXCEPTION 'malformed encoder version was accepted';
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+
+    BEGIN
+        INSERT INTO post_content_encoder_versions (
+            encoder_version, model_repository, model_revision,
+            model_artifact_sha256, license_spdx, embedding_dimension,
+            preprocessing_version
+        ) VALUES (
+            'fixture/encoder@AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+            'fixture/encoder', repeat('a', 40), repeat('2', 64),
+            'MIT', 384, 'post-content-normalization-v1'
+        );
+        RAISE EXCEPTION 'uppercase encoder revision was accepted';
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+
+    BEGIN
+        INSERT INTO post_content_encoder_versions (
+            encoder_version, model_repository, model_revision,
+            model_artifact_sha256, license_spdx, embedding_dimension,
+            preprocessing_version
+        ) VALUES (
+            'fixture/encoder@111111111111', 'fixture/encoder', repeat('1', 40),
+            repeat('2', 64), 'MIT', 384, 'post-content-normalization-v1'
+        );
+        RAISE EXCEPTION 'short encoder revision was accepted';
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+
+    BEGIN
+        INSERT INTO post_content_encoder_versions (
+            encoder_version, model_repository, model_revision,
+            model_artifact_sha256, license_spdx, embedding_dimension,
+            preprocessing_version
+        ) VALUES (
+            'fixture/other@1111111111111111111111111111111111111111',
+            'fixture/encoder', repeat('1', 40), repeat('2', 64),
+            'MIT', 384, 'post-content-normalization-v1'
+        );
+        RAISE EXCEPTION 'mismatched encoder identity was accepted';
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+END;
+$$;
+
 -- Multiple encoder versions remain additive. A production version is added
 -- only by a reviewed forward migration; this transaction rolls the test one back.
 INSERT INTO post_content_encoder_versions (
@@ -173,7 +238,7 @@ INSERT INTO post_content_encoder_versions (
     model_artifact_sha256, license_spdx, embedding_dimension,
     preprocessing_version
 ) VALUES (
-    'multiple encoder versions',
+    'fixture/encoder@1111111111111111111111111111111111111111',
     'fixture/encoder',
     repeat('1', 40),
     repeat('2', 64),
@@ -187,9 +252,41 @@ INSERT INTO post_content_features (
     content_hash, source_updated_at, computed_at
 ) VALUES (
     '20000000-0000-4000-8000-000000000001',
-    'multiple encoder versions',
+    'fixture/encoder@1111111111111111111111111111111111111111',
     array_fill((1.0 / sqrt(384.0))::REAL, ARRAY[384]),
     ARRAY['công nghệ'], repeat('e', 64), NOW(), NOW()
 );
+
+DO $$
+BEGIN
+    IF (
+        SELECT count(DISTINCT encoder_version)
+        FROM post_content_features
+        WHERE post_id = '20000000-0000-4000-8000-000000000001'
+    ) <> 2 THEN
+        RAISE EXCEPTION 'multiple encoder versions were not supported';
+    END IF;
+END;
+$$;
+
+DELETE FROM posts
+WHERE id = '20000000-0000-4000-8000-000000000001';
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM post_content_features
+        WHERE post_id = '20000000-0000-4000-8000-000000000001'
+    ) THEN
+        RAISE EXCEPTION 'parent post cascade left feature rows behind';
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM posts
+        WHERE id = '20000000-0000-4000-8000-000000000001'
+    ) THEN
+        RAISE EXCEPTION 'parent post cascade did not delete the post';
+    END IF;
+END;
+$$;
 
 ROLLBACK;

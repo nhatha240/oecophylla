@@ -17,6 +17,9 @@ BENCHMARK_PATH = (
 SQL_FIXTURE_PATH = (
     REPO_ROOT / "tests/fixtures/post_content_features/migration_contract.sql"
 )
+MIGRATION_HARNESS_PATH = (
+    REPO_ROOT / "tests/test_post_content_features_migration.sh"
+)
 
 ENCODER_VERSION = (
     "intfloat/multilingual-e5-small@"
@@ -60,6 +63,19 @@ def test_migration_rejects_invalid_versions_dimensions_hashes_and_topics():
     assert "post_content_topics_are_normalized(normalized_topics)" in normalized
     assert "prevent_post_content_feature_mutation" in normalized
     assert "prevent_post_content_encoder_mutation" in normalized
+    assert (
+        "encoder_version = model_repository || '@' || model_revision"
+        in normalized
+    )
+    assert re.search(
+        r"encoder_version\s*~\s*"
+        r"'\^\[a-za-z0-9\]\[a-za-z0-9\._-\]\*"
+        r"/\[a-za-z0-9\]\[a-za-z0-9\._-\]\*"
+        r"@\[0-9a-f\]\{40\}\$'",
+        normalized,
+    )
+    assert "before update or delete on post_content_features" in normalized
+    assert "pg_trigger_depth() > 1" in normalized
     assert ENCODER_VERSION in migration
     assert MODEL_SHA256 in migration
 
@@ -141,5 +157,22 @@ def test_runtime_sql_fixture_exercises_constraints_and_existing_post_fallback():
         "multiple encoder versions",
         "existing post without features",
         "future feature",
+        "malformed encoder version",
+        "uppercase encoder revision",
+        "short encoder revision",
+        "mismatched encoder identity",
+        "direct feature delete",
+        "parent post cascade",
     ):
         assert expected in normalized
+
+
+def test_executable_postgres_migration_harness_is_committed():
+    harness = _read(MIGRATION_HARNESS_PATH)
+
+    assert MIGRATION_HARNESS_PATH.stat().st_mode & 0o111
+    assert "postgres:18-trixie" in harness
+    assert "20260831000019_post_content_features.sql" in harness
+    assert "migration_contract.sql" in harness
+    assert "existing post was not preserved" in harness
+    assert "psql -v ON_ERROR_STOP=1" in harness
