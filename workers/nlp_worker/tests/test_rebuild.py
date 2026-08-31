@@ -123,7 +123,7 @@ async def test_exhausted_fallback_does_not_advance_resume_checkpoint() -> None:
     assert result.fallback == 1
     assert result.failed == 1
     assert checkpoint.saved == []
-    assert source.seen_cursors == [None, "1"]
+    assert source.seen_cursors == [None]
 
 
 @pytest.mark.asyncio

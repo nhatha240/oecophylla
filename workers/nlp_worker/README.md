@@ -34,7 +34,10 @@ uv run --with-requirements requirements.txt \
 ```
 
 The append-only uniqueness key makes a restarted scan idempotent. The private
-checkpoint advances only after a batch finishes without an unhandled failure.
+checkpoint advances only after every item in a batch reaches `created` or
+`unchanged`. An exhausted topic fallback is reported as a rebuild failure,
+leaves the durable checkpoint behind, and stops the current scan so the next
+invocation retries the incomplete range instead of skipping ahead.
 Batch size, concurrency, retry count, backoff, Torch thread count, and CPU/memory
 limits are controlled by the `EMBEDDING_*` settings plus container resources.
 Progress logs contain aggregate counts only, never post or user identities.

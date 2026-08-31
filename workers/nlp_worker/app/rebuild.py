@@ -105,17 +105,17 @@ class BatchRebuilder:
                 return None
 
             results = await asyncio.gather(*(one(record) for record in posts))
+            batch_is_recoverable = True
             for result in results:
                 counts["processed"] += 1
                 if result is None:
                     counts["failed"] += 1
+                    batch_is_recoverable = False
                 else:
                     counts[result.status] += 1
-            if next_cursor is None:
-                break
-            if all(result is not None for result in results):
-                self.checkpoint.save(next_cursor)
-            cursor = next_cursor
+                    if result.status == "fallback":
+                        counts["failed"] += 1
+                        batch_is_recoverable = False
             set_lag = getattr(getattr(self.processor, "metrics", None), "set_rebuild_lag", None)
             if set_lag is not None:
                 latest = max(record.updated_at for record in posts)
@@ -123,6 +123,13 @@ class BatchRebuilder:
                     latest = latest.replace(tzinfo=UTC)
                 set_lag((datetime.now(UTC) - latest).total_seconds())
             self.progress(dict(counts))
+            if not batch_is_recoverable:
+                break
+            if next_cursor is None:
+                break
+            if batch_is_recoverable:
+                self.checkpoint.save(next_cursor)
+            cursor = next_cursor
         return RebuildResult(**counts)
 
 

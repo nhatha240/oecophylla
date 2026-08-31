@@ -53,7 +53,7 @@ async def _run_once(cfg: Settings) -> None:
         bootstrap_servers=cfg.kafka_brokers,
         group_id=cfg.consumer_group,
         auto_offset_reset="earliest",
-        enable_auto_commit=True,
+        enable_auto_commit=False,
         value_deserializer=lambda b: json.loads(b.decode()),
     )
     await consumer.start()
@@ -77,11 +77,13 @@ async def _run_once(cfg: Settings) -> None:
                 or elapsed >= cfg.flush_interval_seconds
             ):
                 await _process_batch(conn, batch, embedding_service, repository)
+                await consumer.commit()
                 batch.clear()
                 last_flush = time.monotonic()
     finally:
         if batch:
             await _process_batch(conn, batch, embedding_service, repository)
+            await consumer.commit()
         await consumer.stop()
         await conn.close()
 
