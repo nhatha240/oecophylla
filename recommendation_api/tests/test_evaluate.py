@@ -177,6 +177,43 @@ def test_v2_long_dwell_is_relevant_but_below_threshold_dwell_is_not():
     assert result.precision_at_k == 0.5
 
 
+def test_v1_rollback_preserves_legacy_any_view_evaluator_semantics():
+    viewed = impression(IMP_A, POST_A, CUTOFF + timedelta(hours=1), position=0)
+    short_view = event(
+        IMP_A,
+        POST_A,
+        "view",
+        viewed.served_at + timedelta(seconds=5),
+        dwell_ms=5_000,
+    )
+
+    legacy = evaluate_records(
+        [viewed],
+        [short_view],
+        cutoff_at=CUTOFF,
+        label_window_hours=24,
+        as_of=AS_OF,
+        k=1,
+        catalog_size=10,
+        recommendation_label_version="v1",
+        qualified_read_ms=10_000,
+    )
+    v2 = evaluate_records(
+        [viewed],
+        [short_view],
+        cutoff_at=CUTOFF,
+        label_window_hours=24,
+        as_of=AS_OF,
+        k=1,
+        catalog_size=10,
+        recommendation_label_version="v2",
+        qualified_read_ms=10_000,
+    )
+
+    assert legacy.precision_at_k == 1.0
+    assert v2.precision_at_k == 0.0
+
+
 def test_insufficient_data_does_not_publish_misleading_metrics():
     immature = impression(IMP_A, POST_A, AS_OF - timedelta(hours=1), position=0)
 
