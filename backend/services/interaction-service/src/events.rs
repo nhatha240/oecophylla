@@ -157,26 +157,53 @@ mod tests {
     }
 
     #[test]
-    fn qualified_read_v2_uses_the_behavior_row_as_its_idempotency_key() {
-        let behavior_event_id = Uuid::now_v7();
+    fn qualified_read_v2_deduplicates_view_and_dwell_for_one_impression() {
+        let impression_id = Uuid::now_v7();
         let occurred_at = Utc::now();
+        let view = qualified_read_envelope(QualifiedReadData {
+            user_id: Uuid::now_v7(),
+            post_id: Uuid::now_v7(),
+            client_event_id: Uuid::now_v7(),
+            behavior_event_id: Uuid::now_v7(),
+            impression_id: Some(impression_id),
+            session_id: Some(Uuid::now_v7()),
+            occurred_at,
+            duration_ms: 10_000,
+            source_event_type: "view".into(),
+        });
+        let dwell = qualified_read_envelope(QualifiedReadData {
+            user_id: view.data.user_id,
+            post_id: view.data.post_id,
+            client_event_id: Uuid::now_v7(),
+            behavior_event_id: Uuid::now_v7(),
+            impression_id: Some(impression_id),
+            session_id: view.data.session_id,
+            occurred_at,
+            duration_ms: 12_000,
+            source_event_type: "dwell".into(),
+        });
+
+        assert_eq!(view.event_id, impression_id);
+        assert_eq!(dwell.event_id, impression_id);
+        assert_eq!(view.event_type, "qualified_read");
+        assert_eq!(view.event_version, 2);
+    }
+
+    #[test]
+    fn direct_entry_qualified_read_uses_the_durable_behavior_id() {
+        let behavior_event_id = Uuid::now_v7();
         let envelope = qualified_read_envelope(QualifiedReadData {
             user_id: Uuid::now_v7(),
             post_id: Uuid::now_v7(),
             client_event_id: Uuid::now_v7(),
             behavior_event_id,
-            impression_id: Some(Uuid::now_v7()),
+            impression_id: None,
             session_id: Some(Uuid::now_v7()),
-            occurred_at,
+            occurred_at: Utc::now(),
             duration_ms: 10_000,
             source_event_type: "dwell".into(),
         });
-
         assert_eq!(envelope.event_id, behavior_event_id);
-        assert_eq!(envelope.event_type, "qualified_read");
-        assert_eq!(envelope.event_version, 2);
-        assert_eq!(envelope.data.duration_ms, 10_000);
-        assert_eq!(envelope.data.source_event_type, "dwell");
     }
 }
 
