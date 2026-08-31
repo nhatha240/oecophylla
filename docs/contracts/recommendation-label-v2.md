@@ -26,9 +26,9 @@ Chỉ chuyển một consumer sang v2 sau khi consumer đó chạy đạt toàn 
 
 ## 3. Identity, fingerprint và privacy
 
-Identity online chuẩn là `(user_id, request_id)`. `user_id` phải do server lấy từ danh tính đã xác thực; không tin `user_id` do browser gửi.
+Khi event có recommendation context, identity online chuẩn là `(user_id, request_id)`. `user_id` phải do server lấy từ danh tính đã xác thực; không tin `user_id` do browser gửi.
 
-Identity offline chuẩn là `H(salt:user_id:request_id)`, trong đó `H` là HMAC-SHA-256 và salt là secret riêng theo dataset version. Dataset/export không chứa raw `user_id` hoặc raw `request_id`; không tái sử dụng salt giữa các phạm vi dữ liệu cần unlink.
+Identity offline chuẩn là `H(salt:user_id:request_id)`, trong đó `H` là HMAC-SHA-256. Giá trị secret được cấu hình (dù config hiện hữu gọi là `hash_salt`) chính là **HMAC key**, không phải dữ liệu nối thêm vào message. Key phải riêng theo dataset version. Message là UTF-8 của `user_id + ":" + request_id`. Dataset/export không chứa raw `user_id` hoặc raw `request_id`; không tái sử dụng key giữa các phạm vi dữ liệu cần unlink.
 
 Mỗi online identity chỉ thuộc một immutable request envelope. Server tạo request fingerprint bằng SHA-256 của JSON canonical theo RFC 8785, gồm:
 
@@ -45,9 +45,11 @@ Retry trên từng candidate dùng identity `(user_id, request_id, position, pos
 
 ## 4. Required event envelope
 
-Mọi raw event đủ điều kiện tạo recommendation label phải có:
+Mọi raw event đủ điều kiện tạo engagement label phải có:
 
-`event_id`, `event_version`, `event_type`, `user_id`, `request_id`, `post_id`, `occurred_at`, `ingested_at`.
+`event_id`, `event_version`, `event_type`, `user_id`, `post_id`, `occurred_at`, `ingested_at`.
+
+`request_id` là recommendation context nullable, không phải trường bắt buộc của mọi raw event. Event từ direct-entry hoặc canonical action không liên kết với một feed request có thể để `request_id = null`. Khi `request_id` hiện diện, server phải xác minh request thuộc đúng `user_id` và có candidate `post_id`; client không được tự khai recommendation context. Chỉ event có verified request context mới sinh online/offline request identity.
 
 Trường theo loại event:
 
@@ -94,7 +96,7 @@ Reversal chuẩn:
 - `unshare` vô hiệu active `share`.
 - `unhide` vô hiệu active `hide`.
 
-Undo không phải negative feedback. Sau undo, resolver tiếp tục xét các evidence còn active; chỉ sinh `negative` nếu có exposure và label window đã đóng. Report không reversible trong label contract; quy trình hủy report thuộc moderation/audit và phải phát một contract version mới nếu muốn thay đổi historical label.
+Mỗi undo là một **state-transition reversal**, không có semantic label riêng và không được tạo exposure giả. Undo không phải negative feedback. Sau undo, resolver tiếp tục xét các evidence còn active; chỉ sinh `negative` nếu có exposure và label window đã đóng. Report không reversible trong label contract; quy trình hủy report thuộc moderation/audit và phải phát một contract version mới nếu muốn thay đổi historical label.
 
 ## 7. Shared conformance fixture
 
@@ -104,9 +106,11 @@ Fixture dùng `event_defaults` làm envelope chung; implementation phải merge 
 - Click đến trước visible.
 - Long dwell/view.
 - Like, save, share, hide và report.
+- Comment hợp lệ, kể cả canonical action không có recommendation context.
 - Unlike, unsave, unshare và unhide.
-- Duplicate event giống hệt.
-- Candidate retry giống hệt, request fingerprint khác, position trùng và post trùng.
+- Duplicate event giống hệt và duplicate `event_id` có payload xung đột.
+- Candidate retry giống hệt, candidate retry payload xung đột, request fingerprint khác, position trùng và post trùng.
+- Tiebreak ổn định theo `(occurred_at, ingested_at, event_id)` dù input đến sai thứ tự.
 
 TypeScript, Rust và Python phải đọc trực tiếp cùng file fixture này. Không copy case sang hằng số riêng trong từng service.
 

@@ -1,5 +1,4 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "contract_version": "engagement-label-v2",
   "label_version": "v2",
   "description": "Canonical behavior-to-label semantics for recommendation telemetry, feature events, datasets, and evaluation.",
@@ -76,11 +75,21 @@
       "event_version",
       "event_type",
       "user_id",
-      "request_id",
       "post_id",
       "occurred_at",
       "ingested_at"
     ],
+    "recommendation_context": {
+      "field": "request_id",
+      "nullable": true,
+      "required_when": "the event is attributed to a served recommendation request",
+      "when_present": "server_verified",
+      "verification": "request_id must belong to the event user_id and post_id",
+      "nullable_for": [
+        "direct_entry",
+        "canonical_action_without_recommendation_context"
+      ]
+    },
     "by_event": {
       "visible": [
         "viewport_ratio"
@@ -141,7 +150,7 @@
     },
     "unlike": {
       "producer": "canonical_server_action",
-      "semantic": "exposure",
+      "kind": "state_transition_reversal",
       "condition": "like state changed from active to inactive",
       "reverses": "like"
     },
@@ -159,7 +168,7 @@
     },
     "unsave": {
       "producer": "canonical_server_action",
-      "semantic": "exposure",
+      "kind": "state_transition_reversal",
       "condition": "save state changed from active to inactive",
       "reverses": "save"
     },
@@ -171,7 +180,7 @@
     },
     "unshare": {
       "producer": "canonical_server_action",
-      "semantic": "exposure",
+      "kind": "state_transition_reversal",
       "condition": "share state changed from active to inactive",
       "reverses": "share"
     },
@@ -183,7 +192,7 @@
     },
     "unhide": {
       "producer": "canonical_server_action",
-      "semantic": "exposure",
+      "kind": "state_transition_reversal",
       "condition": "hide state changed from active to inactive",
       "reverses": "hide"
     },
@@ -243,6 +252,7 @@
   "request_identity": {
     "online": {
       "notation": "(user_id, request_id)",
+      "applicability": "only events with verified recommendation request context",
       "fields": [
         "user_id",
         "request_id"
@@ -251,7 +261,13 @@
     "offline": {
       "expression": "H(salt:user_id:request_id)",
       "algorithm": "HMAC-SHA-256",
-      "salt_requirement": "secret and dataset-version-specific",
+      "applicability": "only events with verified recommendation request context",
+      "key_source": "configured hash_salt secret",
+      "key_scope": "dataset_version",
+      "hash_salt_is_hmac_key": true,
+      "hash_salt_is_message_data": false,
+      "message_encoding": "UTF-8 bytes of user_id + ':' + request_id",
+      "key_requirement": "The configured hash_salt value is a secret HMAC key unique to the dataset version.",
       "raw_identity_exported": false
     },
     "request_fingerprint": {
@@ -268,7 +284,7 @@
         "post_id"
       ],
       "candidate_order": "ascending position",
-      "expression": "SHA-256(canonical_json(request_metadata, ordered_candidates))"
+      "expression": "SHA-256(canonical_json(project(request_metadata, request_metadata_fields), project(ordered_candidates, ordered_candidate_fields)))"
     },
     "candidate_retry_identity_fields": [
       "user_id",

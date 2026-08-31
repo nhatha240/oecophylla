@@ -149,6 +149,9 @@ def test_contract_defines_private_request_identity_and_collision_policy():
     identity = contract["request_identity"]
 
     assert identity["online"]["fields"] == ["user_id", "request_id"]
+    assert identity["online"]["applicability"] == (
+        "only events with verified recommendation request context"
+    )
     assert identity["offline"]["expression"] == "H(salt:user_id:request_id)"
     assert identity["offline"]["algorithm"] == "HMAC-SHA-256"
     assert identity["offline"]["key_source"] == "configured hash_salt secret"
@@ -194,6 +197,7 @@ def test_fixture_covers_required_label_and_retry_scenarios():
     ] == "negative"
     assert cases["click_before_visible"]["expected"]["semantic"] == "click"
     assert cases["comment"]["expected"]["semantic"] == "positive"
+    assert cases["comment"]["events"][0]["request_id"] is None
     assert cases["duplicate_event"]["expected"]["deduplicated_events"] == 1
 
     for case in cases.values():
@@ -212,6 +216,18 @@ def test_fixture_covers_required_label_and_retry_scenarios():
     assert retry_cases["conflicting_candidate_retry_payload"]["expected"] == (
         "reject_request"
     )
+    candidate_conflict = retry_cases["conflicting_candidate_retry_payload"]
+    assert candidate_conflict["first"]["request_metadata"] == candidate_conflict[
+        "retry"
+    ]["request_metadata"]
+    assert [
+        (candidate["position"], candidate["post_id"])
+        for candidate in candidate_conflict["first"]["ordered_candidates"]
+    ] == [
+        (candidate["position"], candidate["post_id"])
+        for candidate in candidate_conflict["retry"]["ordered_candidates"]
+    ]
+    assert candidate_conflict["first"] != candidate_conflict["retry"]
 
     event_retry_cases = {
         case["id"]: case for case in fixture["event_retry_cases"]
@@ -219,11 +235,29 @@ def test_fixture_covers_required_label_and_retry_scenarios():
     assert event_retry_cases["conflicting_duplicate_event_id"]["expected"] == (
         "reject"
     )
+    event_conflict = event_retry_cases["conflicting_duplicate_event_id"]
+    assert event_conflict["first"]["event_id"] == event_conflict["retry"][
+        "event_id"
+    ]
+    assert event_conflict["first"] != event_conflict["retry"]
 
     ordering_cases = {case["id"]: case for case in fixture["ordering_cases"]}
     assert set(ordering_cases) == EXPECTED_ORDERING_CASES
     for case in ordering_cases.values():
-        assert case["input_events"] != case["expected"]["processing_order"]
+        input_order = [event["event_id"] for event in case["input_events"]]
+        assert input_order != case["expected"]["processing_order"]
+        sorted_order = [
+            event["event_id"]
+            for event in sorted(
+                case["input_events"],
+                key=lambda event: (
+                    event["occurred_at"],
+                    event["ingested_at"],
+                    event["event_id"],
+                ),
+            )
+        ]
+        assert sorted_order == case["expected"]["processing_order"]
         assert case["expected"]["semantic"] in EXPECTED_SEMANTICS
         assert len(case["expected"]["processing_order"]) == len(
             case["input_events"]
