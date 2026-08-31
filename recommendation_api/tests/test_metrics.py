@@ -7,9 +7,11 @@ import pytest
 from app.metrics import (
     catalog_coverage,
     hit_rate_at_k,
+    impression_auc,
     ndcg_at_k,
     precision_at_k,
     recall_at_k,
+    reciprocal_rank,
     topic_diversity,
     topic_precision_at_k,
 )
@@ -26,6 +28,25 @@ def test_ranking_metrics_match_a_hand_calculated_example():
     )
     assert ndcg_at_k(ranked, relevant, k=3) == pytest.approx(expected_ndcg)
     assert hit_rate_at_k(ranked, relevant, k=3) == 1.0
+    assert reciprocal_rank(ranked, relevant) == pytest.approx(1.0)
+
+
+def test_mind_impression_auc_counts_ties_and_excludes_single_class_groups():
+    assert impression_auc([0.9, 0.8, 0.1], [1, 0, 0]) == 1.0
+    assert impression_auc([0.5, 0.5], [1, 0]) == 0.5
+    assert impression_auc([0.9, 0.1], [0, 0]) is None
+    assert impression_auc([0.9, 0.1], [1, 1]) is None
+
+
+def test_zero_click_impression_has_zero_reciprocal_rank():
+    assert reciprocal_rank(["post-a", "post-b"], set()) == 0.0
+
+
+def test_impression_auc_rejects_misaligned_or_non_binary_inputs():
+    with pytest.raises(ValueError, match="same length"):
+        impression_auc([0.9], [1, 0])
+    with pytest.raises(ValueError, match="binary"):
+        impression_auc([0.9, 0.1], [1, -1])
 
 
 def test_metrics_do_not_divide_by_zero():

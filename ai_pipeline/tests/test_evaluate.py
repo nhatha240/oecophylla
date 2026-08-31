@@ -64,11 +64,23 @@ def test_baseline_and_ml_are_scored_on_same_temporal_holdout():
 
     report = compare_holdout(_holdout(), artifact, k=2, minimum_requests=1)
 
-    assert report["sample"] == {"impressions": 16, "requests": 4, "users": 2}
+    assert report["sample"] == {
+        "impressions": 16,
+        "requests": 4,
+        "users": 2,
+        "auc_eligible_requests": 4,
+        "auc_excluded_requests": 0,
+    }
     assert report["holdout_checksum"]
     assert report["baseline"]["sample_impressions"] == 16
     assert report["ml"]["sample_impressions"] == 16
     assert report["ml"]["ndcg_at_k"] > report["baseline"]["ndcg_at_k"]
+    assert report["ml"]["impression_auc"] == 1.0
+    assert report["ml"]["mrr"] == 1.0
+    assert report["ml"]["ndcg_at_5"] == 1.0
+    assert report["ml"]["ndcg_at_10"] == 1.0
+    assert report["ml"]["impression_auc_eligible_requests"] == 4
+    assert report["ml"]["impression_auc_excluded_requests"] == 0
     assert report["conclusion"] == "win"
     assert len(artifact.records) == 16
     assert all("label" not in record for record in artifact.records)
@@ -107,15 +119,120 @@ def test_large_sample_has_deterministic_confidence_intervals():
     report = compare_holdout(
         _holdout(requests=30), SpyArtifact(), k=2, minimum_requests=30
     )
+    repeated = compare_holdout(
+        _holdout(requests=30), SpyArtifact(), k=2, minimum_requests=30
+    )
 
     assert report["confidence_intervals"] is not None
+    assert report["confidence_intervals"] == repeated["confidence_intervals"]
     assert set(report["confidence_intervals"]) == {
         "baseline_ndcg_at_k",
         "ml_ndcg_at_k",
+        "baseline_impression_auc",
+        "ml_impression_auc",
+        "baseline_mrr",
+        "ml_mrr",
+        "baseline_ndcg_at_5",
+        "ml_ndcg_at_5",
+        "baseline_ndcg_at_10",
+        "ml_ndcg_at_10",
     }
 
 
-@pytest.mark.parametrize("failure", ["k", "holdout", "groups", "scores"])
+def test_zero_click_requests_score_zero_and_are_excluded_only_from_auc():
+    rows = _holdout()
+    for row in rows[-4:]:
+        row["label"] = -1
+        row["label_name"] = "negative"
+
+    report = compare_holdout(
+        rows,
+        SpyArtifact(),
+        k=2,
+        minimum_requests=1,
+        minimum_auc_requests=1,
+    )
+
+    assert report["ml"]["mrr"] == pytest.approx(0.75)
+    assert report["ml"]["ndcg_at_5"] == pytest.approx(0.75)
+    assert report["ml"]["ndcg_at_10"] == pytest.approx(0.75)
+    assert report["ml"]["impression_auc_eligible_requests"] == 3
+    assert report["ml"]["impression_auc_excluded_requests"] == 1
+
+
+def test_auc_gate_requires_minimum_eligible_requests():
+    rows = _holdout(requests=2)
+    for row in rows[-4:]:
+        row["label"] = -1
+        row["label_name"] = "negative"
+
+    report = compare_holdout(
+        rows,
+        SpyArtifact(),
+        k=2,
+        minimum_requests=1,
+        minimum_auc_requests=2,
+    )
+
+    assert report["sample"]["auc_eligible_requests"] == 1
+    assert report["sample"]["auc_excluded_requests"] == 1
+    assert report["conclusion"] == "inconclusive"
+
+
+def test_large_all_negative_holdout_reports_missing_auc_interval_without_crashing():
+    rows = _holdout(requests=30)
+    for row in rows:
+        row["label"] = -1
+        row["label_name"] = "negative"
+
+    report = compare_holdout(
+        rows,
+        SpyArtifact(),
+        k=2,
+        minimum_requests=1,
+        minimum_auc_requests=1,
+    )
+
+    assert report["conclusion"] == "inconclusive"
+    assert report["ml"]["impression_auc_eligible_requests"] == 0
+    assert report["confidence_intervals"]["ml_impression_auc"] is None
+
+
+def test_equal_scores_use_served_position_as_a_deterministic_tie_breaker():
+    rows = list(reversed(_holdout(requests=1)))
+    for row in rows:
+        row["heuristic_score"] = 0.5
+
+    class TiedArtifact(SpyArtifact):
+        def predict_scores(self, records):
+            return [0.5 for _ in records]
+
+    report = compare_holdout(
+        rows,
+        TiedArtifact(),
+        k=2,
+        minimum_requests=1,
+        minimum_auc_requests=1,
+    )
+
+    assert report["baseline"]["mrr"] == 1.0
+    assert report["ml"]["mrr"] == 1.0
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "k",
+        "holdout",
+        "groups",
+        "scores",
+        "minimum_requests",
+        "minimum_auc_requests",
+        "single_candidate",
+        "cross_split",
+        "conflicting_identity",
+    ],
+)
 def test_comparison_rejects_invalid_holdout_contract(failure: str):
     rows = _holdout()
     artifact = SpyArtifact()
@@ -127,8 +244,21 @@ def test_comparison_rejects_invalid_holdout_contract(failure: str):
             row["split"] = "train"
     elif failure == "groups":
         rows[0]["request_group"] = None
-    else:
+    elif failure == "scores":
         artifact.predict_scores = lambda records: [0.5]
+    elif failure == "minimum_requests":
+        kwargs["minimum_requests"] = 0
+    elif failure == "minimum_auc_requests":
+        kwargs["minimum_auc_requests"] = 0
+    elif failure == "single_candidate":
+        del rows[1:4]
+    elif failure == "cross_split":
+        duplicate = dict(rows[0])
+        duplicate["sample_id"] = "train-duplicate"
+        duplicate["split"] = "train"
+        rows.append(duplicate)
+    else:
+        rows[0]["user_group"] = "conflicting-user"
 
     with pytest.raises(ValueError):
         compare_holdout(rows, artifact, **kwargs)

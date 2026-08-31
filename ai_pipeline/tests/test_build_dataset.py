@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 
@@ -20,6 +23,49 @@ def load_fixture() -> tuple[list[Impression], list[BehaviorEvent]]:
         [Impression.from_mapping(row) for row in payload["impressions"]],
         [BehaviorEvent.from_mapping(row) for row in payload["events"]],
     )
+
+
+def grouped_telemetry(
+    candidate_counts: tuple[int, ...] = (1, 1, 3, 1),
+) -> tuple[list[Impression], list[BehaviorEvent]]:
+    impressions, events = load_fixture()
+    snapshot = impressions[0].feature_snapshot
+    user_id = UUID("00000000-0000-0000-0000-000000000001")
+    grouped_impressions: list[Impression] = []
+    grouped_events: list[BehaviorEvent] = []
+    sequence = 1
+    for group_index, candidate_count in enumerate(candidate_counts, start=1):
+        request_id = UUID(int=10_000 + group_index)
+        served_at = datetime(2026, 8, group_index, tzinfo=timezone.utc)
+        for position in range(candidate_count):
+            impression_id = UUID(int=20_000 + sequence)
+            post_id = UUID(int=30_000 + sequence)
+            grouped_impressions.append(
+                Impression(
+                    id=impression_id,
+                    request_id=request_id,
+                    user_id=user_id,
+                    post_id=post_id,
+                    position=position,
+                    feed_source="personalized",
+                    model_version="heuristic-v1",
+                    feature_snapshot=snapshot,
+                    served_at=served_at,
+                )
+            )
+            grouped_events.append(
+                BehaviorEvent(
+                    id=UUID(int=40_000 + sequence),
+                    impression_id=impression_id,
+                    user_id=user_id,
+                    post_id=post_id,
+                    event_type="visible",
+                    dwell_ms=None,
+                    occurred_at=served_at + timedelta(seconds=1),
+                )
+            )
+            sequence += 1
+    return grouped_impressions, grouped_events
 
 
 @pytest.fixture
@@ -160,6 +206,120 @@ def test_time_split_is_disjoint_and_latest_rows_are_test_holdout(
     assert max(train_times) <= min(validation_times) <= min(test_times)
 
 
+def test_grouped_time_split_keeps_candidates_atomic_at_percentage_boundaries(
+    config: DatasetConfig,
+):
+    impressions, events = grouped_telemetry()
+
+    rows = build_samples(impressions, events, config).rows
+
+    splits_by_request: dict[str, set[str]] = {}
+    for row in rows:
+        assert row.request_group is not None
+        splits_by_request.setdefault(row.request_group, set()).add(row.split)
+    assert all(len(splits) == 1 for splits in splits_by_request.values())
+    assert sorted(
+        sum(row.request_group == request for row in rows)
+        for request in splits_by_request
+    ) == [1, 1, 1, 3]
+
+
+def test_request_group_hashes_the_canonical_user_and_request_identity(
+    config: DatasetConfig,
+):
+    impressions, events = grouped_telemetry((2,))
+    impression = impressions[0]
+
+    rows = build_samples(impressions, events, config).rows
+
+    expected = hmac.new(
+        str(config.hash_salt).encode(),
+        f"{impression.user_id}:{impression.request_id}".encode(),
+        hashlib.sha256,
+    ).hexdigest()
+    assert {row.request_group for row in rows} == {expected}
+
+
+def test_same_request_id_for_different_users_has_distinct_canonical_groups(
+    config: DatasetConfig,
+):
+    impressions, events = grouped_telemetry((1, 1))
+    second_user = UUID("00000000-0000-0000-0000-000000000002")
+    impressions[1] = replace(
+        impressions[1],
+        request_id=impressions[0].request_id,
+        user_id=second_user,
+    )
+    events[1] = replace(events[1], user_id=second_user)
+
+    rows = build_samples(impressions, events, config).rows
+
+    assert len({row.request_group for row in rows}) == 2
+
+
+def test_drop_identity_mode_still_splits_requests_atomically(
+    config: DatasetConfig,
+):
+    impressions, events = grouped_telemetry()
+
+    rows = build_samples(
+        impressions,
+        events,
+        replace(config, identity_mode="drop", hash_salt=None),
+    ).rows
+
+    assert all(row.request_group is None for row in rows)
+    split_by_request: dict[UUID, set[str]] = {}
+    request_by_post = {
+        str(impression.post_id): impression.request_id for impression in impressions
+    }
+    for row in rows:
+        split_by_request.setdefault(request_by_post[row.audit_post_id], set()).add(
+            row.split
+        )
+    assert all(len(splits) == 1 for splits in split_by_request.values())
+
+
+def test_requests_tied_at_a_boundary_stay_in_the_same_later_split(
+    config: DatasetConfig,
+):
+    impressions, events = grouped_telemetry((1, 1, 1, 1))
+    tied_time = impressions[1].served_at
+    impressions[2] = replace(impressions[2], served_at=tied_time)
+    events[2] = replace(events[2], occurred_at=tied_time + timedelta(seconds=1))
+
+    rows = build_samples(impressions, events, config).rows
+
+    request_by_post = {
+        str(impression.post_id): impression.request_id for impression in impressions
+    }
+    split_by_request = {
+        request_by_post[row.audit_post_id]: row.split for row in rows
+    }
+    assert split_by_request[impressions[1].request_id] == "validation"
+    assert split_by_request[impressions[2].request_id] == "validation"
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"feed_source": "fallback"},
+        {"model_version": "other-v1"},
+        {"served_at": datetime(2026, 8, 2, tzinfo=timezone.utc)},
+        {"position": 0},
+        {"post_id": UUID(int=30_001)},
+    ],
+)
+def test_conflicting_request_envelope_is_rejected(
+    config: DatasetConfig, changes: dict[str, object]
+):
+    impressions, events = grouped_telemetry((2,))
+    impressions[1] = replace(impressions[1], **changes)
+
+    with pytest.raises(ValueError, match="conflicting canonical request identity"):
+        build_samples(impressions, events, config)
+
+
 def test_parquet_and_metadata_are_auditable_and_contain_no_raw_ids(
     config: DatasetConfig, tmp_path: Path
 ):
@@ -190,3 +350,57 @@ def test_parquet_and_metadata_are_auditable_and_contain_no_raw_ids(
     }
     assert metadata["feature_schema_versions"] == ["rank-features-v1"]
     assert metadata["code_version"] == "test-sha"
+
+
+def test_metadata_records_group_boundary_policy_and_candidate_distributions(
+    config: DatasetConfig, tmp_path: Path
+):
+    impressions, events = grouped_telemetry()
+    result = build_samples(impressions, events, config)
+
+    metadata_path = write_artifact(
+        result, config, tmp_path / "grouped.parquet", code_version="test-sha"
+    )
+    metadata = json.loads(metadata_path.read_text())
+
+    assert metadata["split_policy"] == {
+        "atomic_unit": "canonical_request",
+        "boundary": (
+            "chronological_request_count_with_timestamp_ties_assigned_to_later_split"
+        ),
+        "internal_grouping": "canonical_user_and_request_identity_in_memory_only",
+        "legacy_compatibility": "request_group_rekeyed_from_sha256_request_id",
+        "request_identity": "HMAC-SHA256(hash_salt,user_id:request_id)",
+    }
+    split_stats = metadata["split_request_stats"]
+    assert sum(stats["request_count"] for stats in split_stats.values()) == 4
+    assert sum(
+        int(candidate_count) * request_count
+        for stats in split_stats.values()
+        for candidate_count, request_count in stats[
+            "candidate_count_distribution"
+        ].items()
+    ) == 6
+    assert any(
+        stats["candidate_count_distribution"].get("3") == 1
+        for stats in split_stats.values()
+    )
+
+
+def test_drop_mode_metadata_audits_internal_grouping_without_exporting_identity(
+    config: DatasetConfig, tmp_path: Path
+):
+    impressions, events = grouped_telemetry()
+    drop_config = replace(config, identity_mode="drop", hash_salt=None)
+    result = build_samples(impressions, events, drop_config)
+
+    metadata_path = write_artifact(
+        result, drop_config, tmp_path / "drop.parquet", code_version="test-sha"
+    )
+    metadata = json.loads(metadata_path.read_text())
+
+    assert metadata["split_policy"]["request_identity"] == "not_exported"
+    assert metadata["split_policy"]["internal_grouping"] == (
+        "canonical_user_and_request_identity_in_memory_only"
+    )
+    assert all(row.to_record()["request_group"] is None for row in result.rows)

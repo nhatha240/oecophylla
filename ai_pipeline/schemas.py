@@ -98,6 +98,7 @@ class DatasetRow:
     ml_score: float | None
     audit_user_id: str
     audit_post_id: str
+    audit_request_identity: str
 
     def to_record(self) -> dict[str, Any]:
         return {
