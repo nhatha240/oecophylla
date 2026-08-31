@@ -13,6 +13,7 @@ mod cursor;
 mod handlers;
 mod repo;
 mod state;
+mod update;
 
 use state::AppState;
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { apiFetch, ApiException, getFeed } from './api';
+import { apiFetch, ApiException, getFeed, updatePost, uploadAvatar } from './api';
 
 describe('apiFetch', () => {
   it('sends credentials and x-requested-with', async () => {
@@ -94,5 +94,37 @@ describe('apiFetch', () => {
       request_id: 'request-1',
       model_version: 'model-1',
     });
+  });
+});
+
+describe('profile and post mutations', () => {
+  it('uploads an avatar as multipart without forcing a JSON content type', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      avatar_url: '/api/v1/users/u1/avatar?v=1'
+    }), { status: 200 }));
+    const file = new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], 'avatar.png', {
+      type: 'image/png'
+    });
+
+    await uploadAvatar(fetchMock as any, 'u1', file);
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('/api/v1/users/u1/avatar');
+    expect(init.method).toBe('PUT');
+    expect(init.body).toBeInstanceOf(FormData);
+    expect(new Headers(init.headers).has('content-type')).toBe(false);
+  });
+
+  it('updates a post through the owner-only PUT endpoint', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 'p1' }), {
+      status: 200
+    }));
+
+    await updatePost(fetchMock as any, 'p1', { content: 'Nội dung mới' });
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/posts/p1', expect.objectContaining({
+      method: 'PUT',
+      body: JSON.stringify({ content: 'Nội dung mới' })
+    }));
   });
 });

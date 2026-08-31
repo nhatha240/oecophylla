@@ -9,6 +9,7 @@ use common::{
 };
 use std::{net::SocketAddr, sync::Arc};
 
+mod avatar;
 mod handlers;
 mod repo;
 mod state;
