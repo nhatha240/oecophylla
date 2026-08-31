@@ -216,3 +216,25 @@ pub async fn suggestions(
     }
     Ok(Json(items))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn declared_topic_change_invalidates_all_preference_history_and_feed_versions() {
+        assert_eq!(
+            preference_cache_keys(Uuid::nil()),
+            vec![
+                "pref:00000000-0000-0000-0000-000000000000",
+                "pref:v1:00000000-0000-0000-0000-000000000000",
+                "pref:v2:00000000-0000-0000-0000-000000000000",
+                "history:v1:00000000-0000-0000-0000-000000000000",
+                "history:v2:00000000-0000-0000-0000-000000000000",
+                "feed:00000000-0000-0000-0000-000000000000",
+                "feed:v1:00000000-0000-0000-0000-000000000000",
+                "feed:v2:00000000-0000-0000-0000-000000000000",
+            ]
+        );
+    }
+}

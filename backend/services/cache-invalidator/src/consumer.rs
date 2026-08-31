@@ -176,4 +176,39 @@ mod tests {
             serde_json::from_str(r#"{"event_type":"test","data":null}"#).unwrap();
         assert!(extract_user_id(&env).is_none());
     }
+
+    #[test]
+    fn registry_covers_legacy_and_versioned_preference_history_and_feed_keys() {
+        assert_eq!(
+            cache_keys_for_user("u1"),
+            vec![
+                "pref:u1",
+                "pref:v1:u1",
+                "pref:v2:u1",
+                "history:v1:u1",
+                "history:v2:u1",
+                "feed:u1",
+                "feed:v1:u1",
+                "feed:v2:u1",
+            ]
+        );
+    }
+
+    #[test]
+    fn v1_v2_and_canonical_behavior_names_trigger_invalidation() {
+        for event_type in [
+            "viewed",
+            "qualified_read",
+            "liked",
+            "unliked",
+            "like",
+            "unlike",
+            "hidden",
+            "unhide",
+            "reported",
+        ] {
+            assert!(invalidates_preferences(event_type), "{event_type}");
+        }
+        assert!(!invalidates_preferences("future_unknown_event"));
+    }
 }
