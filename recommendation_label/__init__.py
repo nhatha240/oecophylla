@@ -109,6 +109,7 @@ def derive_label(
     qualified_read_ms: int = QUALIFIED_READ_MS,
     label_window_closed: bool = True,
     defaults: Mapping[str, Any] | None = None,
+    v1_any_view_positive: bool = False,
 ) -> LabelResult:
     if label_version not in ("v1", "v2"):
         raise ValueError("label_version must be v1 or v2")
@@ -163,6 +164,9 @@ def derive_label(
             irreversible.add("positive")
         elif event_type == "report":
             irreversible.add("strong_negative")
+
+        if label_version == "v1" and v1_any_view_positive and event_type == "view":
+            irreversible.add("positive")
 
         duration = _value(event, "continuous_visible_ms")
         if duration is None:

@@ -373,6 +373,11 @@ def write_artifact(
         },
         "label_window_hours": config.label_window_hours,
         "qualified_read_ms": config.qualified_read_ms,
+        **(
+            {"positive_dwell_ms": config.qualified_read_ms}
+            if config.recommendation_label_version == "v1"
+            else {}
+        ),
         "identity_mode": config.identity_mode,
         "row_count": len(result.rows),
         "split_counts": dict(sorted(Counter(row.split for row in result.rows).items())),
@@ -480,6 +485,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--label-window-hours", type=int, default=24)
     parser.add_argument(
         "--qualified-read-ms",
+        "--positive-dwell-ms",
+        dest="qualified_read_ms",
         type=int,
         default=int(os.getenv("QUALIFIED_READ_MS", "10000")),
     )

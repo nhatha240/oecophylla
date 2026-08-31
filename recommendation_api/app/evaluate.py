@@ -183,6 +183,7 @@ def evaluate_records(
                 label_version=recommendation_label_version,
                 qualified_read_ms=qualified_read_ms,
                 label_window_closed=True,
+                v1_any_view_positive=True,
             ).training_target
             == 1
         }
