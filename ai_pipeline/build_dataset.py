@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import hashlib
+import hmac
 import json
 import os
 import subprocess
@@ -66,6 +67,18 @@ def _hash_identity(value: UUID, salt: str) -> str:
     return hashlib.sha256(f"{salt}:{value}".encode()).hexdigest()
 
 
+def _canonical_request_identity(impression: Impression) -> str:
+    return f"{impression.user_id}:{impression.request_id}"
+
+
+def _hmac_request_identity(impression: Impression, secret: str) -> str:
+    return hmac.new(
+        secret.encode(),
+        _canonical_request_identity(impression).encode(),
+        hashlib.sha256,
+    ).hexdigest()
+
+
 def _optional_float(value: Any) -> float | None:
     return float(value) if value is not None else None
 
@@ -100,27 +113,57 @@ def _label_for(events: Sequence[BehaviorEvent], positive_dwell_ms: int) -> Label
 def _split_rows(
     rows: Sequence[DatasetRow], config: DatasetConfig
 ) -> tuple[DatasetRow, ...]:
-    ordered = sorted(rows, key=lambda row: (row.visible_at, row.sample_id))
-    count = len(ordered)
-    if count == 0:
+    grouped: dict[str, list[DatasetRow]] = defaultdict(list)
+    for row in rows:
+        grouped[row.audit_request_identity].append(row)
+    ordered_groups = sorted(
+        grouped.values(),
+        key=lambda candidates: (
+            min(candidate.served_at for candidate in candidates),
+            candidates[0].audit_request_identity,
+        ),
+    )
+    group_count = len(ordered_groups)
+    if group_count == 0:
         return ()
-    if count == 1:
-        return (replace(ordered[0], split="train"),)
+    if group_count == 1:
+        return tuple(replace(row, split="train") for row in ordered_groups[0])
 
     test_count = max(
-        1, round(count * (1 - config.train_fraction - config.validation_fraction))
+        1,
+        round(
+            group_count
+            * (1 - config.train_fraction - config.validation_fraction)
+        ),
     )
     validation_count = (
-        max(1, round(count * config.validation_fraction)) if count >= 3 else 0
+        max(1, round(group_count * config.validation_fraction))
+        if group_count >= 3
+        else 0
     )
-    if test_count + validation_count >= count:
-        validation_count = max(0, count - test_count - 1)
-    train_count = count - validation_count - test_count
+    if test_count + validation_count >= group_count:
+        validation_count = max(0, group_count - test_count - 1)
+    train_count = group_count - validation_count - test_count
     train_end = train_count
     validation_end = train_end + validation_count
 
+    group_times = [
+        min(candidate.served_at for candidate in candidates)
+        for candidates in ordered_groups
+    ]
+    while 0 < train_end < group_count and group_times[train_end - 1] == group_times[
+        train_end
+    ]:
+        train_end -= 1
+    while (
+        train_end < validation_end < group_count
+        and group_times[validation_end - 1] == group_times[validation_end]
+    ):
+        validation_end -= 1
+    validation_end = max(train_end, validation_end)
+
     split_rows: list[DatasetRow] = []
-    for index, row in enumerate(ordered):
+    for index, candidates in enumerate(ordered_groups):
         split: SplitName
         if index < train_end:
             split = "train"
@@ -128,8 +171,50 @@ def _split_rows(
             split = "validation"
         else:
             split = "test"
-        split_rows.append(replace(row, split=split))
-    return tuple(split_rows)
+        split_rows.extend(replace(row, split=split) for row in candidates)
+
+    result = tuple(
+        sorted(split_rows, key=lambda row: (row.visible_at, row.sample_id))
+    )
+    _assert_atomic_request_splits(rows, result)
+    return result
+
+
+def _assert_atomic_request_splits(
+    source_rows: Sequence[DatasetRow], split_rows: Sequence[DatasetRow]
+) -> None:
+    source_samples = Counter(row.sample_id for row in source_rows)
+    split_samples = Counter(row.sample_id for row in split_rows)
+    if source_samples != split_samples:
+        raise AssertionError("grouped split did not retain every eligible candidate")
+    splits_by_request: dict[str, set[SplitName]] = defaultdict(set)
+    for row in split_rows:
+        splits_by_request[row.audit_request_identity].add(row.split)
+    if any(len(splits) != 1 for splits in splits_by_request.values()):
+        raise AssertionError("canonical request crossed dataset splits")
+
+
+def _validate_request_envelopes(impressions: Iterable[Impression]) -> None:
+    envelopes: dict[str, tuple[datetime, str, str]] = {}
+    positions: dict[str, set[int]] = defaultdict(set)
+    posts: dict[str, set[UUID]] = defaultdict(set)
+    for impression in impressions:
+        identity = _canonical_request_identity(impression)
+        envelope = (
+            impression.served_at,
+            impression.feed_source,
+            impression.model_version,
+        )
+        existing = envelopes.setdefault(identity, envelope)
+        if existing != envelope:
+            raise ValueError("conflicting canonical request identity")
+        if (
+            impression.position in positions[identity]
+            or impression.post_id in posts[identity]
+        ):
+            raise ValueError("conflicting canonical request identity")
+        positions[identity].add(impression.position)
+        posts[identity].add(impression.post_id)
 
 
 def build_samples(
@@ -141,6 +226,12 @@ def build_samples(
     event_list = list(events)
     unique_impressions = _deduplicate(impression_list)
     unique_events = _deduplicate(event_list)
+    window_impressions = [
+        impression
+        for impression in unique_impressions.values()
+        if config.start <= impression.served_at < config.end
+    ]
+    _validate_request_envelopes(window_impressions)
     events_by_impression: dict[UUID, list[BehaviorEvent]] = defaultdict(list)
     for event in unique_events.values():
         if event.impression_id is not None:
@@ -193,7 +284,7 @@ def build_samples(
             sample_id = _hash_identity(impression.id, salt)
             user_group = _hash_identity(impression.user_id, salt)
             post_group = _hash_identity(impression.post_id, salt)
-            request_group = _hash_identity(impression.request_id, salt)
+            request_group = _hmac_request_identity(impression, salt)
         else:
             sample_id = f"sample-{len(rows) + 1:09d}"
             user_group = None
@@ -225,6 +316,7 @@ def build_samples(
                 ml_score=_optional_float(snapshot["ml_score"]),
                 audit_user_id=str(impression.user_id),
                 audit_post_id=str(impression.post_id),
+                audit_request_identity=_canonical_request_identity(impression),
             )
         )
 
@@ -255,6 +347,21 @@ def write_artifact(
     table = arrow.Table.from_pylist(records)
     parquet.write_table(table, output, compression="zstd")
 
+    split_request_stats: dict[str, dict[str, Any]] = {}
+    for split in ("train", "validation", "test"):
+        candidates_per_request = Counter(
+            row.audit_request_identity for row in result.rows if row.split == split
+        )
+        split_request_stats[split] = {
+            "request_count": len(candidates_per_request),
+            "candidate_count_distribution": dict(
+                sorted(
+                    Counter(candidates_per_request.values()).items(),
+                    key=lambda pair: pair[0],
+                )
+            ),
+        }
+
     metadata = {
         "dataset_schema_version": DATASET_SCHEMA_VERSION,
         "label_definition_version": LABEL_DEFINITION_VERSION,
@@ -271,6 +378,24 @@ def write_artifact(
         "identity_mode": config.identity_mode,
         "row_count": len(result.rows),
         "split_counts": dict(sorted(Counter(row.split for row in result.rows).items())),
+        "split_policy": {
+            "atomic_unit": "canonical_request",
+            "boundary": (
+                "chronological_request_count_with_timestamp_ties_kept_together"
+            ),
+            "request_identity": (
+                "HMAC-SHA256(hash_salt,user_id:request_id)"
+                if config.identity_mode == "hash"
+                else "not_exported"
+            ),
+            "internal_grouping": (
+                "canonical_user_and_request_identity_in_memory_only"
+            ),
+            "legacy_compatibility": (
+                "request_group_rekeyed_from_sha256_request_id"
+            ),
+        },
+        "split_request_stats": split_request_stats,
         "class_balance": dict(
             sorted(Counter(row.label_name for row in result.rows).items())
         ),

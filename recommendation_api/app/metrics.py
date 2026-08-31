@@ -63,6 +63,37 @@ def hit_rate_at_k(
     return float(any(item in relevant for item in ranked_items[:k]))
 
 
+def reciprocal_rank(
+    ranked_items: Sequence[Item], relevant_items: Collection[Item]
+) -> float:
+    """Return the reciprocal rank of the first relevant item, or zero."""
+    relevant = set(relevant_items)
+    for rank, item in enumerate(ranked_items, start=1):
+        if item in relevant:
+            return 1.0 / rank
+    return 0.0
+
+
+def impression_auc(
+    scores: Sequence[float], binary_labels: Sequence[int]
+) -> float | None:
+    """Return pairwise AUC for one impression, excluding single-class groups."""
+    if len(scores) != len(binary_labels):
+        raise ValueError("scores and labels must have the same length")
+    if any(label not in (0, 1) for label in binary_labels):
+        raise ValueError("impression AUC labels must be binary")
+    positives = [score for score, label in zip(scores, binary_labels) if label == 1]
+    negatives = [score for score, label in zip(scores, binary_labels) if label == 0]
+    if not positives or not negatives:
+        return None
+    pairwise_credit = sum(
+        1.0 if positive > negative else (0.5 if positive == negative else 0.0)
+        for positive in positives
+        for negative in negatives
+    )
+    return pairwise_credit / (len(positives) * len(negatives))
+
+
 def catalog_coverage(
     recommendation_lists: Iterable[Iterable[Item]], *, catalog_size: int
 ) -> float:

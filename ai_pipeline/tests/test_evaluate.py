@@ -64,7 +64,13 @@ def test_baseline_and_ml_are_scored_on_same_temporal_holdout():
 
     report = compare_holdout(_holdout(), artifact, k=2, minimum_requests=1)
 
-    assert report["sample"] == {"impressions": 16, "requests": 4, "users": 2}
+    assert report["sample"] == {
+        "impressions": 16,
+        "requests": 4,
+        "users": 2,
+        "auc_eligible_requests": 4,
+        "auc_excluded_requests": 0,
+    }
     assert report["holdout_checksum"]
     assert report["baseline"]["sample_impressions"] == 16
     assert report["ml"]["sample_impressions"] == 16
@@ -173,6 +179,46 @@ def test_auc_gate_requires_minimum_eligible_requests():
     assert report["conclusion"] == "inconclusive"
 
 
+def test_large_all_negative_holdout_reports_missing_auc_interval_without_crashing():
+    rows = _holdout(requests=30)
+    for row in rows:
+        row["label"] = -1
+        row["label_name"] = "negative"
+
+    report = compare_holdout(
+        rows,
+        SpyArtifact(),
+        k=2,
+        minimum_requests=1,
+        minimum_auc_requests=1,
+    )
+
+    assert report["conclusion"] == "inconclusive"
+    assert report["ml"]["impression_auc_eligible_requests"] == 0
+    assert report["confidence_intervals"]["ml_impression_auc"] is None
+
+
+def test_equal_scores_use_served_position_as_a_deterministic_tie_breaker():
+    rows = list(reversed(_holdout(requests=1)))
+    for row in rows:
+        row["heuristic_score"] = 0.5
+
+    class TiedArtifact(SpyArtifact):
+        def predict_scores(self, records):
+            return [0.5 for _ in records]
+
+    report = compare_holdout(
+        rows,
+        TiedArtifact(),
+        k=2,
+        minimum_requests=1,
+        minimum_auc_requests=1,
+    )
+
+    assert report["baseline"]["mrr"] == 1.0
+    assert report["ml"]["mrr"] == 1.0
+
+
 @pytest.mark.parametrize(
     "failure",
     [
@@ -180,6 +226,8 @@ def test_auc_gate_requires_minimum_eligible_requests():
         "holdout",
         "groups",
         "scores",
+        "minimum_requests",
+        "minimum_auc_requests",
         "single_candidate",
         "cross_split",
         "conflicting_identity",
@@ -198,6 +246,10 @@ def test_comparison_rejects_invalid_holdout_contract(failure: str):
         rows[0]["request_group"] = None
     elif failure == "scores":
         artifact.predict_scores = lambda records: [0.5]
+    elif failure == "minimum_requests":
+        kwargs["minimum_requests"] = 0
+    elif failure == "minimum_auc_requests":
+        kwargs["minimum_auc_requests"] = 0
     elif failure == "single_candidate":
         del rows[1:4]
     elif failure == "cross_split":

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
@@ -231,13 +232,29 @@ def test_request_group_hashes_the_canonical_user_and_request_identity(
 
     rows = build_samples(impressions, events, config).rows
 
-    expected = hashlib.sha256(
-        (
-            f"{config.hash_salt}:{impression.user_id}:"
-            f"{impression.request_id}"
-        ).encode()
+    expected = hmac.new(
+        str(config.hash_salt).encode(),
+        f"{impression.user_id}:{impression.request_id}".encode(),
+        hashlib.sha256,
     ).hexdigest()
     assert {row.request_group for row in rows} == {expected}
+
+
+def test_same_request_id_for_different_users_has_distinct_canonical_groups(
+    config: DatasetConfig,
+):
+    impressions, events = grouped_telemetry((1, 1))
+    second_user = UUID("00000000-0000-0000-0000-000000000002")
+    impressions[1] = replace(
+        impressions[1],
+        request_id=impressions[0].request_id,
+        user_id=second_user,
+    )
+    events[1] = replace(events[1], user_id=second_user)
+
+    rows = build_samples(impressions, events, config).rows
+
+    assert len({row.request_group for row in rows}) == 2
 
 
 def test_drop_identity_mode_still_splits_requests_atomically(
@@ -263,9 +280,41 @@ def test_drop_identity_mode_still_splits_requests_atomically(
     assert all(len(splits) == 1 for splits in split_by_request.values())
 
 
-def test_conflicting_request_envelope_is_rejected(config: DatasetConfig):
+def test_requests_tied_at_a_boundary_stay_in_the_same_later_split(
+    config: DatasetConfig,
+):
+    impressions, events = grouped_telemetry((1, 1, 1, 1))
+    tied_time = impressions[1].served_at
+    impressions[2] = replace(impressions[2], served_at=tied_time)
+    events[2] = replace(events[2], occurred_at=tied_time + timedelta(seconds=1))
+
+    rows = build_samples(impressions, events, config).rows
+
+    request_by_post = {
+        str(impression.post_id): impression.request_id for impression in impressions
+    }
+    split_by_request = {
+        request_by_post[row.audit_post_id]: row.split for row in rows
+    }
+    assert split_by_request[impressions[1].request_id] == "validation"
+    assert split_by_request[impressions[2].request_id] == "validation"
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"feed_source": "fallback"},
+        {"model_version": "other-v1"},
+        {"served_at": datetime(2026, 8, 2, tzinfo=timezone.utc)},
+        {"position": 0},
+        {"post_id": UUID(int=30_001)},
+    ],
+)
+def test_conflicting_request_envelope_is_rejected(
+    config: DatasetConfig, changes: dict[str, object]
+):
     impressions, events = grouped_telemetry((2,))
-    impressions[1] = replace(impressions[1], feed_source="fallback")
+    impressions[1] = replace(impressions[1], **changes)
 
     with pytest.raises(ValueError, match="conflicting canonical request identity"):
         build_samples(impressions, events, config)
@@ -317,7 +366,9 @@ def test_metadata_records_group_boundary_policy_and_candidate_distributions(
     assert metadata["split_policy"] == {
         "atomic_unit": "canonical_request",
         "boundary": "chronological_request_count_with_timestamp_ties_kept_together",
-        "request_identity": "H(salt:user_id:request_id)",
+        "internal_grouping": "canonical_user_and_request_identity_in_memory_only",
+        "legacy_compatibility": "request_group_rekeyed_from_sha256_request_id",
+        "request_identity": "HMAC-SHA256(hash_salt,user_id:request_id)",
     }
     split_stats = metadata["split_request_stats"]
     assert sum(stats["request_count"] for stats in split_stats.values()) == 4
@@ -332,3 +383,22 @@ def test_metadata_records_group_boundary_policy_and_candidate_distributions(
         stats["candidate_count_distribution"].get("3") == 1
         for stats in split_stats.values()
     )
+
+
+def test_drop_mode_metadata_audits_internal_grouping_without_exporting_identity(
+    config: DatasetConfig, tmp_path: Path
+):
+    impressions, events = grouped_telemetry()
+    drop_config = replace(config, identity_mode="drop", hash_salt=None)
+    result = build_samples(impressions, events, drop_config)
+
+    metadata_path = write_artifact(
+        result, drop_config, tmp_path / "drop.parquet", code_version="test-sha"
+    )
+    metadata = json.loads(metadata_path.read_text())
+
+    assert metadata["split_policy"]["request_identity"] == "not_exported"
+    assert metadata["split_policy"]["internal_grouping"] == (
+        "canonical_user_and_request_identity_in_memory_only"
+    )
+    assert all(row.to_record()["request_group"] is None for row in result.rows)

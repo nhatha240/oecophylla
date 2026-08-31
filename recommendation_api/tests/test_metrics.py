@@ -42,6 +42,13 @@ def test_zero_click_impression_has_zero_reciprocal_rank():
     assert reciprocal_rank(["post-a", "post-b"], set()) == 0.0
 
 
+def test_impression_auc_rejects_misaligned_or_non_binary_inputs():
+    with pytest.raises(ValueError, match="same length"):
+        impression_auc([0.9], [1, 0])
+    with pytest.raises(ValueError, match="binary"):
+        impression_auc([0.9, 0.1], [1, -1])
+
+
 def test_metrics_do_not_divide_by_zero():
     assert precision_at_k([], set(), k=10) == 0.0
     assert recall_at_k(["post-a"], set(), k=10) == 0.0
