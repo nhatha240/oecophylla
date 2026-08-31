@@ -1,7 +1,9 @@
 # Recommendation engagement label contract v2
 
-**Contract version:** `engagement-label-v2`  
-**Machine-readable source:** `docs/contracts/recommendation-label-v2.json`  
+**Contract version:** `engagement-label-v2`
+
+**Machine-readable source:** `docs/contracts/recommendation-label-v2.json`
+
 **Shared conformance cases:** `tests/fixtures/recommendation_telemetry/label-v2-cases.json`
 
 ## 1. Phạm vi và nguyên tắc chuẩn tắc
