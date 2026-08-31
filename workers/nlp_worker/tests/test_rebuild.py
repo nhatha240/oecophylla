@@ -21,14 +21,21 @@ class FakeSource:
 
 
 class FakeProcessor:
-    def __init__(self, fail_once_for: str | None = None) -> None:
+    def __init__(
+        self,
+        fail_once_for: str | None = None,
+        fallback_for: str | None = None,
+    ) -> None:
         self.fail_once_for = fail_once_for
+        self.fallback_for = fallback_for
         self.attempts: dict[str, int] = {}
 
     async def process(self, record: PostRecord) -> ProcessResult:
         self.attempts[record.post_id] = self.attempts.get(record.post_id, 0) + 1
         if record.post_id == self.fail_once_for and self.attempts[record.post_id] == 1:
             raise RuntimeError("transient")
+        if record.post_id == self.fallback_for:
+            return ProcessResult(status="fallback")
         return ProcessResult(status="created")
 
 
@@ -90,3 +97,30 @@ async def test_rebuild_resumes_from_checkpoint() -> None:
     assert result.processed == 2
     assert source.seen_cursors[0] == "2"
     assert set(processor.attempts) == {"2", "3"}
+
+
+@pytest.mark.asyncio
+async def test_exhausted_fallback_does_not_advance_resume_checkpoint() -> None:
+    source = FakeSource(records(1))
+    processor = FakeProcessor(fallback_for="0")
+    checkpoint = MemoryCheckpoint()
+    runner = BatchRebuilder(
+        source,
+        processor,
+        checkpoint,
+        RebuildConfig(
+            batch_size=1,
+            max_retries=2,
+            concurrency=1,
+            retry_delay_seconds=0,
+        ),
+    )
+
+    result = await runner.run()
+
+    assert processor.attempts["0"] == 3
+    assert result.processed == 1
+    assert result.fallback == 1
+    assert result.failed == 1
+    assert checkpoint.saved == []
+    assert source.seen_cursors == [None, "1"]
