@@ -6,7 +6,12 @@ from datetime import datetime, timedelta, timezone
 from statistics import fmean
 from uuid import UUID
 
-from recommendation_label import QUALIFIED_READ_MS, LabelVersion, derive_label
+from recommendation_label import (
+    QUALIFIED_READ_MS,
+    LabelVersion,
+    derive_label,
+    event_label_version,
+)
 
 from .db import DB, RedisCli
 from .metrics import (
@@ -42,6 +47,7 @@ class BehaviorRecord:
     metadata: dict[str, object] | None = None
     event_id: UUID | None = None
     ingested_at: datetime | None = None
+    event_version: LabelVersion | None = None
 
 
 @dataclass(frozen=True)
@@ -185,18 +191,26 @@ def evaluate_records(
             request_impressions, key=lambda impression: impression.position
         )
         ranked_ids = [impression.post_id for impression in ranked_impressions]
-        relevant_ids = {
-            impression.post_id
-            for impression in ranked_impressions
-            if derive_label(
-                split.label_events_by_impression.get(impression.id, ()),
-                label_version=recommendation_label_version,
+        relevant_ids: set[UUID] = set()
+        for impression in ranked_impressions:
+            label_events = split.label_events_by_impression.get(impression.id, ())
+            persisted_versions = {event_label_version(event) for event in label_events}
+            if len(persisted_versions) > 1:
+                raise ValueError("mixed persisted label versions within one impression")
+            persisted_version: LabelVersion = (
+                persisted_versions.pop()
+                if persisted_versions
+                else recommendation_label_version
+            )
+            label = derive_label(
+                label_events,
+                label_version=persisted_version,
                 qualified_read_ms=qualified_read_ms,
                 label_window_closed=True,
-                v1_any_view_positive=True,
-            ).training_target
-            == 1
-        }
+                v1_any_view_positive=persisted_version == "v1",
+            )
+            if label.training_target == 1:
+                relevant_ids.add(impression.post_id)
         top_impressions = ranked_impressions[:k]
         recommendation_lists.append([item.post_id for item in top_impressions])
         precision_values.append(precision_at_k(ranked_ids, relevant_ids, k=k))
@@ -321,6 +335,9 @@ async def evaluate(
             metadata=dict(row["metadata"] or {}),
             event_id=row["id"],
             ingested_at=row["ingested_at"],
+            event_version=(
+                str((row["metadata"] or {}).get("event_version", "v1"))
+            ),
         )
         for row in event_rows
     ]

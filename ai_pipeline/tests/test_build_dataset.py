@@ -147,10 +147,29 @@ def test_dataset_rejects_mixed_persisted_label_versions(config: DatasetConfig):
         build_samples(impressions, mixed_events, config)
 
 
+def test_dataset_runtime_flag_cannot_reinterpret_legacy_events(
+    config: DatasetConfig,
+):
+    impressions, legacy_events = load_fixture()
+
+    build_samples(impressions, legacy_events, config)
+
+    with pytest.raises(
+        ValueError,
+        match="persisted label version v1 does not match requested dataset label version v2",
+    ):
+        build_samples(
+            impressions,
+            legacy_events,
+            replace(config, recommendation_label_version="v2"),
+        )
+
+
 def test_label_v2_excludes_events_ingested_after_extraction_time(
     config: DatasetConfig,
 ):
     impressions, events = load_fixture()
+    events = [replace(event, event_version="v2") for event in events]
     delayed_save_id = UUID("10000000-0000-0000-0000-0000000000e2")
     delayed_events = [
         replace(

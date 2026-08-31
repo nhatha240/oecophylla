@@ -8,7 +8,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import json
 from typing import Any, Iterable, Literal, Mapping
+from uuid import UUID
 
 LabelVersion = Literal["v1", "v2"]
 Semantic = Literal[
@@ -98,8 +100,38 @@ def _timestamp(value: Any) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
-def _canonical_payload(event: Mapping[str, Any]) -> tuple[tuple[str, str], ...]:
-    return tuple(sorted((str(key), repr(value)) for key, value in event.items()))
+def _canonical_json_value(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {
+            str(key): _canonical_json_value(item)
+            for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
+        }
+    if isinstance(value, (list, tuple)):
+        return [_canonical_json_value(item) for item in value]
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, UUID):
+        return str(value)
+    return value
+
+
+def _canonical_payload(event: Mapping[str, Any]) -> str:
+    return json.dumps(
+        _canonical_json_value(event),
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+
+
+def event_label_version(event: Any) -> LabelVersion:
+    version = _value(event, "event_version")
+    if version is None:
+        return "v1"
+    normalized = str(version)
+    if normalized not in ("v1", "v2"):
+        raise ValueError(f"unsupported persisted event version: {normalized}")
+    return normalized  # type: ignore[return-value]
 
 
 def derive_label(
@@ -214,4 +246,5 @@ __all__ = [
     "PRECEDENCE",
     "QUALIFIED_READ_MS",
     "derive_label",
+    "event_label_version",
 ]

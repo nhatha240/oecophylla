@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence, TypeVar
 from uuid import UUID
 
-from recommendation_label import CONTRACT_VERSION, derive_label
+from recommendation_label import CONTRACT_VERSION, derive_label, event_label_version
 
 from .config import DatasetConfig
 from .schemas import (
@@ -231,6 +231,7 @@ def build_samples(
     immature_impressions = 0
     unsupported_feature_schema = 0
     rows: list[DatasetRow] = []
+    observed_label_versions: set[str] = set()
     window = timedelta(hours=config.label_window_hours)
     salt = config.hash_salt or ""
 
@@ -268,9 +269,16 @@ def build_samples(
             for event in linked_events
             if visible_at <= event.occurred_at <= label_window_end
         ]
+        persisted_versions = {event_label_version(event) for event in label_events}
+        if len(persisted_versions) != 1:
+            raise ValueError("mixed persisted label versions within one impression")
+        persisted_label_version = persisted_versions.pop()
+        observed_label_versions.add(persisted_label_version)
+        if len(observed_label_versions) > 1:
+            raise ValueError("mixed persisted label versions in one training run")
         label_result = derive_label(
             label_events,
-            label_version=config.recommendation_label_version,
+            label_version=persisted_label_version,
             qualified_read_ms=config.qualified_read_ms,
             label_window_closed=True,
         )
@@ -296,7 +304,7 @@ def build_samples(
                 split="train",
                 label=(
                     int(label_result.training_target)
-                    if config.recommendation_label_version == "v2"
+                    if persisted_label_version == "v2"
                     else LABEL_VALUES[label_name]
                 ),
                 label_name=label_name,
@@ -318,6 +326,15 @@ def build_samples(
                 audit_post_id=str(impression.post_id),
                 audit_request_identity=_canonical_request_identity(impression),
             )
+        )
+
+    if observed_label_versions and observed_label_versions != {
+        config.recommendation_label_version
+    }:
+        persisted = next(iter(observed_label_versions))
+        raise ValueError(
+            f"persisted label version {persisted} does not match requested "
+            f"dataset label version {config.recommendation_label_version}"
         )
 
     return BuildResult(

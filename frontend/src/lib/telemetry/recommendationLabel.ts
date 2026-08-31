@@ -43,8 +43,21 @@ const reversals: Record<string, string> = {
   unhide: 'hide',
 };
 
+function canonicalJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalJson);
+  if (typeof value === 'object' && value !== null) {
+    return Object.fromEntries(
+      Object.entries(value as EventValue)
+        .filter(([, item]) => item !== undefined)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, item]) => [key, canonicalJson(item)]),
+    );
+  }
+  return value;
+}
+
 function payload(event: EventValue): string {
-  return JSON.stringify(Object.fromEntries(Object.entries(event).sort(([a], [b]) => a.localeCompare(b))));
+  return JSON.stringify(canonicalJson(event));
 }
 
 function duration(event: EventValue): number | null {

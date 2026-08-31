@@ -121,13 +121,7 @@ pub async fn ingest_behavior_events(
                 continue;
             }
         };
-        match validate_behavior_event(
-            index,
-            raw,
-            now,
-            s.qualified_read_ms,
-            &s.recommendation_label_version,
-        ) {
+        match validate_behavior_event(index, raw, now, s.qualified_read_ms) {
             Ok(event) => parsed.push(event),
             Err(error) => errors.push(BehaviorEventError {
                 index,
@@ -246,8 +240,9 @@ pub async fn ingest_behavior_events(
     {
         let kafka = s.kafka.clone();
         let post_key = event.post_id.to_string();
-        let envelope = if s.feature_event_version == crate::label_contract::LABEL_V2 {
-            serde_json::to_value(qualified_read_envelope(QualifiedReadData {
+        let Some(envelope) = feature_event_envelope(
+            &s.feature_event_version,
+            QualifiedReadData {
                 user_id: me.id,
                 post_id: event.post_id,
                 client_event_id: event.client_event_id,
@@ -257,21 +252,10 @@ pub async fn ingest_behavior_events(
                 occurred_at: event.occurred_at,
                 duration_ms: event.dwell_ms.unwrap_or(0),
                 source_event_type: event.event_type.clone(),
-            }))
-        } else if event.event_type == "view" {
-            serde_json::to_value(viewed_envelope(BehaviorTelemetryData {
-                user_id: me.id,
-                post_id: event.post_id,
-                client_event_id: event.client_event_id,
-                behavior_event_id: event.id,
-                impression_id: event.impression_id,
-                session_id: event.session_id,
-                occurred_at: event.occurred_at,
-            }))
-        } else {
+            },
+        ) else {
             continue;
-        }
-        .expect("feature event envelope serializes");
+        };
         tokio::spawn(async move {
             kafka
                 .produce_json(TOPIC_INTERACTIONS, &post_key, &envelope)
@@ -310,14 +294,14 @@ fn validate_behavior_event(
     mut raw: RawBehaviorEvent,
     now: DateTime<Utc>,
     qualified_read_ms: i32,
-    default_label_version: &str,
 ) -> Result<ValidatedBehaviorEvent, EventValidationError> {
     let label_version = raw
         .event_version
         .as_deref()
-        .unwrap_or(default_label_version);
+        .unwrap_or(crate::label_contract::LABEL_V1)
+        .to_string();
     if !matches!(
-        label_version,
+        label_version.as_str(),
         crate::label_contract::LABEL_V1 | crate::label_contract::LABEL_V2
     ) {
         return Err(validation_error(
@@ -459,6 +443,10 @@ fn validate_behavior_event(
         .occurred_at
         .max(now - ChronoDuration::hours(24))
         .min(now + ChronoDuration::minutes(5));
+    raw.metadata
+        .as_object_mut()
+        .expect("metadata was validated as an object")
+        .insert("event_version".into(), label_version.into());
     Ok(ValidatedBehaviorEvent {
         index,
         event: repo::NewBehaviorEvent {
@@ -529,7 +517,7 @@ mod behavior_label_tests {
     fn qualified_threshold_is_inclusive_for_v2_view_and_dwell() {
         for event_type in ["view", "dwell"] {
             let validated =
-                validate_behavior_event(0, raw(event_type, 10_000, "v2"), Utc::now(), 10_000, "v1")
+                validate_behavior_event(0, raw(event_type, 10_000, "v2"), Utc::now(), 10_000)
                     .expect("exact threshold is qualified");
             assert!(validated.qualified_signal);
             assert_eq!(validated.event.dwell_ms, Some(10_000));
@@ -538,17 +526,15 @@ mod behavior_label_tests {
 
     #[test]
     fn v2_dwell_below_threshold_is_stored_without_a_feature_signal() {
-        let validated =
-            validate_behavior_event(0, raw("dwell", 9_999, "v2"), Utc::now(), 10_000, "v1")
-                .expect("below-threshold dwell remains raw telemetry");
+        let validated = validate_behavior_event(0, raw("dwell", 9_999, "v2"), Utc::now(), 10_000)
+            .expect("below-threshold dwell remains raw telemetry");
         assert!(!validated.qualified_signal);
     }
 
     #[test]
     fn legacy_view_remains_dual_readable_while_using_the_shared_threshold() {
-        let validated =
-            validate_behavior_event(0, raw("view", 5_000, "v1"), Utc::now(), 10_000, "v1")
-                .expect("legacy five-second view remains readable");
+        let validated = validate_behavior_event(0, raw("view", 5_000, "v1"), Utc::now(), 10_000)
+            .expect("legacy five-second view remains readable");
         assert!(!validated.qualified_signal);
         assert_eq!(validated.event.dwell_ms, Some(5_000));
     }
@@ -559,13 +545,12 @@ mod behavior_label_tests {
         legacy.event_version = None;
         legacy.dwell_ms = None;
 
-        let validated = validate_behavior_event(0, legacy, Utc::now(), 10_000, "v2")
+        let validated = validate_behavior_event(0, legacy, Utc::now(), 10_000)
             .expect("an unversioned historic view remains a readable v1 event");
 
         assert!(!validated.qualified_signal);
         assert_eq!(validated.event.dwell_ms, Some(5_000));
-        let metadata: serde_json::Value =
-            serde_json::from_str(&validated.event.metadata).unwrap();
+        let metadata: serde_json::Value = serde_json::from_str(&validated.event.metadata).unwrap();
         assert_eq!(metadata["event_version"], "v1");
     }
 
@@ -574,8 +559,9 @@ mod behavior_label_tests {
         let mut invalid = raw("view", 5_000, "v2");
         invalid.dwell_ms = None;
 
-        let error = validate_behavior_event(0, invalid, Utc::now(), 10_000, "v1")
-            .expect_err("explicit v2 must retain strict duration validation");
+        let error = validate_behavior_event(0, invalid, Utc::now(), 10_000)
+            .err()
+            .expect("explicit v2 must retain strict duration validation");
 
         assert_eq!(error.code, "inconsistent_duration");
     }
@@ -621,7 +607,16 @@ async fn toggle_post(
             ("hide", "DELETE") => "unhide",
             _ => unreachable!(),
         };
-        Some(repo::insert_canonical_behavior_event(&mut tx, me.id, post_id, event_type).await?)
+        Some(
+            repo::insert_canonical_behavior_event(
+                &mut tx,
+                me.id,
+                post_id,
+                event_type,
+                &s.recommendation_label_version,
+            )
+            .await?,
+        )
     } else {
         None
     };
@@ -758,8 +753,14 @@ pub async fn report_post(
     )
     .await?;
     repo::insert_interaction(&mut tx, me.id, post_id, "report", weight_for("report")).await?;
-    let behavior_event_id =
-        repo::insert_canonical_behavior_event(&mut tx, me.id, post_id, "report").await?;
+    let behavior_event_id = repo::insert_canonical_behavior_event(
+        &mut tx,
+        me.id,
+        post_id,
+        "report",
+        &s.recommendation_label_version,
+    )
+    .await?;
     tx.commit().await?;
     let env = Envelope::new(
         "reported",
@@ -816,8 +817,14 @@ pub async fn create_comment(
     if body.parent_comment_id.is_none() {
         repo::bump_counter(&mut tx, post_id, "comment_count", 1).await?;
     }
-    let behavior_event_id =
-        repo::insert_canonical_behavior_event(&mut tx, me.id, post_id, "comment").await?;
+    let behavior_event_id = repo::insert_canonical_behavior_event(
+        &mut tx,
+        me.id,
+        post_id,
+        "comment",
+        &s.recommendation_label_version,
+    )
+    .await?;
     tx.commit().await?;
     let preview = content.chars().take(200).collect::<String>();
     let event_type = if body.parent_comment_id.is_some() {

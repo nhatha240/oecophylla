@@ -194,21 +194,23 @@ def test_v2_long_dwell_is_relevant_but_below_threshold_dwell_is_not():
     first = impression(IMP_A, POST_A, CUTOFF + timedelta(hours=1), position=0)
     second = impression(IMP_B, POST_B, CUTOFF + timedelta(hours=1), position=1)
     events = [
-        event(IMP_A, POST_A, "visible", first.served_at),
+        event(IMP_A, POST_A, "visible", first.served_at, event_version="v2"),
         event(
             IMP_A,
             POST_A,
             "dwell",
             first.served_at + timedelta(seconds=10),
             dwell_ms=10_000,
+            event_version="v2",
         ),
-        event(IMP_B, POST_B, "visible", second.served_at),
+        event(IMP_B, POST_B, "visible", second.served_at, event_version="v2"),
         event(
             IMP_B,
             POST_B,
             "dwell",
             second.served_at + timedelta(seconds=9),
             dwell_ms=9_999,
+            event_version="v2",
         ),
     ]
 
@@ -236,6 +238,7 @@ def test_v2_excludes_labels_ingested_after_the_evaluation_cutoff():
             "visible",
             served.served_at,
             ingested_at=served.served_at,
+            event_version="v2",
         ),
         event(
             IMP_A,
@@ -244,6 +247,7 @@ def test_v2_excludes_labels_ingested_after_the_evaluation_cutoff():
             served.served_at + timedelta(seconds=10),
             dwell_ms=10_000,
             ingested_at=AS_OF + timedelta(seconds=1),
+            event_version="v2",
         ),
     ]
 
@@ -262,7 +266,7 @@ def test_v2_excludes_labels_ingested_after_the_evaluation_cutoff():
     assert result.precision_at_k == 0.0
 
 
-def test_v1_rollback_preserves_legacy_any_view_evaluator_semantics():
+def test_runtime_flags_cannot_reinterpret_an_unversioned_legacy_view():
     viewed = impression(IMP_A, POST_A, CUTOFF + timedelta(hours=1), position=0)
     short_view = event(
         IMP_A,
@@ -297,6 +301,32 @@ def test_v1_rollback_preserves_legacy_any_view_evaluator_semantics():
 
     assert legacy.precision_at_k == 1.0
     assert v2.precision_at_k == 1.0
+
+
+def test_explicit_v2_short_view_is_not_a_qualified_read():
+    viewed = impression(IMP_A, POST_A, CUTOFF + timedelta(hours=1), position=0)
+    short_view = event(
+        IMP_A,
+        POST_A,
+        "view",
+        viewed.served_at + timedelta(seconds=5),
+        dwell_ms=5_000,
+        event_version="v2",
+    )
+
+    result = evaluate_records(
+        [viewed],
+        [short_view],
+        cutoff_at=CUTOFF,
+        label_window_hours=24,
+        as_of=AS_OF,
+        k=1,
+        catalog_size=10,
+        recommendation_label_version="v2",
+        qualified_read_ms=10_000,
+    )
+
+    assert result.precision_at_k == 0.0
 
 
 def test_insufficient_data_does_not_publish_misleading_metrics():

@@ -9,10 +9,10 @@ use sqlx::{postgres::PgPoolOptions, PgPool, Row};
 use std::process::Command;
 use uuid::Uuid;
 
-#[path = "../src/label_contract.rs"]
-mod label_contract;
 #[path = "../src/events.rs"]
 mod events;
+#[path = "../src/label_contract.rs"]
+mod label_contract;
 
 const ENVOY: &str = "http://localhost:8080";
 const JWT_SECRET: &str = "CHANGE_ME__min_32_chars__use_openssl_rand_hex_32";
@@ -218,7 +218,11 @@ fn rust_resolver_matches_the_shared_label_v2_fixture() {
             case["label_window_closed"].as_bool().unwrap(),
         )
         .unwrap();
-        assert_eq!(result.semantic, case["expected"]["semantic"], "{}", case["id"]);
+        assert_eq!(
+            result.semantic, case["expected"]["semantic"],
+            "{}",
+            case["id"]
+        );
         assert_eq!(
             result.processing_order,
             case["expected"]["processing_order"]
@@ -262,8 +266,8 @@ fn rust_resolver_recursively_canonicalizes_duplicate_json_objects() {
             "event_id": "30000000-0000-4000-8000-000000000090"
         }),
     ];
-    let result = label_contract::derive_label_v2(&events, &serde_json::Map::new(), 10_000, true)
-        .unwrap();
+    let result =
+        label_contract::derive_label_v2(&events, &serde_json::Map::new(), 10_000, true).unwrap();
     assert_eq!(result.accepted_events, 1);
     assert_eq!(result.deduplicated_events, 1);
 }
@@ -291,7 +295,10 @@ fn v2_feature_rollout_emits_versioned_idempotent_qualified_read_envelope() {
     assert_eq!(envelope["event_type"], "qualified_read");
     assert_eq!(envelope["event_version"], 2);
     assert_eq!(envelope["event_id"], impression_id.to_string());
-    assert_eq!(envelope["data"]["behavior_event_id"], behavior_event_id.to_string());
+    assert_eq!(
+        envelope["data"]["behavior_event_id"],
+        behavior_event_id.to_string()
+    );
     assert_eq!(envelope["data"]["duration_ms"], 10_000);
 }
 

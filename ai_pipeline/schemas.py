@@ -73,6 +73,14 @@ class BehaviorEvent:
     def from_mapping(cls, row: Mapping[str, Any]) -> BehaviorEvent:
         impression_id = row.get("impression_id")
         dwell_ms = row.get("dwell_ms")
+        metadata = (
+            dict(row["metadata"])
+            if isinstance(row.get("metadata"), Mapping)
+            else None
+        )
+        persisted_version = row.get("event_version")
+        if persisted_version is None and metadata is not None:
+            persisted_version = metadata.get("event_version")
         return cls(
             id=UUID(str(row["id"])),
             impression_id=UUID(str(impression_id)) if impression_id else None,
@@ -87,15 +95,11 @@ class BehaviorEvent:
                 else None
             ),
             event_version=(
-                str(row["event_version"])
-                if row.get("event_version") is not None
+                str(persisted_version)
+                if persisted_version is not None
                 else None
             ),
-            metadata=(
-                dict(row["metadata"])
-                if isinstance(row.get("metadata"), Mapping)
-                else None
-            ),
+            metadata=metadata,
         )
 
 

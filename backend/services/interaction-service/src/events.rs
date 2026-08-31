@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use common::events::Envelope;
 use serde::Serialize;
+use serde_json::Value;
 use uuid::Uuid;
 
 pub const TOPIC_INTERACTIONS: &str = "oecophylla.interactions";
@@ -83,6 +84,29 @@ pub fn qualified_read_envelope(data: QualifiedReadData) -> Envelope<QualifiedRea
         producer: "interaction-service",
         data,
     }
+}
+
+pub fn feature_event_envelope(
+    feature_event_version: &str,
+    data: QualifiedReadData,
+) -> Option<Value> {
+    if feature_event_version == crate::label_contract::LABEL_V2 {
+        return serde_json::to_value(qualified_read_envelope(data)).ok();
+    }
+    if feature_event_version != crate::label_contract::LABEL_V1 || data.source_event_type != "view"
+    {
+        return None;
+    }
+    serde_json::to_value(viewed_envelope(BehaviorTelemetryData {
+        user_id: data.user_id,
+        post_id: data.post_id,
+        client_event_id: data.client_event_id,
+        behavior_event_id: data.behavior_event_id,
+        impression_id: data.impression_id,
+        session_id: data.session_id,
+        occurred_at: data.occurred_at,
+    }))
+    .ok()
 }
 
 pub fn weight_for(t: &str) -> f32 {
