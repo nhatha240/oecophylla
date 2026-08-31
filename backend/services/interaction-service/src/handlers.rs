@@ -552,6 +552,33 @@ mod behavior_label_tests {
         assert!(!validated.qualified_signal);
         assert_eq!(validated.event.dwell_ms, Some(5_000));
     }
+
+    #[test]
+    fn missing_version_remains_legacy_under_a_v2_server_default() {
+        let mut legacy = raw("view", 5_000, "v1");
+        legacy.event_version = None;
+        legacy.dwell_ms = None;
+
+        let validated = validate_behavior_event(0, legacy, Utc::now(), 10_000, "v2")
+            .expect("an unversioned historic view remains a readable v1 event");
+
+        assert!(!validated.qualified_signal);
+        assert_eq!(validated.event.dwell_ms, Some(5_000));
+        let metadata: serde_json::Value =
+            serde_json::from_str(&validated.event.metadata).unwrap();
+        assert_eq!(metadata["event_version"], "v1");
+    }
+
+    #[test]
+    fn explicit_v2_view_still_requires_consistent_duration_fields() {
+        let mut invalid = raw("view", 5_000, "v2");
+        invalid.dwell_ms = None;
+
+        let error = validate_behavior_event(0, invalid, Utc::now(), 10_000, "v1")
+            .expect_err("explicit v2 must retain strict duration validation");
+
+        assert_eq!(error.code, "inconsistent_duration");
+    }
 }
 
 // --- like / save / share / hide ---

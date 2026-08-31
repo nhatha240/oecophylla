@@ -123,6 +123,7 @@ def test_label_v2_uses_binary_targets_and_versioned_metadata(
     config: DatasetConfig, tmp_path: Path
 ):
     impressions, events = load_fixture()
+    events = [replace(event, event_version="v2") for event in events]
     v2_config = replace(config, recommendation_label_version="v2")
     result = build_samples(impressions, events, v2_config)
     assert {row.label for row in result.rows} <= {0, 1}
@@ -133,6 +134,17 @@ def test_label_v2_uses_binary_targets_and_versioned_metadata(
     metadata = json.loads(metadata_path.read_text())
     assert metadata["label_definition_version"] == "engagement-label-v2"
     assert metadata["qualified_read_ms"] == 10_000
+
+
+def test_dataset_rejects_mixed_persisted_label_versions(config: DatasetConfig):
+    impressions, events = load_fixture()
+    mixed_events = [
+        replace(event, event_version="v2") if index == 0 else event
+        for index, event in enumerate(events)
+    ]
+
+    with pytest.raises(ValueError, match="mixed persisted label versions"):
+        build_samples(impressions, mixed_events, config)
 
 
 def test_label_v2_excludes_events_ingested_after_extraction_time(

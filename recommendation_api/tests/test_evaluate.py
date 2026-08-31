@@ -63,6 +63,7 @@ def event(
     *,
     dwell_ms: int | None = None,
     ingested_at: datetime | None = None,
+    event_version: str | None = None,
 ) -> BehaviorRecord:
     return BehaviorRecord(
         impression_id=impression_id,
@@ -72,6 +73,7 @@ def event(
         dwell_ms=dwell_ms,
         occurred_at=occurred_at,
         ingested_at=ingested_at,
+        event_version=event_version,
     )
 
 
@@ -140,6 +142,52 @@ def test_shared_label_v2_fixture_is_the_online_evaluator_label_source():
             defaults=fixture["event_defaults"],
         )
         assert result.semantic == case["expected"]["semantic"], case["id"]
+        assert result.accepted_events == case["expected"]["accepted_events"], case["id"]
+        assert result.deduplicated_events == case["expected"]["deduplicated_events"], case["id"]
+    for case in fixture["ordering_cases"]:
+        result = derive_label(
+            case["input_events"],
+            label_version="v2",
+            qualified_read_ms=fixture["qualified_read_ms"],
+            label_window_closed=case["label_window_closed"],
+            defaults=fixture["event_defaults"],
+        )
+        assert list(result.processing_order) == case["expected"]["processing_order"], case["id"]
+        assert result.semantic == case["expected"]["semantic"], case["id"]
+    for case in fixture["event_retry_cases"]:
+        with pytest.raises(ValueError, match="conflicting duplicate event"):
+            derive_label(
+                [case["first"], case["retry"]],
+                label_version="v2",
+                qualified_read_ms=fixture["qualified_read_ms"],
+                label_window_closed=True,
+                defaults=fixture["event_defaults"],
+            )
+
+
+def test_label_resolver_recursively_canonicalizes_duplicate_json_objects():
+    first = {
+        "event_id": "30000000-0000-4000-8000-000000000090",
+        "event_type": "click",
+        "occurred_at": "2026-08-30T03:00:00Z",
+        "metadata": {"target": "post_detail", "context": {"source": "feed", "position": 1}},
+    }
+    retry = {
+        "metadata": {"context": {"position": 1, "source": "feed"}, "target": "post_detail"},
+        "occurred_at": "2026-08-30T03:00:00Z",
+        "event_type": "click",
+        "event_id": "30000000-0000-4000-8000-000000000090",
+    }
+
+    result = derive_label(
+        [first, retry],
+        label_version="v2",
+        qualified_read_ms=10_000,
+        label_window_closed=True,
+    )
+
+    assert result.accepted_events == 1
+    assert result.deduplicated_events == 1
 
 
 def test_v2_long_dwell_is_relevant_but_below_threshold_dwell_is_not():
@@ -248,7 +296,7 @@ def test_v1_rollback_preserves_legacy_any_view_evaluator_semantics():
     )
 
     assert legacy.precision_at_k == 1.0
-    assert v2.precision_at_k == 0.0
+    assert v2.precision_at_k == 1.0
 
 
 def test_insufficient_data_does_not_publish_misleading_metrics():

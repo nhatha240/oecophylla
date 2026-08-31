@@ -40,4 +40,39 @@ describe('engagement-label-v2 shared fixture', () => {
       expect(result.semantic).toBe(orderingCase.expected.semantic);
     });
   }
+
+  for (const retryCase of fixture.event_retry_cases) {
+    it(`rejects ${retryCase.id}`, () => {
+      expect(() => deriveLabelV2([retryCase.first, retryCase.retry], {
+        defaults: fixture.event_defaults,
+        labelWindowClosed: true,
+        qualifiedReadMs: fixture.qualified_read_ms,
+      })).toThrow('conflicting duplicate event');
+    });
+  }
+
+  it('deduplicates recursively equal JSON payloads regardless of object key order', () => {
+    const first = {
+      event_id: '30000000-0000-4000-8000-000000000090',
+      event_type: 'click',
+      occurred_at: '2026-08-30T03:00:00Z',
+      metadata: { target: 'post_detail', context: { source: 'feed', position: 1 } },
+    };
+    const retry = {
+      metadata: { context: { position: 1, source: 'feed' }, target: 'post_detail' },
+      occurred_at: '2026-08-30T03:00:00Z',
+      event_type: 'click',
+      event_id: '30000000-0000-4000-8000-000000000090',
+    };
+
+    const result = deriveLabelV2([first, retry], {
+      defaults: fixture.event_defaults,
+      labelWindowClosed: true,
+      qualifiedReadMs: fixture.qualified_read_ms,
+    });
+
+    expect(result.semantic).toBe('click');
+    expect(result.accepted_events).toBe(1);
+    expect(result.deduplicated_events).toBe(1);
+  });
 });
