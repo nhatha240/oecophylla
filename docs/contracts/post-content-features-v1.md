@@ -2,7 +2,8 @@
 
 Status: storage and producer contract; no producer is enabled by T4A.
 
-Schema version: `post-content-features-v1`  
+Schema version: `post-content-features-v1`
+
 Normalization version: `post-content-normalization-v1`
 
 ## Encoder selection and provenance
