@@ -48,6 +48,9 @@ config:
   feedCandidatePoolSize: "300"
   publicApiBase: /api/v1
   publicRecommendationTelemetryEnabled: "false"
+  recommendationLabelVersion: v1
+  featureEventVersion: v1
+  qualifiedReadMs: "10000"
   origin: https://oecophylla.example.com
   pythonDontWriteBytecode: "1"
   pythonUnbuffered: "1"
@@ -121,12 +124,6 @@ components:
     env:
       - name: BEHAVIOR_VIEW_COUNTER_ENABLED
         value: "false"
-      - name: RECOMMENDATION_LABEL_VERSION
-        value: v1
-      - name: FEATURE_EVENT_VERSION
-        value: v1
-      - name: QUALIFIED_READ_MS
-        value: "10000"
   feed-service:
     image: { repository: ghcr.io/your-org/oecophylla/feed-service, tag: "1.0.0", pullPolicy: IfNotPresent }
     replicas: 2
@@ -153,10 +150,6 @@ components:
         value: heuristic
       - name: MODEL_ARTIFACT_PATH
         value: /models/current
-      - name: RECOMMENDATION_LABEL_VERSION
-        value: v1
-      - name: QUALIFIED_READ_MS
-        value: "10000"
   analytics-service:
     image: { repository: ghcr.io/your-org/oecophylla/analytics-service, tag: "1.0.0", pullPolicy: IfNotPresent }
     replicas: 1
@@ -166,11 +159,6 @@ components:
     image: { repository: ghcr.io/your-org/oecophylla/feature-store-worker, tag: "1.0.0", pullPolicy: IfNotPresent }
     replicas: 1
     port: 9108
-    env:
-      - name: FEATURE_EVENT_VERSION
-        value: v1
-      - name: QUALIFIED_READ_MS
-        value: "10000"
   nlp-worker:
     image: { repository: ghcr.io/your-org/oecophylla/nlp-worker, tag: "1.0.0", pullPolicy: IfNotPresent }
     replicas: 1
@@ -189,11 +177,6 @@ components:
     replicas: 2
     port: 3000
     probePath: /
-    env:
-      - name: PUBLIC_RECOMMENDATION_LABEL_VERSION
-        value: v1
-      - name: PUBLIC_QUALIFIED_READ_MS
-        value: "10000"
 
 componentDefaults:
   resources:
