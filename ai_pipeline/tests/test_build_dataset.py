@@ -135,6 +135,35 @@ def test_label_v2_uses_binary_targets_and_versioned_metadata(
     assert metadata["qualified_read_ms"] == 10_000
 
 
+def test_label_v2_excludes_events_ingested_after_extraction_time(
+    config: DatasetConfig,
+):
+    impressions, events = load_fixture()
+    delayed_save_id = UUID("10000000-0000-0000-0000-0000000000e2")
+    delayed_events = [
+        replace(
+            event,
+            ingested_at=config.extraction_time + timedelta(seconds=1),
+        )
+        if event.id == delayed_save_id
+        else event
+        for event in events
+    ]
+
+    result = build_samples(
+        impressions,
+        delayed_events,
+        replace(config, recommendation_label_version="v2"),
+    )
+    row = next(
+        item
+        for item in result.rows
+        if item.audit_post_id == "00000000-0000-0000-0000-000000001005"
+    )
+
+    assert row.label_name == "negative"
+
+
 def test_immature_and_unsupported_schema_rows_are_excluded(config: DatasetConfig):
     impressions, events = load_fixture()
 

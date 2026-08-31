@@ -62,6 +62,7 @@ def event(
     occurred_at: datetime,
     *,
     dwell_ms: int | None = None,
+    ingested_at: datetime | None = None,
 ) -> BehaviorRecord:
     return BehaviorRecord(
         impression_id=impression_id,
@@ -70,6 +71,7 @@ def event(
         event_type=event_type,
         dwell_ms=dwell_ms,
         occurred_at=occurred_at,
+        ingested_at=ingested_at,
     )
 
 
@@ -175,6 +177,41 @@ def test_v2_long_dwell_is_relevant_but_below_threshold_dwell_is_not():
     )
 
     assert result.precision_at_k == 0.5
+
+
+def test_v2_excludes_labels_ingested_after_the_evaluation_cutoff():
+    served = impression(IMP_A, POST_A, CUTOFF + timedelta(hours=1), position=0)
+    events = [
+        event(
+            IMP_A,
+            POST_A,
+            "visible",
+            served.served_at,
+            ingested_at=served.served_at,
+        ),
+        event(
+            IMP_A,
+            POST_A,
+            "dwell",
+            served.served_at + timedelta(seconds=10),
+            dwell_ms=10_000,
+            ingested_at=AS_OF + timedelta(seconds=1),
+        ),
+    ]
+
+    result = evaluate_records(
+        [served],
+        events,
+        cutoff_at=CUTOFF,
+        label_window_hours=24,
+        as_of=AS_OF,
+        k=1,
+        catalog_size=10,
+        recommendation_label_version="v2",
+        qualified_read_ms=10_000,
+    )
+
+    assert result.precision_at_k == 0.0
 
 
 def test_v1_rollback_preserves_legacy_any_view_evaluator_semantics():
