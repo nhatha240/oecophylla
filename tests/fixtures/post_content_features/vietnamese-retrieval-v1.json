@@ -1,0 +1,70 @@
+{
+  "fixture_version": "vi-semantic-retrieval-v1",
+  "purpose": "Small Vietnamese news retrieval smoke benchmark for encoder selection; not a production quality claim.",
+  "encoder": {
+    "version": "intfloat/multilingual-e5-small@614241f622f53c4eeff9890bdc4f31cfecc418b3",
+    "repository": "intfloat/multilingual-e5-small",
+    "revision": "614241f622f53c4eeff9890bdc4f31cfecc418b3",
+    "artifact": "model.safetensors",
+    "artifact_sha256": "1a55775f53449dac10a2bcbc312469fac40b96d53198c407081a831f81c98477",
+    "license": "MIT",
+    "dimension": 384
+  },
+  "method": {
+    "runtime": {
+      "sentence-transformers": "5.1.0",
+      "transformers": "4.57.6",
+      "tokenizers": "0.22.2",
+      "torch": "2.13.0",
+      "huggingface-hub": "0.36.2"
+    },
+    "normalization_version": "post-content-normalization-v1",
+    "query_prefix": "query: ",
+    "document_prefix": "passage: ",
+    "pooling": "attention-mask mean pooling",
+    "embedding_normalization": "L2",
+    "similarity": "cosine",
+    "ranking_tie_break": "document id ascending",
+    "metrics": ["recall@1", "mrr@10"]
+  },
+  "documents": [
+    {"id": "d01", "text": "Ngân hàng Nhà nước điều chỉnh lãi suất điều hành nhằm hỗ trợ tăng trưởng kinh tế và ổn định thị trường tiền tệ."},
+    {"id": "d02", "text": "Đội tuyển bóng đá Việt Nam thắng trận giao hữu sau bàn quyết định ở phút cuối."},
+    {"id": "d03", "text": "Bão mạnh tiến vào miền Trung, nhiều tỉnh khẩn trương sơ tán người dân khỏi vùng ven biển."},
+    {"id": "d04", "text": "Bệnh viện ứng dụng trí tuệ nhân tạo để hỗ trợ bác sĩ phát hiện sớm ung thư phổi."},
+    {"id": "d05", "text": "Bộ Giáo dục công bố lịch thi tốt nghiệp trung học phổ thông và hướng dẫn đăng ký nguyện vọng."},
+    {"id": "d06", "text": "Doanh nghiệp trong nước ra mắt mẫu ô tô điện mới với pin có phạm vi hoạt động dài hơn."},
+    {"id": "d07", "text": "Số ca sốt xuất huyết tăng nhanh, ngành y tế khuyến cáo loại bỏ nơi muỗi sinh sản."},
+    {"id": "d08", "text": "Đà Nẵng mở thêm đường bay quốc tế để thu hút khách du lịch trong mùa hè."},
+    {"id": "d09", "text": "Thị trường chứng khoán tăng điểm nhờ nhóm cổ phiếu ngân hàng và công nghệ."},
+    {"id": "d10", "text": "Nông dân Đồng bằng sông Cửu Long chuyển sang giống lúa chịu mặn để thích ứng biến đổi khí hậu."}
+  ],
+  "queries": [
+    {"id": "q01", "text": "chính sách tiền tệ giúp nền kinh tế", "relevant_document_ids": ["d01"]},
+    {"id": "q02", "text": "kết quả thi đấu của tuyển quốc gia", "relevant_document_ids": ["d02"]},
+    {"id": "q03", "text": "người dân sơ tán trước thiên tai ven biển", "relevant_document_ids": ["d03"]},
+    {"id": "q04", "text": "công nghệ hỗ trợ chẩn đoán bệnh", "relevant_document_ids": ["d04"]},
+    {"id": "q05", "text": "thời gian kỳ thi cuối cấp", "relevant_document_ids": ["d05"]},
+    {"id": "q06", "text": "phòng chống bệnh do muỗi truyền", "relevant_document_ids": ["d07"]},
+    {"id": "q07", "text": "phương tiện chạy bằng pin mới", "relevant_document_ids": ["d06"]},
+    {"id": "q08", "text": "giải pháp canh tác khi nước biển xâm nhập", "relevant_document_ids": ["d10"]}
+  ],
+  "results": {
+    "query_count": 8,
+    "document_count": 10,
+    "recall_at_1": 0.875,
+    "mrr_at_10": 0.9375,
+    "embedding_dimension_observed": 384,
+    "all_embeddings_finite": true,
+    "per_query": [
+      {"query_id": "q01", "relevant_rank": 1, "top_document_id": "d01", "top_score": 0.879063},
+      {"query_id": "q02", "relevant_rank": 1, "top_document_id": "d02", "top_score": 0.868688},
+      {"query_id": "q03", "relevant_rank": 1, "top_document_id": "d03", "top_score": 0.884491},
+      {"query_id": "q04", "relevant_rank": 1, "top_document_id": "d04", "top_score": 0.891974},
+      {"query_id": "q05", "relevant_rank": 1, "top_document_id": "d05", "top_score": 0.849264},
+      {"query_id": "q06", "relevant_rank": 1, "top_document_id": "d07", "top_score": 0.870649},
+      {"query_id": "q07", "relevant_rank": 1, "top_document_id": "d06", "top_score": 0.903368},
+      {"query_id": "q08", "relevant_rank": 2, "top_document_id": "d03", "top_score": 0.827468, "relevant_score": 0.811628}
+    ]
+  }
+}
