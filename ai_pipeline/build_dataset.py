@@ -218,7 +218,13 @@ def build_samples(
     _validate_request_envelopes(window_impressions)
     events_by_impression: dict[UUID, list[BehaviorEvent]] = defaultdict(list)
     for event in unique_events.values():
-        if event.impression_id is not None:
+        if (
+            event.impression_id is not None
+            and (
+                event.ingested_at is None
+                or event.ingested_at <= config.extraction_time
+            )
+        ):
             events_by_impression[event.impression_id].append(event)
 
     served_without_visible = 0
@@ -447,6 +453,7 @@ async def fetch_telemetry(
                 FROM behavior_events
                 WHERE impression_id = ANY($1::uuid[])
                   AND occurred_at <= $2
+                  AND ingested_at <= $2
                 ORDER BY occurred_at, id
                 """,
                 impression_ids,

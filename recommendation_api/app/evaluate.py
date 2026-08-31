@@ -79,6 +79,10 @@ def build_temporal_split(
         event
         for event in events
         if _aware_utc(event.occurred_at, "event.occurred_at") < cutoff
+        and (
+            event.ingested_at is None
+            or _aware_utc(event.ingested_at, "event.ingested_at") < cutoff
+        )
     )
     validation_impressions = tuple(
         sorted(
@@ -104,12 +108,18 @@ def build_temporal_split(
             continue
         impression = by_id[event.impression_id]
         occurred_at = _aware_utc(event.occurred_at, "event.occurred_at")
+        ingested_at = (
+            _aware_utc(event.ingested_at, "event.ingested_at")
+            if event.ingested_at is not None
+            else occurred_at
+        )
         served_at = _aware_utc(impression.served_at, "impression.served_at")
         if (
             event.user_id == impression.user_id
             and event.post_id == impression.post_id
             and served_at <= occurred_at <= served_at + window
             and occurred_at <= evaluation_time
+            and ingested_at <= evaluation_time
         ):
             labels[impression.id].append(event)
 
@@ -276,6 +286,7 @@ async def evaluate(
         FROM behavior_events
         WHERE user_id = $1
           AND occurred_at <= $2
+          AND ingested_at <= $2
         ORDER BY occurred_at
         """,
         user_id,
