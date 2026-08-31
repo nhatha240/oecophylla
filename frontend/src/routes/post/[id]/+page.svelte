@@ -42,7 +42,10 @@
 
   onMount(() => {
     if (env.PUBLIC_RECOMMENDATION_TELEMETRY_ENABLED === 'true') {
-      trackRecommendationDetailView(data.post.id);
+      trackRecommendationDetailView(
+        data.post.id,
+        env.PUBLIC_RECOMMENDATION_LABEL_VERSION === 'v2' ? 'v2' : 'v1',
+      );
     }
     es = new EventSource(`/api/v1/posts/${data.post.id}/comments/stream`, { withCredentials: true } as EventSourceInit);
 

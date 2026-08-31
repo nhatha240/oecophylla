@@ -146,6 +146,9 @@ class Worker:
             if event_type not in WEIGHTS:
                 _record_outcome("unknown", event_type or "missing")
                 continue
+            if not _valid_feature_event(env, self.cfg.qualified_read_ms):
+                _record_outcome("invalid", event_type)
+                continue
             user = _extract_user(env)
             if not user or _event_id(env) is None:
                 _record_outcome("unknown", event_type)
@@ -321,6 +324,17 @@ def _event_id(env: dict[str, Any]) -> UUID | None:
         return UUID(str(env.get("event_id")))
     except (TypeError, ValueError, AttributeError):
         return None
+
+
+def _valid_feature_event(env: dict[str, Any], qualified_read_ms: int) -> bool:
+    event_type = _event_type(env)
+    version = env.get("event_version")
+    if event_type == "viewed":
+        return version in (None, 1, "1", "v1")
+    if event_type == "qualified_read":
+        duration = (env.get("data") or {}).get("duration_ms")
+        return version in (2, "2", "v2") and isinstance(duration, int) and duration >= qualified_read_ms
+    return True
 
 
 def _occurred_at(env: dict[str, Any]) -> datetime:

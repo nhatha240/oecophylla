@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence, TypeVar
 from uuid import UUID
 
+from recommendation_label import CONTRACT_VERSION, derive_label, event_label_version
+
 from .config import DatasetConfig
 from .schemas import (
     BehaviorEvent,
@@ -28,7 +30,7 @@ from .schemas import (
 
 DATASET_SCHEMA_VERSION = "recommendation-dataset-v1"
 FEATURE_SCHEMA_VERSION = "rank-features-v1"
-LABEL_DEFINITION_VERSION = "engagement-label-v1"
+LABEL_DEFINITION_VERSION_V1 = "engagement-label-v1"
 REQUIRED_FEATURES = frozenset(
     {
         "schema_version",
@@ -90,24 +92,6 @@ def _validate_snapshot(snapshot: Mapping[str, Any]) -> bool:
         and isinstance(snapshot.get("candidate_source"), str)
         and bool(str(snapshot.get("candidate_source", "")).strip())
     )
-
-
-def _label_for(events: Sequence[BehaviorEvent], positive_dwell_ms: int) -> LabelName:
-    event_types = {event.event_type for event in events}
-    if event_types & {"hide", "report"}:
-        return "strong_negative"
-    if event_types & {"save", "share"}:
-        return "strong_positive"
-    if event_types & {"click", "like", "comment"}:
-        return "positive"
-    if any(
-        event.event_type in {"view", "dwell"}
-        and event.dwell_ms is not None
-        and event.dwell_ms >= positive_dwell_ms
-        for event in events
-    ):
-        return "positive"
-    return "negative"
 
 
 def _split_rows(
@@ -234,13 +218,20 @@ def build_samples(
     _validate_request_envelopes(window_impressions)
     events_by_impression: dict[UUID, list[BehaviorEvent]] = defaultdict(list)
     for event in unique_events.values():
-        if event.impression_id is not None:
+        if (
+            event.impression_id is not None
+            and (
+                event.ingested_at is None
+                or event.ingested_at <= config.extraction_time
+            )
+        ):
             events_by_impression[event.impression_id].append(event)
 
     served_without_visible = 0
     immature_impressions = 0
     unsupported_feature_schema = 0
     rows: list[DatasetRow] = []
+    observed_label_versions: set[str] = set()
     window = timedelta(hours=config.label_window_hours)
     salt = config.hash_salt or ""
 
@@ -278,7 +269,20 @@ def build_samples(
             for event in linked_events
             if visible_at <= event.occurred_at <= label_window_end
         ]
-        label_name = _label_for(label_events, config.positive_dwell_ms)
+        persisted_versions = {event_label_version(event) for event in label_events}
+        if len(persisted_versions) != 1:
+            raise ValueError("mixed persisted label versions within one impression")
+        persisted_label_version = persisted_versions.pop()
+        observed_label_versions.add(persisted_label_version)
+        if len(observed_label_versions) > 1:
+            raise ValueError("mixed persisted label versions in one training run")
+        label_result = derive_label(
+            label_events,
+            label_version=persisted_label_version,
+            qualified_read_ms=config.qualified_read_ms,
+            label_window_closed=True,
+        )
+        label_name: LabelName = label_result.semantic
         snapshot = impression.feature_snapshot
         if config.identity_mode == "hash":
             sample_id = _hash_identity(impression.id, salt)
@@ -298,7 +302,11 @@ def build_samples(
                 post_group=post_group,
                 request_group=request_group,
                 split="train",
-                label=LABEL_VALUES[label_name],
+                label=(
+                    int(label_result.training_target)
+                    if persisted_label_version == "v2"
+                    else LABEL_VALUES[label_name]
+                ),
                 label_name=label_name,
                 served_at=impression.served_at,
                 visible_at=visible_at,
@@ -318,6 +326,15 @@ def build_samples(
                 audit_post_id=str(impression.post_id),
                 audit_request_identity=_canonical_request_identity(impression),
             )
+        )
+
+    if observed_label_versions and observed_label_versions != {
+        config.recommendation_label_version
+    }:
+        persisted = next(iter(observed_label_versions))
+        raise ValueError(
+            f"persisted label version {persisted} does not match requested "
+            f"dataset label version {config.recommendation_label_version}"
         )
 
     return BuildResult(
@@ -364,7 +381,11 @@ def write_artifact(
 
     metadata = {
         "dataset_schema_version": DATASET_SCHEMA_VERSION,
-        "label_definition_version": LABEL_DEFINITION_VERSION,
+        "label_definition_version": (
+            CONTRACT_VERSION
+            if config.recommendation_label_version == "v2"
+            else LABEL_DEFINITION_VERSION_V1
+        ),
         "feature_schema_versions": sorted(
             {row.feature_schema_version for row in result.rows}
         ),
@@ -374,7 +395,12 @@ def write_artifact(
             "extraction_time": config.extraction_time.isoformat(),
         },
         "label_window_hours": config.label_window_hours,
-        "positive_dwell_ms": config.positive_dwell_ms,
+        "qualified_read_ms": config.qualified_read_ms,
+        **(
+            {"positive_dwell_ms": config.qualified_read_ms}
+            if config.recommendation_label_version == "v1"
+            else {}
+        ),
         "identity_mode": config.identity_mode,
         "row_count": len(result.rows),
         "split_counts": dict(sorted(Counter(row.split for row in result.rows).items())),
@@ -440,10 +466,11 @@ async def fetch_telemetry(
             await connection.fetch(
                 """
                 SELECT id, impression_id, user_id, post_id, event_type,
-                       dwell_ms, occurred_at
+                       dwell_ms, metadata, occurred_at, ingested_at
                 FROM behavior_events
                 WHERE impression_id = ANY($1::uuid[])
                   AND occurred_at <= $2
+                  AND ingested_at <= $2
                 ORDER BY occurred_at, id
                 """,
                 impression_ids,
@@ -481,9 +508,16 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--extraction-time", type=parse_datetime)
     parser.add_argument("--label-window-hours", type=int, default=24)
     parser.add_argument(
+        "--qualified-read-ms",
         "--positive-dwell-ms",
+        dest="qualified_read_ms",
         type=int,
-        default=int(os.getenv("POSITIVE_DWELL_MS", "10000")),
+        default=int(os.getenv("QUALIFIED_READ_MS", "10000")),
+    )
+    parser.add_argument(
+        "--recommendation-label-version",
+        choices=("v1", "v2"),
+        default=os.getenv("RECOMMENDATION_LABEL_VERSION", "v1"),
     )
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--database-url", default=os.getenv("DATABASE_URL"))
@@ -502,7 +536,8 @@ async def _run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int
             end=args.end,
             extraction_time=extraction_time,
             label_window_hours=args.label_window_hours,
-            positive_dwell_ms=args.positive_dwell_ms,
+            qualified_read_ms=args.qualified_read_ms,
+            recommendation_label_version=args.recommendation_label_version,
             identity_mode=args.identity_mode,
             hash_salt=args.hash_salt,
         )

@@ -4,24 +4,27 @@ import {
   type RecommendationContext,
   type TelemetryRecorder,
 } from '$lib/telemetry/recommendationTelemetry';
+import { QUALIFIED_READ_MS } from '$lib/telemetry/recommendationLabel';
 
 const VISIBLE_THRESHOLD_MS = 800;
-const QUALIFIED_VIEW_MS = 5_000;
 
 interface ViewTrackerOptions {
   context: RecommendationContext;
   enabled: boolean;
   client?: TelemetryRecorder | null;
   monotonicNow?: () => number;
+  qualifiedReadMs?: number;
+  labelVersion?: 'v1' | 'v2';
 }
 
 export function viewTracker(node: HTMLElement, options: ViewTrackerOptions) {
-  const client = options.client ?? getRecommendationTelemetryClient();
+  const client = options.client ?? getRecommendationTelemetryClient(options.labelVersion);
   if (!options.enabled || !client || typeof IntersectionObserver === 'undefined') {
     return { destroy() {} };
   }
 
   const monotonicNow = options.monotonicNow ?? (() => performance.now());
+  const qualifiedReadMs = options.qualifiedReadMs ?? QUALIFIED_READ_MS;
   let visibleTimer: ReturnType<typeof setTimeout> | null = null;
   let viewTimer: ReturnType<typeof setTimeout> | null = null;
   let visibleStartedAt: number | null = null;
@@ -62,8 +65,8 @@ export function viewTracker(node: HTMLElement, options: ViewTrackerOptions) {
           viewTimer = setTimeout(() => {
             viewSent = true;
             viewTimer = null;
-            client.view(options.context, 'feed', QUALIFIED_VIEW_MS);
-          }, QUALIFIED_VIEW_MS);
+            client.view(options.context, 'feed', qualifiedReadMs);
+          }, qualifiedReadMs);
         }
       } else {
         finishVisibleSegment('viewport_exit');

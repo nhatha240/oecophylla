@@ -16,6 +16,7 @@ RUN groupadd --gid 10001 app \
     && useradd --uid 10001 --gid app --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin app
 COPY --from=builder --chown=10001:10001 /opt/venv /opt/venv
 COPY --chown=10001:10001 recommendation_api/app ./app
+COPY --chown=10001:10001 recommendation_label ./recommendation_label
 USER 10001:10001
 EXPOSE 8090
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8090"]

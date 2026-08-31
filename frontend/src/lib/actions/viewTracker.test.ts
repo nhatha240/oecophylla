@@ -49,7 +49,7 @@ describe('viewTracker', () => {
     action.destroy();
   });
 
-  it('emits visible at 800 ms but not a view before five seconds', () => {
+  it('emits visible at 800 ms but not a view before the qualified-read threshold', () => {
     const client = recorder();
     const action = viewTracker({} as HTMLElement, { context, client, enabled: true });
 
@@ -57,7 +57,7 @@ describe('viewTracker', () => {
     vi.advanceTimersByTime(800);
     expect(client.visible).toHaveBeenCalledWith(context, 0.75);
 
-    vi.advanceTimersByTime(4_199);
+    vi.advanceTimersByTime(9_199);
     expect(client.view).not.toHaveBeenCalled();
     action.destroy();
   });
@@ -67,14 +67,31 @@ describe('viewTracker', () => {
     const action = viewTracker({} as HTMLElement, { context, client, enabled: true });
 
     emitIntersection(0.8);
-    vi.advanceTimersByTime(5_000);
+    vi.advanceTimersByTime(10_000);
     emitIntersection(0);
     emitIntersection(0.9);
-    vi.advanceTimersByTime(5_000);
+    vi.advanceTimersByTime(10_000);
 
     expect(client.visible).toHaveBeenCalledTimes(1);
     expect(client.view).toHaveBeenCalledTimes(1);
-    expect(client.view).toHaveBeenCalledWith(context, 'feed', 5_000);
+    expect(client.view).toHaveBeenCalledWith(context, 'feed', 10_000);
+    action.destroy();
+  });
+
+  it('uses the configured QUALIFIED_READ_MS value inclusively', () => {
+    const client = recorder();
+    const action = viewTracker({} as HTMLElement, {
+      context,
+      client,
+      enabled: true,
+      qualifiedReadMs: 12_345,
+    });
+
+    emitIntersection(0.8);
+    vi.advanceTimersByTime(12_344);
+    expect(client.view).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(client.view).toHaveBeenCalledWith(context, 'feed', 12_345);
     action.destroy();
   });
 

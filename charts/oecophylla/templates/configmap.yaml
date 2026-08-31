@@ -21,6 +21,11 @@ data:
   ENVOY_URL: {{ printf "http://%s-envoy:8080" (include "oecophylla.fullname" .) | quote }}
   PUBLIC_API_BASE: {{ .Values.config.publicApiBase | quote }}
   PUBLIC_RECOMMENDATION_TELEMETRY_ENABLED: {{ .Values.config.publicRecommendationTelemetryEnabled | quote }}
+  RECOMMENDATION_LABEL_VERSION: {{ .Values.config.recommendationLabelVersion | quote }}
+  PUBLIC_RECOMMENDATION_LABEL_VERSION: {{ .Values.config.recommendationLabelVersion | quote }}
+  FEATURE_EVENT_VERSION: {{ .Values.config.featureEventVersion | quote }}
+  QUALIFIED_READ_MS: {{ .Values.config.qualifiedReadMs | quote }}
+  PUBLIC_QUALIFIED_READ_MS: {{ .Values.config.qualifiedReadMs | quote }}
   ORIGIN: {{ .Values.config.origin | quote }}
   PYTHONDONTWRITEBYTECODE: {{ .Values.config.pythonDontWriteBytecode | quote }}
   PYTHONUNBUFFERED: {{ .Values.config.pythonUnbuffered | quote }}

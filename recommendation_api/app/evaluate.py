@@ -6,6 +6,13 @@ from datetime import datetime, timedelta, timezone
 from statistics import fmean
 from uuid import UUID
 
+from recommendation_label import (
+    QUALIFIED_READ_MS,
+    LabelVersion,
+    derive_label,
+    event_label_version,
+)
+
 from .db import DB, RedisCli
 from .metrics import (
     catalog_coverage,
@@ -16,9 +23,6 @@ from .metrics import (
     topic_diversity,
 )
 from .schemas import EvaluateResponse
-
-POSITIVE_LABEL_EVENTS = frozenset({"view", "click", "like", "save", "share", "comment"})
-
 
 @dataclass(frozen=True)
 class ImpressionRecord:
@@ -39,6 +43,11 @@ class BehaviorRecord:
     post_id: UUID
     event_type: str
     occurred_at: datetime
+    dwell_ms: int | None = None
+    metadata: dict[str, object] | None = None
+    event_id: UUID | None = None
+    ingested_at: datetime | None = None
+    event_version: LabelVersion | None = None
 
 
 @dataclass(frozen=True)
@@ -76,6 +85,10 @@ def build_temporal_split(
         event
         for event in events
         if _aware_utc(event.occurred_at, "event.occurred_at") < cutoff
+        and (
+            event.ingested_at is None
+            or _aware_utc(event.ingested_at, "event.ingested_at") < cutoff
+        )
     )
     validation_impressions = tuple(
         sorted(
@@ -101,12 +114,18 @@ def build_temporal_split(
             continue
         impression = by_id[event.impression_id]
         occurred_at = _aware_utc(event.occurred_at, "event.occurred_at")
+        ingested_at = (
+            _aware_utc(event.ingested_at, "event.ingested_at")
+            if event.ingested_at is not None
+            else occurred_at
+        )
         served_at = _aware_utc(impression.served_at, "impression.served_at")
         if (
             event.user_id == impression.user_id
             and event.post_id == impression.post_id
             and served_at <= occurred_at <= served_at + window
             and occurred_at <= evaluation_time
+            and ingested_at <= evaluation_time
         ):
             labels[impression.id].append(event)
 
@@ -133,6 +152,8 @@ def evaluate_records(
     as_of: datetime,
     k: int,
     catalog_size: int,
+    recommendation_label_version: LabelVersion = "v1",
+    qualified_read_ms: int = QUALIFIED_READ_MS,
 ) -> EvaluateResponse:
     """Evaluate historical serving decisions against finalized observed labels."""
     if k <= 0:
@@ -170,14 +191,26 @@ def evaluate_records(
             request_impressions, key=lambda impression: impression.position
         )
         ranked_ids = [impression.post_id for impression in ranked_impressions]
-        relevant_ids = {
-            impression.post_id
-            for impression in ranked_impressions
-            if any(
-                event.event_type in POSITIVE_LABEL_EVENTS
-                for event in split.label_events_by_impression.get(impression.id, ())
+        relevant_ids: set[UUID] = set()
+        for impression in ranked_impressions:
+            label_events = split.label_events_by_impression.get(impression.id, ())
+            persisted_versions = {event_label_version(event) for event in label_events}
+            if len(persisted_versions) > 1:
+                raise ValueError("mixed persisted label versions within one impression")
+            persisted_version: LabelVersion = (
+                persisted_versions.pop()
+                if persisted_versions
+                else recommendation_label_version
             )
-        }
+            label = derive_label(
+                label_events,
+                label_version=persisted_version,
+                qualified_read_ms=qualified_read_ms,
+                label_window_closed=True,
+                v1_any_view_positive=persisted_version == "v1",
+            )
+            if label.training_target == 1:
+                relevant_ids.add(impression.post_id)
         top_impressions = ranked_impressions[:k]
         recommendation_lists.append([item.post_id for item in top_impressions])
         precision_values.append(precision_at_k(ranked_ids, relevant_ids, k=k))
@@ -231,6 +264,8 @@ async def evaluate(
     cutoff_at: datetime | None = None,
     label_window_hours: int = 24,
     as_of: datetime | None = None,
+    recommendation_label_version: LabelVersion = "v1",
+    qualified_read_ms: int = QUALIFIED_READ_MS,
 ) -> EvaluateResponse:
     """Evaluate persisted serving snapshots; never rebuild ranks with future state."""
     evaluation_time = as_of or datetime.now(timezone.utc)
@@ -260,10 +295,12 @@ async def evaluate(
     )
     event_rows = await db.pool.fetch(
         """
-        SELECT impression_id, user_id, post_id, event_type, occurred_at
+        SELECT id, impression_id, user_id, post_id, event_type, dwell_ms,
+               metadata, occurred_at, ingested_at
         FROM behavior_events
         WHERE user_id = $1
           AND occurred_at <= $2
+          AND ingested_at <= $2
         ORDER BY occurred_at
         """,
         user_id,
@@ -294,6 +331,13 @@ async def evaluate(
             post_id=row["post_id"],
             event_type=str(row["event_type"]),
             occurred_at=row["occurred_at"],
+            dwell_ms=(int(row["dwell_ms"]) if row["dwell_ms"] is not None else None),
+            metadata=dict(row["metadata"] or {}),
+            event_id=row["id"],
+            ingested_at=row["ingested_at"],
+            event_version=(
+                str((row["metadata"] or {}).get("event_version", "v1"))
+            ),
         )
         for row in event_rows
     ]
@@ -305,4 +349,6 @@ async def evaluate(
         as_of=evaluation_time,
         k=k,
         catalog_size=catalog_size,
+        recommendation_label_version=recommendation_label_version,
+        qualified_read_ms=qualified_read_ms,
     )
