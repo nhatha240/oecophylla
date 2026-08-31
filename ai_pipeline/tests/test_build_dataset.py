@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 
@@ -20,6 +22,49 @@ def load_fixture() -> tuple[list[Impression], list[BehaviorEvent]]:
         [Impression.from_mapping(row) for row in payload["impressions"]],
         [BehaviorEvent.from_mapping(row) for row in payload["events"]],
     )
+
+
+def grouped_telemetry(
+    candidate_counts: tuple[int, ...] = (1, 1, 3, 1),
+) -> tuple[list[Impression], list[BehaviorEvent]]:
+    impressions, events = load_fixture()
+    snapshot = impressions[0].feature_snapshot
+    user_id = UUID("00000000-0000-0000-0000-000000000001")
+    grouped_impressions: list[Impression] = []
+    grouped_events: list[BehaviorEvent] = []
+    sequence = 1
+    for group_index, candidate_count in enumerate(candidate_counts, start=1):
+        request_id = UUID(int=10_000 + group_index)
+        served_at = datetime(2026, 8, group_index, tzinfo=timezone.utc)
+        for position in range(candidate_count):
+            impression_id = UUID(int=20_000 + sequence)
+            post_id = UUID(int=30_000 + sequence)
+            grouped_impressions.append(
+                Impression(
+                    id=impression_id,
+                    request_id=request_id,
+                    user_id=user_id,
+                    post_id=post_id,
+                    position=position,
+                    feed_source="personalized",
+                    model_version="heuristic-v1",
+                    feature_snapshot=snapshot,
+                    served_at=served_at,
+                )
+            )
+            grouped_events.append(
+                BehaviorEvent(
+                    id=UUID(int=40_000 + sequence),
+                    impression_id=impression_id,
+                    user_id=user_id,
+                    post_id=post_id,
+                    event_type="visible",
+                    dwell_ms=None,
+                    occurred_at=served_at + timedelta(seconds=1),
+                )
+            )
+            sequence += 1
+    return grouped_impressions, grouped_events
 
 
 @pytest.fixture
@@ -160,6 +205,72 @@ def test_time_split_is_disjoint_and_latest_rows_are_test_holdout(
     assert max(train_times) <= min(validation_times) <= min(test_times)
 
 
+def test_grouped_time_split_keeps_candidates_atomic_at_percentage_boundaries(
+    config: DatasetConfig,
+):
+    impressions, events = grouped_telemetry()
+
+    rows = build_samples(impressions, events, config).rows
+
+    splits_by_request: dict[str, set[str]] = {}
+    for row in rows:
+        assert row.request_group is not None
+        splits_by_request.setdefault(row.request_group, set()).add(row.split)
+    assert all(len(splits) == 1 for splits in splits_by_request.values())
+    assert sorted(
+        sum(row.request_group == request for row in rows)
+        for request in splits_by_request
+    ) == [1, 1, 1, 3]
+
+
+def test_request_group_hashes_the_canonical_user_and_request_identity(
+    config: DatasetConfig,
+):
+    impressions, events = grouped_telemetry((2,))
+    impression = impressions[0]
+
+    rows = build_samples(impressions, events, config).rows
+
+    expected = hashlib.sha256(
+        (
+            f"{config.hash_salt}:{impression.user_id}:"
+            f"{impression.request_id}"
+        ).encode()
+    ).hexdigest()
+    assert {row.request_group for row in rows} == {expected}
+
+
+def test_drop_identity_mode_still_splits_requests_atomically(
+    config: DatasetConfig,
+):
+    impressions, events = grouped_telemetry()
+
+    rows = build_samples(
+        impressions,
+        events,
+        replace(config, identity_mode="drop", hash_salt=None),
+    ).rows
+
+    assert all(row.request_group is None for row in rows)
+    split_by_request: dict[UUID, set[str]] = {}
+    request_by_post = {
+        str(impression.post_id): impression.request_id for impression in impressions
+    }
+    for row in rows:
+        split_by_request.setdefault(request_by_post[row.audit_post_id], set()).add(
+            row.split
+        )
+    assert all(len(splits) == 1 for splits in split_by_request.values())
+
+
+def test_conflicting_request_envelope_is_rejected(config: DatasetConfig):
+    impressions, events = grouped_telemetry((2,))
+    impressions[1] = replace(impressions[1], feed_source="fallback")
+
+    with pytest.raises(ValueError, match="conflicting canonical request identity"):
+        build_samples(impressions, events, config)
+
+
 def test_parquet_and_metadata_are_auditable_and_contain_no_raw_ids(
     config: DatasetConfig, tmp_path: Path
 ):
@@ -190,3 +301,34 @@ def test_parquet_and_metadata_are_auditable_and_contain_no_raw_ids(
     }
     assert metadata["feature_schema_versions"] == ["rank-features-v1"]
     assert metadata["code_version"] == "test-sha"
+
+
+def test_metadata_records_group_boundary_policy_and_candidate_distributions(
+    config: DatasetConfig, tmp_path: Path
+):
+    impressions, events = grouped_telemetry()
+    result = build_samples(impressions, events, config)
+
+    metadata_path = write_artifact(
+        result, config, tmp_path / "grouped.parquet", code_version="test-sha"
+    )
+    metadata = json.loads(metadata_path.read_text())
+
+    assert metadata["split_policy"] == {
+        "atomic_unit": "canonical_request",
+        "boundary": "chronological_request_count_with_timestamp_ties_kept_together",
+        "request_identity": "H(salt:user_id:request_id)",
+    }
+    split_stats = metadata["split_request_stats"]
+    assert sum(stats["request_count"] for stats in split_stats.values()) == 4
+    assert sum(
+        int(candidate_count) * request_count
+        for stats in split_stats.values()
+        for candidate_count, request_count in stats[
+            "candidate_count_distribution"
+        ].items()
+    ) == 6
+    assert any(
+        stats["candidate_count_distribution"].get("3") == 1
+        for stats in split_stats.values()
+    )
