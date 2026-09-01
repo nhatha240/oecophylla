@@ -95,10 +95,10 @@ async def _process_batch(
     repository=None,
 ) -> None:
     for msg in messages:
-        try:
-            await _process_one(conn, msg.value, embedding_service, repository)
-        except Exception:
-            logger.exception("content feature processing failed")
+        # Let unexpected failures reach the reconnect loop. With manual Kafka
+        # commits this replays the whole micro-batch; feature writes are
+        # idempotent, so no event is acknowledged before processing succeeds.
+        await _process_one(conn, msg.value, embedding_service, repository)
 
 
 async def _process_one(

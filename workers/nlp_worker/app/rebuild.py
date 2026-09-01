@@ -127,8 +127,7 @@ class BatchRebuilder:
                 break
             if next_cursor is None:
                 break
-            if batch_is_recoverable:
-                self.checkpoint.save(next_cursor)
+            self.checkpoint.save(next_cursor)
             cursor = next_cursor
         return RebuildResult(**counts)
 
