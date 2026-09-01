@@ -16,7 +16,14 @@ import redis.asyncio as redis_async
 from aiokafka import AIOKafkaConsumer
 from prometheus_client import Counter, start_http_server
 
-from .features import WEIGHTS, apply_topic_delta
+from .features import (
+    PREFERENCE_SCHEMA_V2,
+    WEIGHTS,
+    PreferenceEvent,
+    PreferenceVectorV2,
+    apply_topic_delta,
+    build_preference_vector_v2,
+)
 from .settings import settings as load_settings
 
 logger = logging.getLogger("feature_store_worker")
@@ -47,6 +54,7 @@ CLAIM_RECEIPTS_SQL = """
 @dataclass(frozen=True)
 class ApplyResult:
     vector: dict[str, float]
+    vector_v2: PreferenceVectorV2 | None
     applied_events: list[dict[str, Any]]
     duplicate_events: list[dict[str, Any]]
     ignored_events: list[dict[str, Any]]
@@ -67,6 +75,8 @@ class Worker:
             self.cfg.database_url, min_size=1, max_size=8
         )
         self.redis = redis_async.from_url(self.cfg.redis_url, decode_responses=True)
+        if self.cfg.preference_backfill_on_start:
+            await self._backfill_v2()
         self.consumer = AIOKafkaConsumer(
             self.cfg.interactions_topic,
             bootstrap_servers=self.cfg.kafka_brokers,
@@ -101,7 +111,7 @@ class Worker:
                     timeout_ms=int(self.cfg.flush_interval_seconds * 1000),
                     max_records=self.cfg.flush_batch_size,
                 )
-                for tp, batch in msgs.items():
+                for batch in msgs.values():
                     for record in batch:
                         if record.value:
                             self._buffer.append(record.value)
@@ -168,8 +178,8 @@ class Worker:
                         _record_outcome("duplicate", _event_type(env))
                     for env in result.ignored_events:
                         _record_outcome("ignored", _event_type(env))
-                except Exception:  # noqa: BLE001
-                    logger.exception("failed to apply features for %s", user_id)
+                except Exception:
+                    logger.exception("failed to apply preference features")
                     failed_events.extend(user_events)
 
         # Trending is deliberately approximate and is not receipt-deduplicated.
@@ -177,7 +187,7 @@ class Worker:
         # here is logged but does not block the Kafka offset commit.
         try:
             await self._update_trending(events)
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.exception("failed to update trending")
 
         if failed_events:
@@ -206,7 +216,7 @@ class Worker:
                 seen_ids.add(event_id)
                 unique_events.append(env)
 
-        async with self.pool.acquire() as conn:
+        async with self.pool.acquire() as conn:  # noqa: SIM117
             async with conn.transaction():
                 claimed_rows = await conn.fetch(
                     CLAIM_RECEIPTS_SQL,
@@ -220,7 +230,9 @@ class Worker:
                     env for env in unique_events if str(_event_id(env)) in claimed_ids
                 ]
                 duplicate_events.extend(
-                    env for env in unique_events if str(_event_id(env)) not in claimed_ids
+                    env
+                    for env in unique_events
+                    if str(_event_id(env)) not in claimed_ids
                 )
 
                 row = await conn.fetchrow(
@@ -229,12 +241,22 @@ class Worker:
                         EXISTS(SELECT 1 FROM users WHERE id=$1::uuid) AS user_exists,
                         (SELECT topic_weights
                          FROM user_preference_vectors
-                         WHERE user_id=$1::uuid) AS topic_weights
+                         WHERE user_id=$1::uuid) AS topic_weights,
+                        (SELECT jsonb_build_object(
+                            'schema_version', schema_version,
+                            'positive', positive_weights,
+                            'negative', negative_weights,
+                            'reference_at', reference_at,
+                            'source_event_count', source_event_count
+                         )
+                         FROM user_preference_vectors_v2
+                         WHERE user_id=$1::uuid) AS vector_v2
                     """,
                     user_id,
                 )
                 user_exists = bool(row["user_exists"])
                 vec = _decode_weights(row["topic_weights"])
+                vector_v2 = _decode_vector_v2(row.get("vector_v2"))
                 ignored_events: list[dict[str, Any]] = []
                 if not user_exists:
                     ignored_events = applied_events
@@ -271,6 +293,35 @@ class Worker:
                         topics = topics_by_post.get(str(post_id), [])
                         vec = apply_topic_delta(vec, topics, event_type)
 
+                    canonical_rows = await conn.fetch(
+                        """
+                        SELECT
+                            event.id::text AS event_id,
+                            event.post_id::text AS post_id,
+                            event.impression_id::text AS impression_id,
+                            event.event_type,
+                            event.dwell_ms,
+                            event.occurred_at,
+                            post.topics,
+                            post.tags
+                        FROM behavior_events AS event
+                        JOIN posts AS post ON post.id = event.post_id
+                        WHERE event.user_id = $1::uuid
+                        ORDER BY event.occurred_at, event.id
+                        """,
+                        user_id,
+                    )
+                    canonical_events = _canonical_preference_events(canonical_rows)
+                    if canonical_events:
+                        # The reference clock comes only from event timestamps,
+                        # never Kafka delivery/worker wall time.
+                        vector_v2 = build_preference_vector_v2(
+                            canonical_events,
+                            half_life_hours=self.cfg.preference_half_life_hours,
+                            channel_bound=self.cfg.preference_channel_bound,
+                            qualified_read_ms=self.cfg.qualified_read_ms,
+                        )
+
                     await conn.execute(
                         """
                         INSERT INTO user_preference_vectors (user_id, topic_weights, updated_at)
@@ -281,12 +332,81 @@ class Worker:
                         user_id,
                         json.dumps(vec),
                     )
+                    if vector_v2 is not None:
+                        await _upsert_vector_v2(conn, user_id, vector_v2)
 
         if user_exists:
-            await self.redis.setex(
-                f"pref:{user_id}", self.cfg.pref_ttl_seconds, json.dumps(vec)
+            await _refresh_preference_cache(
+                self.redis,
+                user_id,
+                vec,
+                vector_v2,
+                self.cfg.pref_ttl_seconds,
             )
-        return ApplyResult(vec, applied_events, duplicate_events, ignored_events)
+        return ApplyResult(
+            vec, vector_v2, applied_events, duplicate_events, ignored_events
+        )
+
+    async def _backfill_v2(self) -> None:
+        """Replay canonical behavior rows for users not yet on v2.
+
+        The view and v2 table make this restart-safe. A partial run simply
+        resumes with the remaining users on the next worker start.
+        """
+        assert self.pool is not None
+        assert self.redis is not None
+        while True:
+            rows = await self.pool.fetch(
+                """
+                SELECT queue.user_id::text AS user_id
+                FROM preference_vector_v2_backfill_users AS queue
+                LEFT JOIN user_preference_vectors_v2 AS vector
+                  ON vector.user_id = queue.user_id
+                WHERE vector.user_id IS NULL
+                ORDER BY queue.last_event_at, queue.user_id
+                LIMIT $1
+                """,
+                self.cfg.preference_backfill_batch_size,
+            )
+            if not rows:
+                return
+            for row in rows:
+                await self._rebuild_v2_for_user(str(row["user_id"]))
+
+    async def _rebuild_v2_for_user(self, user_id: str) -> None:
+        assert self.pool is not None
+        assert self.redis is not None
+        async with self.pool.acquire() as conn:  # noqa: SIM117
+            async with conn.transaction():
+                rows = await conn.fetch(
+                    """
+                    SELECT
+                        event.id::text AS event_id,
+                        event.post_id::text AS post_id,
+                        event.impression_id::text AS impression_id,
+                        event.event_type,
+                        event.dwell_ms,
+                        event.occurred_at,
+                        post.topics,
+                        post.tags
+                    FROM behavior_events AS event
+                    JOIN posts AS post ON post.id = event.post_id
+                    WHERE event.user_id = $1::uuid
+                    ORDER BY event.occurred_at, event.id
+                    """,
+                    user_id,
+                )
+                events = _canonical_preference_events(rows)
+                if not events:
+                    return
+                vector = build_preference_vector_v2(
+                    events,
+                    half_life_hours=self.cfg.preference_half_life_hours,
+                    channel_bound=self.cfg.preference_channel_bound,
+                    qualified_read_ms=self.cfg.qualified_read_ms,
+                )
+                await _upsert_vector_v2(conn, user_id, vector)
+        await self.redis.delete(*preference_cache_keys(user_id))
 
     async def _update_trending(self, events: list[dict]) -> None:
         assert self.redis is not None
@@ -333,7 +453,11 @@ def _valid_feature_event(env: dict[str, Any], qualified_read_ms: int) -> bool:
         return version in (None, 1, "1", "v1")
     if event_type == "qualified_read":
         duration = (env.get("data") or {}).get("duration_ms")
-        return version in (2, "2", "v2") and isinstance(duration, int) and duration >= qualified_read_ms
+        return (
+            version in (2, "2", "v2")
+            and isinstance(duration, int)
+            and duration >= qualified_read_ms
+        )
     return True
 
 
@@ -342,7 +466,11 @@ def _occurred_at(env: dict[str, Any]) -> datetime:
     if isinstance(raw, str):
         try:
             parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-            return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
+            return (
+                parsed
+                if parsed.tzinfo is not None
+                else parsed.replace(tzinfo=timezone.utc)
+            )
         except ValueError:
             pass
     return datetime.now(timezone.utc)
@@ -351,6 +479,106 @@ def _occurred_at(env: dict[str, Any]) -> datetime:
 def _decode_weights(raw: Any) -> dict[str, float]:
     value = json.loads(raw) if isinstance(raw, str) else raw
     return {str(key): float(weight) for key, weight in (value or {}).items()}
+
+
+def _decode_vector_v2(raw: Any) -> PreferenceVectorV2 | None:
+    value = json.loads(raw) if isinstance(raw, str) else raw
+    if (
+        not isinstance(value, dict)
+        or value.get("schema_version") != PREFERENCE_SCHEMA_V2
+    ):
+        return None
+    reference_at = value.get("reference_at")
+    if isinstance(reference_at, str):
+        reference_at = datetime.fromisoformat(reference_at.replace("Z", "+00:00"))
+    if not isinstance(reference_at, datetime) or reference_at.tzinfo is None:
+        return None
+    return PreferenceVectorV2(
+        positive=_decode_weights(value.get("positive")),
+        negative=_decode_weights(value.get("negative")),
+        reference_at=reference_at,
+        source_event_count=int(value.get("source_event_count", 0)),
+    )
+
+
+def _canonical_preference_events(rows: list[Any]) -> list[PreferenceEvent]:
+    events: list[PreferenceEvent] = []
+    for row in rows:
+        topics = [
+            topic for topic in (row["topics"] or []) if topic and topic != "general"
+        ]
+        if not topics:
+            topics = [tag for tag in (row["tags"] or []) if tag] or ["general"]
+        events.append(
+            PreferenceEvent(
+                event_id=str(row["event_id"]),
+                post_id=str(row["post_id"]),
+                impression_id=(
+                    str(row["impression_id"]) if row["impression_id"] else None
+                ),
+                event_type=str(row["event_type"]),
+                dwell_ms=row["dwell_ms"],
+                occurred_at=row["occurred_at"],
+                topics=tuple(topics),
+            )
+        )
+    return events
+
+
+async def _upsert_vector_v2(
+    conn: Any, user_id: str, vector: PreferenceVectorV2
+) -> None:
+    await conn.execute(
+        """
+        INSERT INTO user_preference_vectors_v2 (
+            user_id, schema_version, positive_weights, negative_weights,
+            reference_at, source_event_count, updated_at
+        ) VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6, now())
+        ON CONFLICT (user_id) DO UPDATE SET
+            schema_version = EXCLUDED.schema_version,
+            positive_weights = EXCLUDED.positive_weights,
+            negative_weights = EXCLUDED.negative_weights,
+            reference_at = EXCLUDED.reference_at,
+            source_event_count = EXCLUDED.source_event_count,
+            updated_at = now()
+        """,
+        user_id,
+        vector.schema_version,
+        json.dumps(vector.positive),
+        json.dumps(vector.negative),
+        vector.reference_at,
+        vector.source_event_count,
+    )
+
+
+def preference_cache_keys(user_id: str) -> list[str]:
+    return [
+        f"pref:{user_id}",
+        f"pref:v1:{user_id}",
+        f"pref:v2:{user_id}",
+        f"history:v1:{user_id}",
+        f"history:v2:{user_id}",
+        f"feed:{user_id}",
+        f"feed:v1:{user_id}",
+        f"feed:v2:{user_id}",
+    ]
+
+
+async def _refresh_preference_cache(
+    redis: Any,
+    user_id: str,
+    vector_v1: dict[str, float],
+    vector_v2: PreferenceVectorV2 | None,
+    ttl_seconds: int,
+) -> None:
+    await redis.delete(*preference_cache_keys(user_id))
+    encoded_v1 = json.dumps(vector_v1)
+    await redis.setex(f"pref:{user_id}", ttl_seconds, encoded_v1)
+    await redis.setex(f"pref:v1:{user_id}", ttl_seconds, encoded_v1)
+    if vector_v2 is not None:
+        await redis.setex(
+            f"pref:v2:{user_id}", ttl_seconds, json.dumps(vector_v2.as_payload())
+        )
 
 
 def _record_outcome(outcome: str, event_type: str) -> None:

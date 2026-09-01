@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
+import pytest
 from app.ranking import freshness_decay, relevance, score_post
 from app.schemas import CandidatePost
 
@@ -22,6 +23,14 @@ def test_relevance_with_overlap():
 def test_relevance_zero_when_no_overlap():
     user_vec = {"ai": 1.0}
     assert relevance(user_vec, ["sports"]) == 0.0
+
+
+def test_unrelated_negative_channel_does_not_suppress_positive_relevance():
+    assert relevance({"ai": 1.0, "politics": -100.0}, ["ai"]) == pytest.approx(1.0)
+
+
+def test_matching_negative_feedback_penalizes_only_that_topic():
+    assert relevance({"ai": 1.0, "politics": -1.0}, ["politics"]) == pytest.approx(-1.0)
 
 
 def test_score_post_combines_signals():

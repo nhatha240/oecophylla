@@ -51,6 +51,14 @@ config:
   recommendationLabelVersion: v1
   featureEventVersion: v1
   qualifiedReadMs: "10000"
+  preferenceSchemaVersion: v1
+  preferenceHalfLifeHours: "720"
+  preferenceChannelBound: "10"
+  preferenceBehaviorCoefficient: "0.75"
+  preferenceDeclaredCoefficient: "0.25"
+  preferenceEvidenceSaturation: "2.5"
+  preferenceBackfillOnStart: "false"
+  preferenceBackfillBatchSize: "500"
   origin: https://oecophylla.example.com
   pythonDontWriteBytecode: "1"
   pythonUnbuffered: "1"

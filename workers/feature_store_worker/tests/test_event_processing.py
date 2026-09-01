@@ -5,12 +5,13 @@ from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
-
 from app.main import Worker
 
 ROOT = Path(__file__).resolve().parents[3]
 VIEWED_FIXTURE = json.loads(
-    (ROOT / "tests/fixtures/recommendation_telemetry/interaction_viewed_v1.json").read_text()
+    (
+        ROOT / "tests/fixtures/recommendation_telemetry/interaction_viewed_v1.json"
+    ).read_text()
 )
 LABEL_V2_FIXTURE = json.loads(
     (ROOT / "tests/fixtures/recommendation_telemetry/label-v2-cases.json").read_text()
@@ -18,7 +19,7 @@ LABEL_V2_FIXTURE = json.loads(
 
 
 class FakeTransaction:
-    def __init__(self, conn: "FakeConnection") -> None:
+    def __init__(self, conn: FakeConnection) -> None:
         self.conn = conn
 
     async def __aenter__(self) -> None:
@@ -34,6 +35,8 @@ class FakeConnection:
         self.receipts: set[str] = set()
         self.vector: dict[str, float] = {}
         self.vector_updates = 0
+        self.vector_v2: dict | None = None
+        self.canonical_events: list[dict] = []
         self.user_exists = True
 
     def transaction(self) -> FakeTransaction:
@@ -45,6 +48,7 @@ class FakeConnection:
             return {
                 "user_exists": self.user_exists,
                 "topic_weights": json.dumps(self.vector) if self.vector else None,
+                "vector_v2": self.vector_v2,
             }
         if "user_preference_vectors" in query:
             return {"topic_weights": json.dumps(self.vector)} if self.vector else None
@@ -54,12 +58,47 @@ class FakeConnection:
         assert self.in_transaction
         if "feature_event_receipts" in query:
             event_ids = list(args[0])
+            event_types = list(args[1])
+            occurred_times = list(args[2])
             claimed = []
-            for event_id in event_ids:
+            canonical_name = {
+                "viewed": "view",
+                "qualified_read": "dwell",
+                "liked": "like",
+                "unliked": "unlike",
+                "saved": "save",
+                "unsaved": "unsave",
+                "shared": "share",
+                "unshared": "unshare",
+                "hidden": "hide",
+                "reported": "report",
+                "commented": "comment",
+            }
+            for event_id, event_type, occurred_at in zip(
+                event_ids, event_types, occurred_times, strict=True
+            ):
                 if str(event_id) not in self.receipts:
                     self.receipts.add(str(event_id))
                     claimed.append({"event_id": event_id})
+                    self.canonical_events.append(
+                        {
+                            "event_id": str(event_id),
+                            "post_id": VIEWED_FIXTURE["data"]["post_id"],
+                            "impression_id": None,
+                            "event_type": canonical_name.get(event_type, event_type),
+                            "dwell_ms": (
+                                10_000
+                                if event_type in {"viewed", "qualified_read"}
+                                else None
+                            ),
+                            "occurred_at": occurred_at,
+                            "topics": ["ai"],
+                            "tags": [],
+                        }
+                    )
             return claimed
+        if "FROM behavior_events AS event" in query:
+            return self.canonical_events
         if "FROM posts" in query:
             return [{"id": args[0][0], "topics": ["ai"], "tags": []}]
         raise AssertionError(f"unexpected fetch query: {query}")
@@ -70,6 +109,15 @@ class FakeConnection:
             raise AssertionError(f"unexpected execute query: {query}")
         if not self.user_exists:
             raise ValueError("foreign key violation for deleted user")
+        if "user_preference_vectors_v2" in query:
+            self.vector_v2 = {
+                "schema_version": _args[1],
+                "positive": json.loads(str(_args[2])),
+                "negative": json.loads(str(_args[3])),
+                "reference_at": _args[4],
+                "source_event_count": _args[5],
+            }
+            return
         self.vector = json.loads(str(_args[1]))
         self.vector_updates += 1
 
@@ -97,6 +145,12 @@ class FakeRedis:
     def __init__(self, fail_once: bool = False) -> None:
         self.fail_once = fail_once
         self.cached: dict[str, str] = {}
+        self.deleted: list[str] = []
+
+    async def delete(self, *keys: str) -> None:
+        self.deleted.extend(keys)
+        for key in keys:
+            self.cached.pop(key, None)
 
     async def setex(self, key: str, _ttl: int, value: str) -> None:
         if self.fail_once:
@@ -110,7 +164,7 @@ class FakeCounter:
         self.records: list[tuple[str, str, int]] = []
         self.current: tuple[str, str] | None = None
 
-    def labels(self, *, outcome: str, event_type: str) -> "FakeCounter":
+    def labels(self, *, outcome: str, event_type: str) -> FakeCounter:
         self.current = (outcome, event_type)
         return self
 
@@ -126,7 +180,9 @@ def event(event_id: str, event_type: str) -> dict:
     return envelope
 
 
-def worker_with_fakes(monkeypatch: pytest.MonkeyPatch, *, redis_fail_once: bool = False):
+def worker_with_fakes(
+    monkeypatch: pytest.MonkeyPatch, *, redis_fail_once: bool = False
+):
     from app import main
 
     conn = FakeConnection()
@@ -141,7 +197,7 @@ def worker_with_fakes(monkeypatch: pytest.MonkeyPatch, *, redis_fail_once: bool 
 
 
 async def test_viewed_envelope_updates_preference_exactly_once_on_replay(monkeypatch):
-    worker, conn, _redis, counter = worker_with_fakes(monkeypatch)
+    worker, conn, redis, counter = worker_with_fakes(monkeypatch)
 
     worker._buffer = [VIEWED_FIXTURE]
     assert await worker._flush() is True
@@ -149,6 +205,12 @@ async def test_viewed_envelope_updates_preference_exactly_once_on_replay(monkeyp
     assert await worker._flush() is True
 
     assert conn.vector == {"ai": 0.5}
+    assert conn.vector_v2 is not None
+    assert conn.vector_v2["schema_version"] == "preference-vector-v2"
+    assert json.loads(redis.cached[f"pref:v2:{VIEWED_FIXTURE['data']['user_id']}"])[
+        "positive"
+    ] == {"ai": 0.5}
+    assert f"feed:{VIEWED_FIXTURE['data']['user_id']}" in redis.deleted
     assert conn.vector_updates == 1
     assert ("applied", "viewed", 1) in counter.records
     assert ("duplicate", "viewed", 1) in counter.records
@@ -165,6 +227,8 @@ async def test_qualified_read_v2_updates_preference_exactly_once_on_replay(monke
     assert await worker._flush() is True
 
     assert conn.vector == {"ai": 0.5}
+    assert conn.vector_v2 is not None
+    assert conn.vector_v2["positive"] == {"ai": 0.5}
     assert conn.vector_updates == 1
     assert ("applied", "qualified_read", 1) in counter.records
     assert ("duplicate", "qualified_read", 1) in counter.records
@@ -203,7 +267,9 @@ async def test_replay_after_redis_failure_does_not_apply_vector_twice(monkeypatc
 
     assert conn.vector == {"ai": 0.5}
     assert conn.vector_updates == 1
-    assert json.loads(redis.cached[f"pref:{VIEWED_FIXTURE['data']['user_id']}"]) == {"ai": 0.5}
+    assert json.loads(redis.cached[f"pref:{VIEWED_FIXTURE['data']['user_id']}"]) == {
+        "ai": 0.5
+    }
 
 
 @pytest.mark.parametrize(
@@ -213,7 +279,9 @@ async def test_replay_after_redis_failure_does_not_apply_vector_twice(monkeypatc
         ("dwell", "0198f36d-0d80-7000-8000-000000000012"),
     ],
 )
-async def test_visible_and_dwell_do_not_change_preferences(monkeypatch, event_type, event_id):
+async def test_visible_and_dwell_do_not_change_preferences(
+    monkeypatch, event_type, event_id
+):
     worker, conn, _redis, counter = worker_with_fakes(monkeypatch)
     worker._buffer = [event(event_id, event_type)]
 

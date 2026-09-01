@@ -5,12 +5,10 @@ from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
-
 from app import features
 from app import main as recommendation_main
 from app.schemas import RecommendFeedRequest
 from app.settings import Settings
-
 
 VIEWER_ID = UUID("00000000-0000-0000-0000-000000000001")
 POST_ID = UUID("00000000-0000-0000-0000-000000000010")
@@ -136,9 +134,7 @@ def test_candidate_metrics_are_defined_per_source_and_exclusion_reason():
 @pytest.mark.asyncio
 async def test_exclusion_metrics_record_each_reason_and_unique_total():
     class ExclusionPool(RecordingPool):
-        async def fetch(
-            self, query: str, *args: object
-        ) -> list[dict[str, object]]:
+        async def fetch(self, query: str, *args: object) -> list[dict[str, object]]:
             self.calls.append((query, args))
             return [
                 {"reason": "hide", "excluded": 1},
@@ -166,7 +162,8 @@ async def test_exclusion_metrics_record_each_reason_and_unique_total():
 async def test_recommend_endpoint_passes_configured_seen_cooldown(monkeypatch):
     captured: dict[str, object] = {}
 
-    async def fake_fetch_user_vector(_db, _redis, _user_id):
+    async def fake_fetch_user_vector(_db, _redis, _user_id, *, config):
+        captured["preference_config"] = config
         return {}
 
     async def fake_gather_candidates(
@@ -189,10 +186,11 @@ async def test_recommend_endpoint_passes_configured_seen_cooldown(monkeypatch):
     )
     recommendation_main.app.state.db = object()
     recommendation_main.app.state.redis = object()
-    recommendation_main.app.state.cfg = SimpleNamespace(
+    config = SimpleNamespace(
         feed_candidate_pool=300,
         seen_cooldown_days=11,
     )
+    recommendation_main.app.state.cfg = config
 
     response = await recommendation_main.recommend_feed(
         VIEWER_ID,
@@ -200,7 +198,11 @@ async def test_recommend_endpoint_passes_configured_seen_cooldown(monkeypatch):
     )
 
     assert response.items == []
-    assert captured == {"pool_size": 30, "seen_cooldown_days": 11}
+    assert captured == {
+        "pool_size": 30,
+        "seen_cooldown_days": 11,
+        "preference_config": config,
+    }
 
 
 @pytest.mark.asyncio

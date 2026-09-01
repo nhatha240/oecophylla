@@ -50,6 +50,30 @@ async def test_worker_starts_and_stops_all_runtime_resources(monkeypatch):
     assert deserialize(b'{"event_type":"liked"}') == {"event_type": "liked"}
 
 
+async def test_startup_backfill_finishes_before_kafka_consumer_joins(monkeypatch):
+    order: list[str] = []
+    pool = Closeable()
+    redis = Closeable()
+    consumer = FakeConsumer()
+    consumer.start = AsyncMock(side_effect=lambda: order.append("consumer"))
+    metrics_server = Mock()
+
+    monkeypatch.setattr(main.asyncpg, "create_pool", AsyncMock(return_value=pool))
+    monkeypatch.setattr(main.redis_async, "from_url", Mock(return_value=redis))
+    monkeypatch.setattr(main, "AIOKafkaConsumer", Mock(return_value=consumer))
+    monkeypatch.setattr(
+        main, "start_http_server", Mock(return_value=(metrics_server, Mock()))
+    )
+    worker = Worker()
+    worker.cfg = worker.cfg.model_copy(update={"preference_backfill_on_start": True})
+    worker._backfill_v2 = AsyncMock(side_effect=lambda: order.append("backfill"))
+
+    await worker.start()
+    await worker.stop()
+
+    assert order == ["backfill", "consumer"]
+
+
 async def test_run_flushes_records_commits_and_flushes_again_on_cancel():
     event = {"event_type": "visible"}
 

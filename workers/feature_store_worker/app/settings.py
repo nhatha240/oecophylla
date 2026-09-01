@@ -11,6 +11,11 @@ class Settings(BaseSettings):
     consumer_group: str = "oecophylla.feature-store.v1"
     qualified_read_ms: int = 10_000
 
+    preference_half_life_hours: float = 720.0
+    preference_channel_bound: float = 10.0
+    preference_backfill_on_start: bool = False
+    preference_backfill_batch_size: int = 500
+
     pref_ttl_seconds: int = 1800
     trending_ttl_seconds: int = 86400
     flush_interval_seconds: float = 5.0
