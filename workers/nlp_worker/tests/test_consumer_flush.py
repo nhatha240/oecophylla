@@ -79,3 +79,18 @@ async def test_run_consumer_flushes_single_message_after_interval(monkeypatch):
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
+
+
+@pytest.mark.asyncio
+async def test_batch_failure_propagates_before_later_messages_are_processed(monkeypatch):
+    process_one = AsyncMock(side_effect=RuntimeError("inference unavailable"))
+    monkeypatch.setattr(kafka_consumer, "_process_one", process_one)
+    messages = [
+        SimpleNamespace(value={"data": {"post_id": "first"}}),
+        SimpleNamespace(value={"data": {"post_id": "second"}}),
+    ]
+
+    with pytest.raises(RuntimeError, match="inference unavailable"):
+        await kafka_consumer._process_batch(AsyncMock(), messages)
+
+    process_one.assert_awaited_once()
