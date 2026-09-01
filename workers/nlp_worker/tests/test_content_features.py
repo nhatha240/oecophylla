@@ -2,6 +2,7 @@ import hashlib
 import math
 
 import pytest
+
 from app.content_features import (
     CONTENT_HASH_VERSION,
     EMBEDDING_DIMENSION,

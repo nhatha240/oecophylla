@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
 import pytest
+
 from app.content_features import CONTENT_HASH_VERSION, ENCODER_VERSION, SCHEMA_VERSION
 from app.embedding_worker import PostFeature
 from app.repository import AsyncpgFeatureRepository
