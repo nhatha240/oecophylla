@@ -166,7 +166,8 @@ async def test_exclusion_metrics_record_each_reason_and_unique_total():
 async def test_recommend_endpoint_passes_configured_seen_cooldown(monkeypatch):
     captured: dict[str, object] = {}
 
-    async def fake_fetch_user_vector(_db, _redis, _user_id):
+    async def fake_fetch_user_vector(_db, _redis, _user_id, *, config):
+        captured["preference_config"] = config
         return {}
 
     async def fake_gather_candidates(
@@ -189,10 +190,11 @@ async def test_recommend_endpoint_passes_configured_seen_cooldown(monkeypatch):
     )
     recommendation_main.app.state.db = object()
     recommendation_main.app.state.redis = object()
-    recommendation_main.app.state.cfg = SimpleNamespace(
+    config = SimpleNamespace(
         feed_candidate_pool=300,
         seen_cooldown_days=11,
     )
+    recommendation_main.app.state.cfg = config
 
     response = await recommendation_main.recommend_feed(
         VIEWER_ID,
@@ -200,7 +202,11 @@ async def test_recommend_endpoint_passes_configured_seen_cooldown(monkeypatch):
     )
 
     assert response.items == []
-    assert captured == {"pool_size": 30, "seen_cooldown_days": 11}
+    assert captured == {
+        "pool_size": 30,
+        "seen_cooldown_days": 11,
+        "preference_config": config,
+    }
 
 
 @pytest.mark.asyncio
