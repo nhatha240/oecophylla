@@ -47,22 +47,23 @@ async def _run_once(cfg: Settings) -> None:
     Micro-batch: flush every cfg.flush_interval_seconds OR cfg.flush_batch_size events.
     """
     conn = await asyncpg.connect(cfg.database_url)
-    consumer = AIOKafkaConsumer(
-        cfg.content_created_topic,
-        cfg.content_updated_topic,
-        bootstrap_servers=cfg.kafka_brokers,
-        group_id=cfg.consumer_group,
-        auto_offset_reset="earliest",
-        enable_auto_commit=False,
-        value_deserializer=lambda b: json.loads(b.decode()),
-    )
-    await consumer.start()
-    logger.info("nlp-worker consumer started")
-    embedding_service, repository = build_service(conn, cfg)
-    batch = []
-    last_flush = time.monotonic()
-    timeout_ms = max(1, int(cfg.flush_interval_seconds * 1000))
+    consumer = None
     try:
+        consumer = AIOKafkaConsumer(
+            cfg.content_created_topic,
+            cfg.content_updated_topic,
+            bootstrap_servers=cfg.kafka_brokers,
+            group_id=cfg.consumer_group,
+            auto_offset_reset="earliest",
+            enable_auto_commit=False,
+            value_deserializer=lambda b: json.loads(b.decode()),
+        )
+        await consumer.start()
+        logger.info("nlp-worker consumer started")
+        embedding_service, repository = build_service(conn, cfg)
+        batch = []
+        last_flush = time.monotonic()
+        timeout_ms = max(1, int(cfg.flush_interval_seconds * 1000))
         while True:
             messages = await consumer.getmany(
                 timeout_ms=timeout_ms,
@@ -77,15 +78,17 @@ async def _run_once(cfg: Settings) -> None:
                 or elapsed >= cfg.flush_interval_seconds
             ):
                 await _process_batch(conn, batch, embedding_service, repository)
-                await consumer.commit()
+                # If commit fails, Kafka replays this idempotent batch after
+                # reconnect. Never process it again during resource cleanup.
                 batch.clear()
+                await consumer.commit()
                 last_flush = time.monotonic()
     finally:
-        if batch:
-            await _process_batch(conn, batch, embedding_service, repository)
-            await consumer.commit()
-        await consumer.stop()
-        await conn.close()
+        try:
+            if consumer is not None:
+                await consumer.stop()
+        finally:
+            await conn.close()
 
 
 async def _process_batch(

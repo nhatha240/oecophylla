@@ -38,6 +38,14 @@ checkpoint advances only after every item in a batch reaches `created` or
 `unchanged`. An exhausted topic fallback is reported as a rebuild failure,
 leaves the durable checkpoint behind, and stops the current scan so the next
 invocation retries the incomplete range instead of skipping ahead.
+
+Kafka offsets are committed manually only after an event reaches `created`,
+`unchanged`, or the deliberate topic `fallback`. A fallback is acknowledged
+because keyword topics have already been retained on the post; embedding
+catch-up is owned by the rebuild command above. The rebuild exits non-zero and
+does not advance its checkpoint when the model or storage remains unavailable.
+Unexpected processing failures and shutdown-buffered events stay uncommitted
+for Kafka replay, and cleanup never runs the same in-memory batch a second time.
 Batch size, concurrency, retry count, backoff, Torch thread count, and CPU/memory
 limits are controlled by the `EMBEDDING_*` settings plus container resources.
 Progress logs contain aggregate counts only, never post or user identities.
