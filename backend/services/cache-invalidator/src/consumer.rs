@@ -1,15 +1,55 @@
 use anyhow::Context;
+use deadpool_redis::redis::AsyncCommands;
 use deadpool_redis::Pool as RedisPool;
 use rdkafka::{
     config::ClientConfig,
     consumer::{Consumer, StreamConsumer},
     Message,
 };
-use deadpool_redis::redis::AsyncCommands;
 use serde::Deserialize;
 
 const TOPIC: &str = "oecophylla.interactions";
 const GROUP_ID: &str = "oecophylla.feed.cache-invalidator.v1";
+const CACHE_KEY_PREFIXES: [&str; 8] = [
+    "pref:",
+    "pref:v1:",
+    "pref:v2:",
+    "history:v1:",
+    "history:v2:",
+    "feed:",
+    "feed:v1:",
+    "feed:v2:",
+];
+
+const PREFERENCE_EVENTS: [&str; 27] = [
+    "viewed",
+    "qualified_read",
+    "liked",
+    "unliked",
+    "saved",
+    "unsaved",
+    "shared",
+    "unshared",
+    "hidden",
+    "reported",
+    "commented",
+    "comment_replied",
+    "visible",
+    "view",
+    "click",
+    "dwell",
+    "like",
+    "unlike",
+    "save",
+    "unsave",
+    "share",
+    "unshare",
+    "hide",
+    "unhide",
+    "report",
+    "comment",
+    "qualified_read_v2",
+];
 
 #[derive(Debug, Deserialize)]
 struct Envelope {
@@ -55,14 +95,22 @@ pub async fn run(brokers: String, redis: RedisPool) -> anyhow::Result<()> {
             }
         };
 
-        if let Some(user_id) = extract_user_id(&env) {
-            let key = format!("feed:{user_id}");
-            match redis.get().await {
-                Ok(mut conn) => match conn.del::<_, i64>(&key).await {
-                    Ok(deleted) => tracing::debug!(%user_id, %deleted, "feed cache invalidated"),
-                    Err(err) => tracing::warn!(error = %err, %user_id, "redis DEL failed"),
-                },
-                Err(err) => tracing::warn!(error = %err, "redis pool acquire failed"),
+        if env
+            .event_type
+            .as_deref()
+            .is_some_and(invalidates_preferences)
+        {
+            if let Some(user_id) = extract_user_id(&env) {
+                let keys = cache_keys_for_user(&user_id);
+                match redis.get().await {
+                    Ok(mut conn) => match conn.del::<_, i64>(&keys).await {
+                        Ok(deleted) => {
+                            tracing::debug!(%deleted, "recommendation caches invalidated")
+                        }
+                        Err(err) => tracing::warn!(error = %err, "redis DEL failed"),
+                    },
+                    Err(err) => tracing::warn!(error = %err, "redis pool acquire failed"),
+                }
             }
         }
 
@@ -79,8 +127,18 @@ fn extract_user_id(env: &Envelope) -> Option<String> {
             return Some(v.to_string());
         }
     }
-    let _ = &env.event_type;
     None
+}
+
+fn cache_keys_for_user(user_id: &str) -> Vec<String> {
+    CACHE_KEY_PREFIXES
+        .iter()
+        .map(|prefix| format!("{prefix}{user_id}"))
+        .collect()
+}
+
+fn invalidates_preferences(event_type: &str) -> bool {
+    PREFERENCE_EVENTS.contains(&event_type)
 }
 
 #[cfg(test)]
@@ -151,8 +209,7 @@ mod tests {
 
     #[test]
     fn empty_data_object_returns_none() {
-        let env: Envelope =
-            serde_json::from_str(r#"{"event_type":"empty","data":{}}"#).unwrap();
+        let env: Envelope = serde_json::from_str(r#"{"event_type":"empty","data":{}}"#).unwrap();
         assert!(extract_user_id(&env).is_none());
     }
 
@@ -165,15 +222,13 @@ mod tests {
 
     #[test]
     fn envelope_with_missing_event_type_defaults_to_none() {
-        let env: Envelope =
-            serde_json::from_str(r#"{"data":{"user_id":"u1"}}"#).unwrap();
+        let env: Envelope = serde_json::from_str(r#"{"data":{"user_id":"u1"}}"#).unwrap();
         assert!(env.event_type.is_none());
     }
 
     #[test]
     fn envelope_with_null_data_returns_none() {
-        let env: Envelope =
-            serde_json::from_str(r#"{"event_type":"test","data":null}"#).unwrap();
+        let env: Envelope = serde_json::from_str(r#"{"event_type":"test","data":null}"#).unwrap();
         assert!(extract_user_id(&env).is_none());
     }
 

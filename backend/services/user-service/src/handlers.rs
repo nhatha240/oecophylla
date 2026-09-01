@@ -9,6 +9,7 @@ use common::{
     error::{AppError, AppResult},
     events::{Envelope, UserFollowed, TOPIC_USER_FOLLOWED},
 };
+use deadpool_redis::redis::AsyncCommands;
 use serde::Deserialize;
 use uuid::Uuid;
 
@@ -97,6 +98,7 @@ pub async fn update(
     if me.id != id {
         return Err(AppError::Forbidden);
     }
+    let declared_topics_changed = body.topic_prefs.is_some();
     let prefs_ref: Option<&[String]> = body.topic_prefs.as_deref();
     let row = repo::update_profile(
         &s.db,
@@ -107,7 +109,38 @@ pub async fn update(
         prefs_ref,
     )
     .await?;
+    if declared_topics_changed {
+        invalidate_preference_caches(&s, id).await;
+    }
     Ok(Json(row))
+}
+
+fn preference_cache_keys(user_id: Uuid) -> Vec<String> {
+    [
+        "pref:",
+        "pref:v1:",
+        "pref:v2:",
+        "history:v1:",
+        "history:v2:",
+        "feed:",
+        "feed:v1:",
+        "feed:v2:",
+    ]
+    .iter()
+    .map(|prefix| format!("{prefix}{user_id}"))
+    .collect()
+}
+
+async fn invalidate_preference_caches(state: &AppState, user_id: Uuid) {
+    let keys = preference_cache_keys(user_id);
+    match state.redis.get().await {
+        Ok(mut connection) => {
+            if let Err(error) = connection.del::<_, i64>(&keys).await {
+                tracing::warn!(%error, "failed to invalidate recommendation caches");
+            }
+        }
+        Err(error) => tracing::warn!(%error, "failed to acquire redis for cache invalidation"),
+    }
 }
 
 pub async fn follow(

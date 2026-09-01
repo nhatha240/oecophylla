@@ -26,6 +26,14 @@ data:
   FEATURE_EVENT_VERSION: {{ .Values.config.featureEventVersion | quote }}
   QUALIFIED_READ_MS: {{ .Values.config.qualifiedReadMs | quote }}
   PUBLIC_QUALIFIED_READ_MS: {{ .Values.config.qualifiedReadMs | quote }}
+  PREFERENCE_SCHEMA_VERSION: {{ .Values.config.preferenceSchemaVersion | quote }}
+  PREFERENCE_HALF_LIFE_HOURS: {{ .Values.config.preferenceHalfLifeHours | quote }}
+  PREFERENCE_CHANNEL_BOUND: {{ .Values.config.preferenceChannelBound | quote }}
+  PREFERENCE_BEHAVIOR_COEFFICIENT: {{ .Values.config.preferenceBehaviorCoefficient | quote }}
+  PREFERENCE_DECLARED_COEFFICIENT: {{ .Values.config.preferenceDeclaredCoefficient | quote }}
+  PREFERENCE_EVIDENCE_SATURATION: {{ .Values.config.preferenceEvidenceSaturation | quote }}
+  PREFERENCE_BACKFILL_ON_START: {{ .Values.config.preferenceBackfillOnStart | quote }}
+  PREFERENCE_BACKFILL_BATCH_SIZE: {{ .Values.config.preferenceBackfillBatchSize | quote }}
   ORIGIN: {{ .Values.config.origin | quote }}
   PYTHONDONTWRITEBYTECODE: {{ .Values.config.pythonDontWriteBytecode | quote }}
   PYTHONUNBUFFERED: {{ .Values.config.pythonUnbuffered | quote }}

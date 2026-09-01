@@ -22,8 +22,19 @@ def relevance(user_vec: dict[str, float], post_topics: Iterable[str]) -> float:
     topics = [t for t in post_topics if t]
     if not user_vec or not topics:
         return 0.0
-    total = sum(abs(v) for v in user_vec.values()) or 1.0
-    return sum(max(user_vec.get(t, 0.0), 0.0) for t in topics) / total
+    positive_total = sum(max(value, 0.0) for value in user_vec.values())
+    negative_total = sum(max(-value, 0.0) for value in user_vec.values())
+    positive = (
+        sum(max(user_vec.get(topic, 0.0), 0.0) for topic in topics) / positive_total
+        if positive_total > 0
+        else 0.0
+    )
+    negative = (
+        sum(max(-user_vec.get(topic, 0.0), 0.0) for topic in topics) / negative_total
+        if negative_total > 0
+        else 0.0
+    )
+    return positive - negative
 
 
 def build_rank_feature_snapshot(

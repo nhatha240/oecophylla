@@ -77,7 +77,7 @@ async def recommend_feed(
     redis: RedisCli = app.state.redis
     cfg = app.state.cfg
 
-    user_vec = await fetch_user_vector(db, redis, user_id)
+    user_vec = await fetch_user_vector(db, redis, user_id, config=cfg)
     candidates = await gather_candidates(
         db,
         user_id,

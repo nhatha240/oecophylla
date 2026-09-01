@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     model_artifact_path: Path = Path("/models/current")
     recommendation_label_version: Literal["v1", "v2"] = "v1"
     qualified_read_ms: int = Field(default=10_000, gt=0, le=1_800_000)
+    preference_schema_version: Literal["v1", "v2"] = "v1"
+    preference_half_life_hours: float = Field(default=720.0, gt=0)
+    preference_behavior_coefficient: float = Field(default=0.75, ge=0)
+    preference_declared_coefficient: float = Field(default=0.25, ge=0)
+    preference_evidence_saturation: float = Field(default=2.5, gt=0)
 
 
 def settings() -> Settings:
