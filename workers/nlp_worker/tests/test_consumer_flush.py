@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+
 from app import kafka_consumer
 from app.embedding_worker import ProcessResult
 from app.settings import Settings
