@@ -170,6 +170,20 @@ components:
   nlp-worker:
     image: { repository: ghcr.io/your-org/oecophylla/nlp-worker, tag: "1.0.0", pullPolicy: IfNotPresent }
     replicas: 1
+    port: 9109
+    env:
+      - { name: CONTENT_UPDATED_TOPIC, value: oecophylla.content.updated }
+      - { name: EMBEDDING_INFERENCE_ENABLED, value: "true" }
+      - { name: EMBEDDING_ALLOW_DOWNLOAD, value: "false" }
+      - { name: EMBEDDING_MODEL_DIR, value: /opt/models/multilingual-e5-small }
+      - { name: EMBEDDING_DEVICE, value: cpu }
+      - { name: EMBEDDING_TORCH_THREADS, value: "1" }
+      - { name: EMBEDDING_BATCH_SIZE, value: "32" }
+      - { name: EMBEDDING_CONCURRENCY, value: "1" }
+      - { name: METRICS_PORT, value: "9109" }
+    resources:
+      requests: { cpu: 250m, memory: 512Mi }
+      limits: { cpu: "1", memory: 1536Mi }
   cache-invalidator:
     image: { repository: ghcr.io/your-org/oecophylla/cache-invalidator, tag: "1.0.0", pullPolicy: IfNotPresent }
     replicas: 1

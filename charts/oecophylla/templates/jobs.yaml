@@ -125,7 +125,7 @@ spec:
           command: ["/bin/sh", "-ec"]
           args:
             - |
-              for topic in oecophylla.content.created oecophylla.user.followed oecophylla.interactions oecophylla.moderation.action; do
+              for topic in oecophylla.content.created oecophylla.content.updated oecophylla.user.followed oecophylla.interactions oecophylla.moderation.action; do
                 /opt/kafka/bin/kafka-topics.sh \
                   --bootstrap-server "$KAFKA_BROKERS" \
                   --create --if-not-exists --topic "$topic" \

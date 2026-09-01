@@ -1,4 +1,5 @@
 import unicodedata
+
 from .keywords import TOPIC_KEYWORDS_EN, TOPIC_KEYWORDS_VI
 
 

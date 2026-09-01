@@ -75,6 +75,7 @@ services:
     command:
       - |
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic oecophylla.content.created   --partitions 1 --replication-factor 1 && \
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic oecophylla.content.updated   --partitions 1 --replication-factor 1 && \
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic oecophylla.user.followed    --partitions 1 --replication-factor 1 && \
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic oecophylla.interactions     --partitions 1 --replication-factor 1 && \
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic oecophylla.moderation.action --partitions 1 --replication-factor 1 --config retention.ms=604800000
@@ -305,6 +306,8 @@ services:
     build:
       context: .
       dockerfile: workers/nlp_worker/Dockerfile
+      args:
+        NLP_MODEL_PREFETCH: ${NLP_MODEL_PREFETCH:-false}
     depends_on:
       postgres: { condition: service_healthy }
       kafka:    { condition: service_healthy }
@@ -313,6 +316,20 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL}
       KAFKA_BROKERS: ${KAFKA_BROKERS}
+      CONTENT_UPDATED_TOPIC: oecophylla.content.updated
+      EMBEDDING_INFERENCE_ENABLED: ${EMBEDDING_INFERENCE_ENABLED:-true}
+      EMBEDDING_ALLOW_DOWNLOAD: ${EMBEDDING_ALLOW_DOWNLOAD:-true}
+      EMBEDDING_MODEL_DIR: /opt/models/multilingual-e5-small
+      EMBEDDING_DEVICE: cpu
+      EMBEDDING_TORCH_THREADS: ${EMBEDDING_TORCH_THREADS:-1}
+      EMBEDDING_BATCH_SIZE: ${EMBEDDING_BATCH_SIZE:-32}
+      EMBEDDING_CONCURRENCY: ${EMBEDDING_CONCURRENCY:-1}
+      METRICS_PORT: 9109
+    expose: ["9109"]
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 1536M }
+        reservations: { cpus: "0.25", memory: 512M }
 
   cache-invalidator:
     <<: *restart
