@@ -1,16 +1,16 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from math import exp2
-from typing import Any, AsyncIterator, Optional
+from typing import Any
 from uuid import UUID
 
 import asyncpg
 import redis.asyncio as redis_async
 
 from .settings import settings as load_settings
-
 
 PREFERENCE_SCHEMA_V2 = "preference-vector-v2"
 
@@ -20,7 +20,7 @@ class DB:
 
     def __init__(self, dsn: str) -> None:
         self._dsn = dsn
-        self._pool: Optional[asyncpg.Pool] = None
+        self._pool: asyncpg.Pool | None = None
 
     async def start(self) -> None:
         self._pool = await asyncpg.create_pool(self._dsn, min_size=1, max_size=8)
@@ -40,7 +40,7 @@ class DB:
 class RedisCli:
     def __init__(self, url: str) -> None:
         self._url = url
-        self._cli: Optional[redis_async.Redis] = None
+        self._cli: redis_async.Redis | None = None
 
     async def start(self) -> None:
         self._cli = redis_async.from_url(self._url, decode_responses=True)
@@ -62,7 +62,6 @@ async def fetch_user_vector(
     db: DB, redis: RedisCli, user_id: UUID, *, config: Any | None = None
 ) -> dict[str, float]:
     """Load the active preference schema with immediate, non-mixed v1 fallback."""
-    import json as _json
 
     cfg = config or load_settings()
     if cfg.preference_schema_version == "v2":
@@ -136,8 +135,12 @@ def merge_preference_vector_v2(
     serving_at = (at or datetime.now(timezone.utc)).astimezone(timezone.utc)
     age_hours = max(0.0, (serving_at - reference_at).total_seconds() / 3600.0)
     factor = exp2(-age_hours / half_life_hours)
-    positive = {k: v * factor for k, v in _numeric_channel(payload.get("positive")).items()}
-    negative = {k: v * factor for k, v in _numeric_channel(payload.get("negative")).items()}
+    positive = {
+        k: v * factor for k, v in _numeric_channel(payload.get("positive")).items()
+    }
+    negative = {
+        k: v * factor for k, v in _numeric_channel(payload.get("negative")).items()
+    }
 
     evidence = max(sum(positive.values()), sum(negative.values()))
     confidence = min(1.0, evidence / evidence_saturation)
@@ -150,18 +153,28 @@ def merge_preference_vector_v2(
     positive_norm = _normalize(positive)
     negative_norm = _normalize(negative)
     declared = sorted({topic for topic in declared_topics if topic})
-    declared_norm = {topic: 1.0 / len(declared) for topic in declared} if declared else {}
+    declared_norm = (
+        {topic: 1.0 / len(declared) for topic in declared} if declared else {}
+    )
     merged: dict[str, float] = {}
     for topic, value in positive_norm.items():
-        merged[topic] = merged.get(topic, 0.0) + behavior_coefficient * confidence * value
+        merged[topic] = (
+            merged.get(topic, 0.0) + behavior_coefficient * confidence * value
+        )
     for topic, value in negative_norm.items():
-        merged[topic] = merged.get(topic, 0.0) - behavior_coefficient * confidence * value
+        merged[topic] = (
+            merged.get(topic, 0.0) - behavior_coefficient * confidence * value
+        )
     for topic, value in declared_norm.items():
         merged[topic] = merged.get(topic, 0.0) + declared_coefficient * value
-    return {topic: round(value, 10) for topic, value in sorted(merged.items()) if value != 0}
+    return {
+        topic: round(value, 10) for topic, value in sorted(merged.items()) if value != 0
+    }
 
 
-def _merge_with_config(payload: dict[str, Any], declared: list[str], cfg: Any) -> dict[str, float]:
+def _merge_with_config(
+    payload: dict[str, Any], declared: list[str], cfg: Any
+) -> dict[str, float]:
     return merge_preference_vector_v2(
         payload,
         declared,
@@ -198,7 +211,10 @@ def _decode_v2_payload(raw: Any) -> dict[str, Any] | None:
 
     try:
         value = _json.loads(raw) if isinstance(raw, str) else raw
-        if not isinstance(value, dict) or value.get("schema_version") != PREFERENCE_SCHEMA_V2:
+        if (
+            not isinstance(value, dict)
+            or value.get("schema_version") != PREFERENCE_SCHEMA_V2
+        ):
             return None
         _numeric_channel(value.get("positive"))
         _numeric_channel(value.get("negative"))
@@ -228,7 +244,7 @@ def _numeric_channel(value: Any) -> dict[str, float]:
     if isinstance(value, str):
         value = _json.loads(value)
     if not isinstance(value, dict):
-        raise ValueError("preference channel must be an object")
+        raise TypeError("preference channel must be an object")
     channel = {str(key): float(weight) for key, weight in value.items()}
     if any(weight < 0 or weight > 10 for weight in channel.values()):
         raise ValueError("preference channel value out of bounds")
@@ -246,7 +262,7 @@ def _parse_timestamp(raw: Any) -> datetime:
     elif isinstance(raw, str):
         value = datetime.fromisoformat(raw.replace("Z", "+00:00"))
     else:
-        raise ValueError("reference_at is required")
+        raise TypeError("reference_at is required")
     if value.tzinfo is None:
         raise ValueError("reference_at must include timezone")
     return value.astimezone(timezone.utc)

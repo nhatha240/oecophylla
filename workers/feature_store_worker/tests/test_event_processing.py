@@ -5,12 +5,13 @@ from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
-
 from app.main import Worker
 
 ROOT = Path(__file__).resolve().parents[3]
 VIEWED_FIXTURE = json.loads(
-    (ROOT / "tests/fixtures/recommendation_telemetry/interaction_viewed_v1.json").read_text()
+    (
+        ROOT / "tests/fixtures/recommendation_telemetry/interaction_viewed_v1.json"
+    ).read_text()
 )
 LABEL_V2_FIXTURE = json.loads(
     (ROOT / "tests/fixtures/recommendation_telemetry/label-v2-cases.json").read_text()
@@ -18,7 +19,7 @@ LABEL_V2_FIXTURE = json.loads(
 
 
 class FakeTransaction:
-    def __init__(self, conn: "FakeConnection") -> None:
+    def __init__(self, conn: FakeConnection) -> None:
         self.conn = conn
 
     async def __aenter__(self) -> None:
@@ -163,7 +164,7 @@ class FakeCounter:
         self.records: list[tuple[str, str, int]] = []
         self.current: tuple[str, str] | None = None
 
-    def labels(self, *, outcome: str, event_type: str) -> "FakeCounter":
+    def labels(self, *, outcome: str, event_type: str) -> FakeCounter:
         self.current = (outcome, event_type)
         return self
 
@@ -179,7 +180,9 @@ def event(event_id: str, event_type: str) -> dict:
     return envelope
 
 
-def worker_with_fakes(monkeypatch: pytest.MonkeyPatch, *, redis_fail_once: bool = False):
+def worker_with_fakes(
+    monkeypatch: pytest.MonkeyPatch, *, redis_fail_once: bool = False
+):
     from app import main
 
     conn = FakeConnection()
@@ -264,7 +267,9 @@ async def test_replay_after_redis_failure_does_not_apply_vector_twice(monkeypatc
 
     assert conn.vector == {"ai": 0.5}
     assert conn.vector_updates == 1
-    assert json.loads(redis.cached[f"pref:{VIEWED_FIXTURE['data']['user_id']}"]) == {"ai": 0.5}
+    assert json.loads(redis.cached[f"pref:{VIEWED_FIXTURE['data']['user_id']}"]) == {
+        "ai": 0.5
+    }
 
 
 @pytest.mark.parametrize(
@@ -274,7 +279,9 @@ async def test_replay_after_redis_failure_does_not_apply_vector_twice(monkeypatc
         ("dwell", "0198f36d-0d80-7000-8000-000000000012"),
     ],
 )
-async def test_visible_and_dwell_do_not_change_preferences(monkeypatch, event_type, event_id):
+async def test_visible_and_dwell_do_not_change_preferences(
+    monkeypatch, event_type, event_id
+):
     worker, conn, _redis, counter = worker_with_fakes(monkeypatch)
     worker._buffer = [event(event_id, event_type)]
 

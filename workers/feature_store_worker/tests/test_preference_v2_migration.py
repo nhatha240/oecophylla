@@ -13,4 +13,3 @@ def test_preference_v2_migration_is_additive_versioned_and_canonical_backfill_re
     assert "reference_at" in sql
     assert "behavior_events" in sql
     assert "DROP TABLE" not in sql.upper()
-

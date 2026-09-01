@@ -2,7 +2,6 @@ from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 import pytest
-
 from app.ranking import freshness_decay, relevance, score_post
 from app.schemas import CandidatePost
 

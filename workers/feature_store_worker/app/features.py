@@ -1,10 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from math import exp2
-from typing import Iterable
-
 
 PREFERENCE_SCHEMA_V2 = "preference-vector-v2"
 DEFAULT_PREFERENCE_HALF_LIFE_HOURS = 24.0 * 30.0
@@ -38,6 +37,7 @@ class PreferenceVectorV2:
             "reference_at": self.reference_at.isoformat(),
             "source_event_count": self.source_event_count,
         }
+
 
 WEIGHTS: dict[str, float] = {
     "viewed": 0.5,
@@ -156,7 +156,9 @@ def build_preference_vector_v2(
         if event_type in CANONICAL_WEIGHTS:
             additive.append((event, event_type))
 
-    contributions = additive + [(event, event_type) for (_, event_type), event in active.items()]
+    contributions = additive + [
+        (event, event_type) for (_, event_type), event in active.items()
+    ]
     positive: dict[str, float] = {}
     negative: dict[str, float] = {}
     for event, event_type in contributions:
@@ -224,13 +226,19 @@ def blend_preference_channels(
     positive_norm = _normalize(positive)
     negative_norm = _normalize(negative)
     declared = sorted({topic for topic in declared_topics if topic})
-    declared_norm = {topic: 1.0 / len(declared) for topic in declared} if declared else {}
+    declared_norm = (
+        {topic: 1.0 / len(declared) for topic in declared} if declared else {}
+    )
 
     merged: dict[str, float] = {}
     for topic, value in positive_norm.items():
-        merged[topic] = merged.get(topic, 0.0) + behavior_coefficient * confidence * value
+        merged[topic] = (
+            merged.get(topic, 0.0) + behavior_coefficient * confidence * value
+        )
     for topic, value in negative_norm.items():
-        merged[topic] = merged.get(topic, 0.0) - behavior_coefficient * confidence * value
+        merged[topic] = (
+            merged.get(topic, 0.0) - behavior_coefficient * confidence * value
+        )
     for topic, value in declared_norm.items():
         merged[topic] = merged.get(topic, 0.0) + declared_coefficient * value
     return _rounded_channel(merged, retain_negative=True)
@@ -240,7 +248,9 @@ def _normalize(channel: dict[str, float]) -> dict[str, float]:
     total = sum(max(0.0, value) for value in channel.values())
     if total <= 0:
         return {}
-    return {topic: max(0.0, value) / total for topic, value in channel.items() if value > 0}
+    return {
+        topic: max(0.0, value) / total for topic, value in channel.items() if value > 0
+    }
 
 
 def _rounded_channel(

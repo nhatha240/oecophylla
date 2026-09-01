@@ -1,11 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import datetime, timezone
 from math import exp
-from typing import Iterable
 
 from .schemas import CandidatePost, RankFeatureSnapshot, RecommendationItem
-
 
 RANK_FEATURE_SCHEMA_VERSION = "rank-features-v1"
 HEURISTIC_MODEL_VERSION = "heuristic-v1"

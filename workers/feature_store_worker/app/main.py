@@ -75,6 +75,8 @@ class Worker:
             self.cfg.database_url, min_size=1, max_size=8
         )
         self.redis = redis_async.from_url(self.cfg.redis_url, decode_responses=True)
+        if self.cfg.preference_backfill_on_start:
+            await self._backfill_v2()
         self.consumer = AIOKafkaConsumer(
             self.cfg.interactions_topic,
             bootstrap_servers=self.cfg.kafka_brokers,
@@ -85,8 +87,6 @@ class Worker:
         )
         await self.consumer.start()
         self._metrics_server, _thread = start_http_server(self.cfg.metrics_port)
-        if self.cfg.preference_backfill_on_start:
-            await self._backfill_v2()
         logger.info("worker started")
 
     async def stop(self) -> None:
@@ -111,7 +111,7 @@ class Worker:
                     timeout_ms=int(self.cfg.flush_interval_seconds * 1000),
                     max_records=self.cfg.flush_batch_size,
                 )
-                for tp, batch in msgs.items():
+                for batch in msgs.values():
                     for record in batch:
                         if record.value:
                             self._buffer.append(record.value)
@@ -178,7 +178,7 @@ class Worker:
                         _record_outcome("duplicate", _event_type(env))
                     for env in result.ignored_events:
                         _record_outcome("ignored", _event_type(env))
-                except Exception:  # noqa: BLE001
+                except Exception:
                     logger.exception("failed to apply preference features")
                     failed_events.extend(user_events)
 
@@ -187,7 +187,7 @@ class Worker:
         # here is logged but does not block the Kafka offset commit.
         try:
             await self._update_trending(events)
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.exception("failed to update trending")
 
         if failed_events:
@@ -216,7 +216,7 @@ class Worker:
                 seen_ids.add(event_id)
                 unique_events.append(env)
 
-        async with self.pool.acquire() as conn:
+        async with self.pool.acquire() as conn:  # noqa: SIM117
             async with conn.transaction():
                 claimed_rows = await conn.fetch(
                     CLAIM_RECEIPTS_SQL,
@@ -230,7 +230,9 @@ class Worker:
                     env for env in unique_events if str(_event_id(env)) in claimed_ids
                 ]
                 duplicate_events.extend(
-                    env for env in unique_events if str(_event_id(env)) not in claimed_ids
+                    env
+                    for env in unique_events
+                    if str(_event_id(env)) not in claimed_ids
                 )
 
                 row = await conn.fetchrow(
@@ -341,7 +343,9 @@ class Worker:
                 vector_v2,
                 self.cfg.pref_ttl_seconds,
             )
-        return ApplyResult(vec, vector_v2, applied_events, duplicate_events, ignored_events)
+        return ApplyResult(
+            vec, vector_v2, applied_events, duplicate_events, ignored_events
+        )
 
     async def _backfill_v2(self) -> None:
         """Replay canonical behavior rows for users not yet on v2.
@@ -372,7 +376,7 @@ class Worker:
     async def _rebuild_v2_for_user(self, user_id: str) -> None:
         assert self.pool is not None
         assert self.redis is not None
-        async with self.pool.acquire() as conn:
+        async with self.pool.acquire() as conn:  # noqa: SIM117
             async with conn.transaction():
                 rows = await conn.fetch(
                     """
@@ -449,7 +453,11 @@ def _valid_feature_event(env: dict[str, Any], qualified_read_ms: int) -> bool:
         return version in (None, 1, "1", "v1")
     if event_type == "qualified_read":
         duration = (env.get("data") or {}).get("duration_ms")
-        return version in (2, "2", "v2") and isinstance(duration, int) and duration >= qualified_read_ms
+        return (
+            version in (2, "2", "v2")
+            and isinstance(duration, int)
+            and duration >= qualified_read_ms
+        )
     return True
 
 
@@ -458,7 +466,11 @@ def _occurred_at(env: dict[str, Any]) -> datetime:
     if isinstance(raw, str):
         try:
             parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-            return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
+            return (
+                parsed
+                if parsed.tzinfo is not None
+                else parsed.replace(tzinfo=timezone.utc)
+            )
         except ValueError:
             pass
     return datetime.now(timezone.utc)
@@ -471,7 +483,10 @@ def _decode_weights(raw: Any) -> dict[str, float]:
 
 def _decode_vector_v2(raw: Any) -> PreferenceVectorV2 | None:
     value = json.loads(raw) if isinstance(raw, str) else raw
-    if not isinstance(value, dict) or value.get("schema_version") != PREFERENCE_SCHEMA_V2:
+    if (
+        not isinstance(value, dict)
+        or value.get("schema_version") != PREFERENCE_SCHEMA_V2
+    ):
         return None
     reference_at = value.get("reference_at")
     if isinstance(reference_at, str):
@@ -489,14 +504,18 @@ def _decode_vector_v2(raw: Any) -> PreferenceVectorV2 | None:
 def _canonical_preference_events(rows: list[Any]) -> list[PreferenceEvent]:
     events: list[PreferenceEvent] = []
     for row in rows:
-        topics = [topic for topic in (row["topics"] or []) if topic and topic != "general"]
+        topics = [
+            topic for topic in (row["topics"] or []) if topic and topic != "general"
+        ]
         if not topics:
             topics = [tag for tag in (row["tags"] or []) if tag] or ["general"]
         events.append(
             PreferenceEvent(
                 event_id=str(row["event_id"]),
                 post_id=str(row["post_id"]),
-                impression_id=(str(row["impression_id"]) if row["impression_id"] else None),
+                impression_id=(
+                    str(row["impression_id"]) if row["impression_id"] else None
+                ),
                 event_type=str(row["event_type"]),
                 dwell_ms=row["dwell_ms"],
                 occurred_at=row["occurred_at"],

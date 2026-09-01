@@ -5,12 +5,10 @@ from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
-
 from app import features
 from app import main as recommendation_main
 from app.schemas import RecommendFeedRequest
 from app.settings import Settings
-
 
 VIEWER_ID = UUID("00000000-0000-0000-0000-000000000001")
 POST_ID = UUID("00000000-0000-0000-0000-000000000010")
@@ -136,9 +134,7 @@ def test_candidate_metrics_are_defined_per_source_and_exclusion_reason():
 @pytest.mark.asyncio
 async def test_exclusion_metrics_record_each_reason_and_unique_total():
     class ExclusionPool(RecordingPool):
-        async def fetch(
-            self, query: str, *args: object
-        ) -> list[dict[str, object]]:
+        async def fetch(self, query: str, *args: object) -> list[dict[str, object]]:
             self.calls.append((query, args))
             return [
                 {"reason": "hide", "excluded": 1},

@@ -1,7 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
 import pytest
-
 from app.features import (
     PREFERENCE_SCHEMA_V2,
     PreferenceEvent,
@@ -9,7 +8,6 @@ from app.features import (
     build_preference_vector_v2,
     decay_preference_vector,
 )
-
 
 NOW = datetime(2026, 8, 31, 12, 0, tzinfo=timezone.utc)
 
@@ -121,4 +119,3 @@ def test_behavior_and_declared_topics_are_normalized_separately_then_blended():
     assert merged["politics"] == pytest.approx(-0.75)
     assert merged["sports"] == pytest.approx(0.125)
     assert merged["science"] == pytest.approx(0.125)
-
