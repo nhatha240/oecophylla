@@ -26,6 +26,7 @@ pub struct InsertedBehaviorEvent {
     pub impression_id: Option<Uuid>,
     pub session_id: Option<Uuid>,
     pub event_type: String,
+    pub dwell_ms: Option<i32>,
     pub occurred_at: DateTime<Utc>,
 }
 
@@ -151,7 +152,7 @@ pub async fn insert_behavior_events(
         ON CONFLICT (client_event_id) DO NOTHING
         RETURNING
             id, client_event_id, post_id, impression_id, session_id,
-            event_type, occurred_at
+            event_type, dwell_ms, occurred_at
         "#,
     )
     .bind(user_id)
@@ -198,6 +199,7 @@ pub async fn insert_canonical_behavior_event(
     user_id: Uuid,
     post_id: Uuid,
     event_type: &str,
+    event_version: &str,
 ) -> Result<Uuid, AppError> {
     let event_id = Uuid::now_v7();
     sqlx::query(
@@ -205,13 +207,17 @@ pub async fn insert_canonical_behavior_event(
         INSERT INTO behavior_events (
             id, client_event_id, user_id, post_id, event_type, metadata
         )
-        VALUES ($1, $1, $2, $3, $4, '{"source":"canonical_api"}'::jsonb)
+        VALUES (
+            $1, $1, $2, $3, $4,
+            jsonb_build_object('source', 'canonical_api', 'event_version', $5::text)
+        )
         "#,
     )
     .bind(event_id)
     .bind(user_id)
     .bind(post_id)
     .bind(event_type)
+    .bind(event_version)
     .execute(&mut **tx)
     .await?;
     Ok(event_id)

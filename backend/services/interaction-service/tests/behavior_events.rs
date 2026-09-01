@@ -4,10 +4,15 @@
 use chrono::{Duration, Utc};
 use common::{auth::issue_access, models::UserRole};
 use reqwest::{Client, StatusCode};
-use serde_json::{Value, json};
-use sqlx::{PgPool, Row, postgres::PgPoolOptions};
+use serde_json::{json, Value};
+use sqlx::{postgres::PgPoolOptions, PgPool, Row};
 use std::process::Command;
 use uuid::Uuid;
+
+#[path = "../src/events.rs"]
+mod events;
+#[path = "../src/label_contract.rs"]
+mod label_contract;
 
 const ENVOY: &str = "http://localhost:8080";
 const JWT_SECRET: &str = "CHANGE_ME__min_32_chars__use_openssl_rand_hex_32";
@@ -166,6 +171,137 @@ fn kafka_topic_snapshot() -> String {
     )
 }
 
+#[test]
+fn rust_resolver_matches_the_shared_label_v2_fixture() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../../tests/fixtures/recommendation_telemetry/label-v2-cases.json"
+    ))
+    .unwrap();
+    let threshold = fixture["qualified_read_ms"].as_i64().unwrap();
+    for case in fixture["label_cases"].as_array().unwrap() {
+        let result = label_contract::derive_label_v2(
+            case["events"].as_array().unwrap(),
+            fixture["event_defaults"].as_object().unwrap(),
+            threshold,
+            case["label_window_closed"].as_bool().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            result.semantic, case["expected"]["semantic"],
+            "{}",
+            case["id"]
+        );
+        assert_eq!(
+            result.training_target,
+            case["expected"]["training_target"].as_i64(),
+            "{}",
+            case["id"]
+        );
+        assert_eq!(
+            result.accepted_events,
+            case["expected"]["accepted_events"].as_u64().unwrap() as usize,
+            "{}",
+            case["id"]
+        );
+        assert_eq!(
+            result.deduplicated_events,
+            case["expected"]["deduplicated_events"].as_u64().unwrap() as usize,
+            "{}",
+            case["id"]
+        );
+    }
+    for case in fixture["ordering_cases"].as_array().unwrap() {
+        let result = label_contract::derive_label_v2(
+            case["input_events"].as_array().unwrap(),
+            fixture["event_defaults"].as_object().unwrap(),
+            threshold,
+            case["label_window_closed"].as_bool().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            result.semantic, case["expected"]["semantic"],
+            "{}",
+            case["id"]
+        );
+        assert_eq!(
+            result.processing_order,
+            case["expected"]["processing_order"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|value| value.as_str().unwrap().to_string())
+                .collect::<Vec<_>>(),
+            "{}",
+            case["id"]
+        );
+    }
+    for case in fixture["event_retry_cases"].as_array().unwrap() {
+        assert!(
+            label_contract::derive_label_v2(
+                &[case["first"].clone(), case["retry"].clone()],
+                fixture["event_defaults"].as_object().unwrap(),
+                threshold,
+                true,
+            )
+            .is_err(),
+            "{}",
+            case["id"]
+        );
+    }
+}
+
+#[test]
+fn rust_resolver_recursively_canonicalizes_duplicate_json_objects() {
+    let events = vec![
+        json!({
+            "event_id": "30000000-0000-4000-8000-000000000090",
+            "event_type": "click",
+            "occurred_at": "2026-08-30T03:00:00Z",
+            "metadata": {"target": "post_detail", "context": {"source": "feed", "position": 1}}
+        }),
+        json!({
+            "metadata": {"context": {"position": 1, "source": "feed"}, "target": "post_detail"},
+            "occurred_at": "2026-08-30T03:00:00Z",
+            "event_type": "click",
+            "event_id": "30000000-0000-4000-8000-000000000090"
+        }),
+    ];
+    let result =
+        label_contract::derive_label_v2(&events, &serde_json::Map::new(), 10_000, true).unwrap();
+    assert_eq!(result.accepted_events, 1);
+    assert_eq!(result.deduplicated_events, 1);
+}
+
+#[test]
+fn v2_feature_rollout_emits_versioned_idempotent_qualified_read_envelope() {
+    let impression_id = Uuid::now_v7();
+    let behavior_event_id = Uuid::now_v7();
+    let envelope = events::feature_event_envelope(
+        "v2",
+        events::QualifiedReadData {
+            user_id: Uuid::now_v7(),
+            post_id: Uuid::now_v7(),
+            client_event_id: Uuid::now_v7(),
+            behavior_event_id,
+            impression_id: Some(impression_id),
+            session_id: Some(Uuid::now_v7()),
+            occurred_at: Utc::now(),
+            duration_ms: 10_000,
+            source_event_type: "view".into(),
+        },
+    )
+    .expect("v2 rollout emits a feature envelope");
+
+    assert_eq!(envelope["event_type"], "qualified_read");
+    assert_eq!(envelope["event_version"], 2);
+    assert_eq!(envelope["event_id"], impression_id.to_string());
+    assert_eq!(
+        envelope["data"]["behavior_event_id"],
+        behavior_event_id.to_string()
+    );
+    assert_eq!(envelope["data"]["duration_ms"], 10_000);
+}
+
 #[tokio::test]
 async fn behavior_batch_is_authenticated_partial_idempotent_and_append_only() {
     let db = test_pool().await;
@@ -268,9 +404,13 @@ async fn behavior_batch_is_authenticated_partial_idempotent_and_append_only() {
     .fetch_one(&db)
     .await
     .unwrap();
+    let view_counter_enabled = std::env::var("BEHAVIOR_VIEW_COUNTER_ENABLED")
+        .map(|value| value.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
     assert_eq!(
-        view_count, 1,
-        "retry must not increment the view counter twice"
+        view_count,
+        i64::from(view_counter_enabled),
+        "retry must not increment the rollout-selected view counter twice"
     );
     assert_eq!(stored_views, 1);
 

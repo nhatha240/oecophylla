@@ -14,5 +14,7 @@ pub struct AppState {
     pub cfg: Arc<SharedConfig>,
     pub comment_fanout: Arc<CommentFanout>,
     pub behavior_view_counter_enabled: bool,
-    pub positive_dwell_ms: i32,
+    pub qualified_read_ms: i32,
+    pub recommendation_label_version: String,
+    pub feature_event_version: String,
 }

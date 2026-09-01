@@ -4,7 +4,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
 
+from recommendation_label import QUALIFIED_READ_MS
+
 IdentityMode = Literal["hash", "drop"]
+LabelVersion = Literal["v1", "v2"]
 
 
 @dataclass(frozen=True)
@@ -13,7 +16,8 @@ class DatasetConfig:
     end: datetime
     extraction_time: datetime
     label_window_hours: int = 24
-    positive_dwell_ms: int = 10_000
+    qualified_read_ms: int = QUALIFIED_READ_MS
+    recommendation_label_version: LabelVersion = "v1"
     identity_mode: IdentityMode = "hash"
     hash_salt: str | None = None
     train_fraction: float = 0.70
@@ -29,8 +33,10 @@ class DatasetConfig:
             raise ValueError("extraction_time must not be before start")
         if self.label_window_hours <= 0:
             raise ValueError("label_window_hours must be positive")
-        if self.positive_dwell_ms <= 0:
-            raise ValueError("positive_dwell_ms must be positive")
+        if self.qualified_read_ms <= 0:
+            raise ValueError("qualified_read_ms must be positive")
+        if self.recommendation_label_version not in ("v1", "v2"):
+            raise ValueError("recommendation_label_version must be v1 or v2")
         if self.identity_mode not in ("hash", "drop"):
             raise ValueError("identity_mode must be hash or drop")
         if self.identity_mode == "hash" and not self.hash_salt:

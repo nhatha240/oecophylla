@@ -1,14 +1,14 @@
 use axum::{
-    Router,
     middleware::{from_fn, from_fn_with_state},
     routing::{delete, get, post},
+    Router,
 };
 use common::{
     config::SharedConfig,
     db::pg_pool,
     kafka::Producer,
     middleware::{
-        rate_limit::{RateLimitPolicy, RateLimitState, enforce_rate_limit},
+        rate_limit::{enforce_rate_limit, RateLimitPolicy, RateLimitState},
         trace::init_tracing,
     },
     redis::redis_pool,
@@ -19,6 +19,7 @@ mod comment_dto;
 mod comment_fanout;
 mod events;
 mod handlers;
+mod label_contract;
 mod repo;
 mod state;
 
@@ -43,11 +44,13 @@ async fn main() -> anyhow::Result<()> {
         cfg: Arc::new(cfg.clone()),
         comment_fanout: Arc::new(CommentFanout::new()),
         behavior_view_counter_enabled: env_flag("BEHAVIOR_VIEW_COUNTER_ENABLED", false),
-        positive_dwell_ms: std::env::var("POSITIVE_DWELL_MS")
+        qualified_read_ms: std::env::var("QUALIFIED_READ_MS")
             .ok()
             .and_then(|value| value.parse().ok())
-            .filter(|value| (5_000..=1_800_000).contains(value))
-            .unwrap_or(10_000),
+            .filter(|value| (1..=1_800_000).contains(value))
+            .unwrap_or(label_contract::QUALIFIED_READ_MS),
+        recommendation_label_version: version_flag("RECOMMENDATION_LABEL_VERSION"),
+        feature_event_version: version_flag("FEATURE_EVENT_VERSION"),
     };
 
     let rl = |key_prefix: &'static str, max: u32| RateLimitState {
@@ -154,4 +157,11 @@ fn env_flag(key: &str, default: bool) -> bool {
             )
         })
         .unwrap_or(default)
+}
+
+fn version_flag(key: &str) -> String {
+    match std::env::var(key).as_deref() {
+        Ok(label_contract::LABEL_V2) => label_contract::LABEL_V2.into(),
+        _ => label_contract::LABEL_V1.into(),
+    }
 }

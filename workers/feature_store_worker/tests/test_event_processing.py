@@ -12,6 +12,9 @@ ROOT = Path(__file__).resolve().parents[3]
 VIEWED_FIXTURE = json.loads(
     (ROOT / "tests/fixtures/recommendation_telemetry/interaction_viewed_v1.json").read_text()
 )
+LABEL_V2_FIXTURE = json.loads(
+    (ROOT / "tests/fixtures/recommendation_telemetry/label-v2-cases.json").read_text()
+)
 
 
 class FakeTransaction:
@@ -149,6 +152,34 @@ async def test_viewed_envelope_updates_preference_exactly_once_on_replay(monkeyp
     assert conn.vector_updates == 1
     assert ("applied", "viewed", 1) in counter.records
     assert ("duplicate", "viewed", 1) in counter.records
+
+
+async def test_qualified_read_v2_updates_preference_exactly_once_on_replay(monkeypatch):
+    worker, conn, _redis, counter = worker_with_fakes(monkeypatch)
+    qualified = event("0198f36d-0d80-7000-8000-000000000041", "qualified_read")
+    qualified["event_version"] = 2
+    qualified["data"]["duration_ms"] = LABEL_V2_FIXTURE["qualified_read_ms"]
+    qualified["data"]["source_event_type"] = "dwell"
+
+    worker._buffer = [qualified, qualified]
+    assert await worker._flush() is True
+
+    assert conn.vector == {"ai": 0.5}
+    assert conn.vector_updates == 1
+    assert ("applied", "qualified_read", 1) in counter.records
+    assert ("duplicate", "qualified_read", 1) in counter.records
+
+
+async def test_feature_worker_dual_reads_v1_and_v2_qualified_read_events(monkeypatch):
+    worker, conn, _redis, _counter = worker_with_fakes(monkeypatch)
+    qualified = event("0198f36d-0d80-7000-8000-000000000042", "qualified_read")
+    qualified["event_version"] = 2
+    qualified["data"]["duration_ms"] = LABEL_V2_FIXTURE["qualified_read_ms"]
+    qualified["data"]["source_event_type"] = "view"
+    worker._buffer = [VIEWED_FIXTURE, qualified]
+
+    assert await worker._flush() is True
+    assert conn.vector == {"ai": 1.0}
 
 
 async def test_duplicate_event_inside_one_kafka_batch_is_only_applied_once(monkeypatch):

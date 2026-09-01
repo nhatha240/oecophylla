@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use common::events::Envelope;
 use serde::Serialize;
+use serde_json::Value;
 use uuid::Uuid;
 
 pub const TOPIC_INTERACTIONS: &str = "oecophylla.interactions";
@@ -44,6 +45,19 @@ pub struct BehaviorTelemetryData {
     pub occurred_at: DateTime<Utc>,
 }
 
+#[derive(Serialize)]
+pub struct QualifiedReadData {
+    pub user_id: Uuid,
+    pub post_id: Uuid,
+    pub client_event_id: Uuid,
+    pub behavior_event_id: Uuid,
+    pub impression_id: Option<Uuid>,
+    pub session_id: Option<Uuid>,
+    pub occurred_at: DateTime<Utc>,
+    pub duration_ms: i32,
+    pub source_event_type: String,
+}
+
 /// Build the telemetry v1 envelope with a durable event identity. Reusing the
 /// append-only behavior row ID makes any producer retry safe for consumers.
 pub fn viewed_envelope(data: BehaviorTelemetryData) -> Envelope<BehaviorTelemetryData> {
@@ -55,6 +69,44 @@ pub fn viewed_envelope(data: BehaviorTelemetryData) -> Envelope<BehaviorTelemetr
         producer: "interaction-service",
         data,
     }
+}
+
+/// Build the v2 qualified-read envelope. Recommendation-attributed reads use
+/// the impression as their semantic identity, collapsing a threshold `view`
+/// and later `dwell` into one feature delta. Direct-entry reads fall back to
+/// the durable behavior row ID.
+pub fn qualified_read_envelope(data: QualifiedReadData) -> Envelope<QualifiedReadData> {
+    Envelope {
+        event_id: data.impression_id.unwrap_or(data.behavior_event_id),
+        event_type: "qualified_read",
+        event_version: 2,
+        occurred_at: data.occurred_at,
+        producer: "interaction-service",
+        data,
+    }
+}
+
+pub fn feature_event_envelope(
+    feature_event_version: &str,
+    data: QualifiedReadData,
+) -> Option<Value> {
+    if feature_event_version == crate::label_contract::LABEL_V2 {
+        return serde_json::to_value(qualified_read_envelope(data)).ok();
+    }
+    if feature_event_version != crate::label_contract::LABEL_V1 || data.source_event_type != "view"
+    {
+        return None;
+    }
+    serde_json::to_value(viewed_envelope(BehaviorTelemetryData {
+        user_id: data.user_id,
+        post_id: data.post_id,
+        client_event_id: data.client_event_id,
+        behavior_event_id: data.behavior_event_id,
+        impression_id: data.impression_id,
+        session_id: data.session_id,
+        occurred_at: data.occurred_at,
+    }))
+    .ok()
 }
 
 pub fn weight_for(t: &str) -> f32 {
@@ -128,6 +180,56 @@ mod tests {
 
         let actual = serde_json::to_value(viewed_envelope(data)).unwrap();
         assert_eq!(actual, fixture);
+    }
+
+    #[test]
+    fn qualified_read_v2_deduplicates_view_and_dwell_for_one_impression() {
+        let impression_id = Uuid::now_v7();
+        let occurred_at = Utc::now();
+        let view = qualified_read_envelope(QualifiedReadData {
+            user_id: Uuid::now_v7(),
+            post_id: Uuid::now_v7(),
+            client_event_id: Uuid::now_v7(),
+            behavior_event_id: Uuid::now_v7(),
+            impression_id: Some(impression_id),
+            session_id: Some(Uuid::now_v7()),
+            occurred_at,
+            duration_ms: 10_000,
+            source_event_type: "view".into(),
+        });
+        let dwell = qualified_read_envelope(QualifiedReadData {
+            user_id: view.data.user_id,
+            post_id: view.data.post_id,
+            client_event_id: Uuid::now_v7(),
+            behavior_event_id: Uuid::now_v7(),
+            impression_id: Some(impression_id),
+            session_id: view.data.session_id,
+            occurred_at,
+            duration_ms: 12_000,
+            source_event_type: "dwell".into(),
+        });
+
+        assert_eq!(view.event_id, impression_id);
+        assert_eq!(dwell.event_id, impression_id);
+        assert_eq!(view.event_type, "qualified_read");
+        assert_eq!(view.event_version, 2);
+    }
+
+    #[test]
+    fn direct_entry_qualified_read_uses_the_durable_behavior_id() {
+        let behavior_event_id = Uuid::now_v7();
+        let envelope = qualified_read_envelope(QualifiedReadData {
+            user_id: Uuid::now_v7(),
+            post_id: Uuid::now_v7(),
+            client_event_id: Uuid::now_v7(),
+            behavior_event_id,
+            impression_id: None,
+            session_id: Some(Uuid::now_v7()),
+            occurred_at: Utc::now(),
+            duration_ms: 10_000,
+            source_event_type: "dwell".into(),
+        });
+        assert_eq!(envelope.event_id, behavior_event_id);
     }
 }
 

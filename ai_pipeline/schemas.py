@@ -6,7 +6,15 @@ from typing import Any, Literal, Mapping
 from uuid import UUID
 
 SplitName = Literal["train", "validation", "test"]
-LabelName = Literal["strong_negative", "negative", "positive", "strong_positive"]
+LabelName = Literal[
+    "exposure",
+    "click",
+    "qualified_read",
+    "strong_negative",
+    "negative",
+    "positive",
+    "strong_positive",
+]
 
 
 def parse_datetime(value: Any) -> datetime:
@@ -57,11 +65,22 @@ class BehaviorEvent:
     event_type: str
     dwell_ms: int | None
     occurred_at: datetime
+    ingested_at: datetime | None = None
+    event_version: str | None = None
+    metadata: Mapping[str, Any] | None = None
 
     @classmethod
     def from_mapping(cls, row: Mapping[str, Any]) -> BehaviorEvent:
         impression_id = row.get("impression_id")
         dwell_ms = row.get("dwell_ms")
+        metadata = (
+            dict(row["metadata"])
+            if isinstance(row.get("metadata"), Mapping)
+            else None
+        )
+        persisted_version = row.get("event_version")
+        if persisted_version is None and metadata is not None:
+            persisted_version = metadata.get("event_version")
         return cls(
             id=UUID(str(row["id"])),
             impression_id=UUID(str(impression_id)) if impression_id else None,
@@ -70,6 +89,17 @@ class BehaviorEvent:
             event_type=str(row["event_type"]),
             dwell_ms=int(dwell_ms) if dwell_ms is not None else None,
             occurred_at=parse_datetime(row["occurred_at"]),
+            ingested_at=(
+                parse_datetime(row["ingested_at"])
+                if row.get("ingested_at") is not None
+                else None
+            ),
+            event_version=(
+                str(persisted_version)
+                if persisted_version is not None
+                else None
+            ),
+            metadata=metadata,
         )
 
 
