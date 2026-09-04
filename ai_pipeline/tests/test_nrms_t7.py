@@ -499,3 +499,45 @@ def test_nrms_training_rejects_non_positive_epoch_count(tmp_path: Path, epochs: 
 
     with pytest.raises(DatasetValidationError, match="epochs"):
         train_from_dataset(dataset, tmp_path / f"nrms-{epochs}", epochs=epochs)
+
+
+def test_promotion_win_requires_positive_paired_confidence_interval():
+    rows = _rows(requests_per_split=40)
+
+    class PerfectArtifact:
+        def __init__(self) -> None:
+            self.manifest: dict[str, Any] = {}
+
+        def predict_scores(self, records: list[dict[str, Any]]) -> list[float]:
+            return [float(row["click_label"]) for row in records]
+
+    report = compare_nrms_holdout(rows, PerfectArtifact())
+    ndcg = report["comparisons"]["pure_vs_logged_position"]["ndcg_at_10"]
+
+    assert ndcg["requests"] == 40
+    assert ndcg["ci95"][0] > 0.0
+    assert report["promotion"] == {
+        "eligible": True,
+        "conclusion": "win",
+    }
+
+
+def test_equal_model_is_no_regression_and_not_a_statistical_win():
+    rows = _rows(requests_per_split=30)
+
+    class LoggedOrderArtifact:
+        def __init__(self) -> None:
+            self.manifest: dict[str, Any] = {}
+
+        def predict_scores(self, records: list[dict[str, Any]]) -> list[float]:
+            return [-float(row["position"]) for row in records]
+
+    report = compare_nrms_holdout(rows, LoggedOrderArtifact())
+    ndcg = report["comparisons"]["pure_vs_logged_position"]["ndcg_at_10"]
+
+    assert ndcg["delta"] == 0.0
+    assert ndcg["ci95"] == [0.0, 0.0]
+    assert report["promotion"] == {
+        "eligible": True,
+        "conclusion": "no_regression",
+    }
