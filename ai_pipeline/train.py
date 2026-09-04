@@ -6,9 +6,10 @@ import platform
 import shutil
 import tempfile
 from collections import Counter, defaultdict
+from collections.abc import Mapping, Sequence
 from importlib.metadata import version
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 import joblib
 import numpy as np
@@ -37,8 +38,8 @@ from .model import (
     FEATURE_COLUMNS,
     NRMSArchitecture,
     NRMSLikeRanker,
-    build_pipeline,
     build_pairwise_examples,
+    build_pipeline,
     records_to_matrix,
     train_pairwise_epoch,
 )
@@ -265,9 +266,7 @@ def _validate_v2_contract(rows: Sequence[Mapping[str, Any]]) -> None:
         request for request, splits in splits_by_request.items() if len(splits) != 1
     ]
     if leaked:
-        raise DatasetValidationError(
-            "request_group appears in multiple dataset splits"
-        )
+        raise DatasetValidationError("request_group appears in multiple dataset splits")
 
 
 def _split_v2_rows(
@@ -451,9 +450,7 @@ def _calibrate_ranker(
             history_embeddings=history_embeddings,
             declared_topic_embedding=row.get("declared_topic_embedding"),
         )
-        raw_scores.append(
-            ranker.raw_score(context.vector, row["article"]["embedding"])
-        )
+        raw_scores.append(ranker.raw_score(context.vector, row["article"]["embedding"]))
         labels.append(int(row["click_label"]))
     if len(set(labels)) < 2:
         return ranker

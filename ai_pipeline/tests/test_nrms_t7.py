@@ -163,8 +163,13 @@ def test_pairwise_examples_never_cross_impression_boundaries():
     examples = build_pairwise_examples(train_rows)
 
     assert examples
-    assert all(example.positive_request == example.negative_request for example in examples)
-    assert all(example.positive_label == 1 and example.negative_label == 0 for example in examples)
+    assert all(
+        example.positive_request == example.negative_request for example in examples
+    )
+    assert all(
+        example.positive_label == 1 and example.negative_label == 0
+        for example in examples
+    )
 
 
 def test_empty_history_uses_declared_then_popular_fallback_without_fake_clicks():
@@ -185,7 +190,9 @@ def test_empty_history_uses_declared_then_popular_fallback_without_fake_clicks()
     assert popular.fabricated_clicks == 0
 
 
-def test_v2_training_is_deterministic_resumable_and_manifest_is_complete(tmp_path: Path):
+def test_v2_training_is_deterministic_resumable_and_manifest_is_complete(
+    tmp_path: Path,
+):
     dataset = _write_dataset(tmp_path)
     checkpoint = tmp_path / "checkpoint.npz"
     first = train_from_dataset(
@@ -217,12 +224,22 @@ def test_v2_training_is_deterministic_resumable_and_manifest_is_complete(tmp_pat
     assert resumed["label_schema"]["training_target"] == "click_label"
     assert resumed["dataset"]["parquet_sha256"]
     assert resumed["calibration"]["method"] == "temperature-scaled-sigmoid"
-    assert set(resumed["dependency_versions"]) >= {"joblib", "numpy", "pyarrow", "python"}
-    assert resumed["files"]["model.joblib"]["sha256"] == uninterrupted["files"]["model.joblib"]["sha256"]
+    assert set(resumed["dependency_versions"]) >= {
+        "joblib",
+        "numpy",
+        "pyarrow",
+        "python",
+    }
+    assert (
+        resumed["files"]["model.joblib"]["sha256"]
+        == uninterrupted["files"]["model.joblib"]["sha256"]
+    )
     assert resumed["training"]["resumed_from_epoch"] == 2
 
 
-def test_nrms_artifact_loads_in_fresh_process_and_contains_no_private_groups(tmp_path: Path):
+def test_nrms_artifact_loads_in_fresh_process_and_contains_no_private_groups(
+    tmp_path: Path,
+):
     rows = _rows()
     dataset = _write_dataset(tmp_path, rows)
     output = tmp_path / "nrms-v1"
@@ -252,7 +269,9 @@ print(json.dumps(artifact.predict_scores(records)))
 
 
 @pytest.mark.parametrize("failure", ["future_history", "request_leakage", "embedding"])
-def test_training_rejects_leakage_and_missing_article_contract(tmp_path: Path, failure: str):
+def test_training_rejects_leakage_and_missing_article_contract(
+    tmp_path: Path, failure: str
+):
     rows = _rows()
     if failure == "future_history":
         target = next(row for row in rows if row["history"])
@@ -270,7 +289,9 @@ def test_training_rejects_leakage_and_missing_article_contract(tmp_path: Path, f
         train_from_dataset(dataset, tmp_path / "rejected")
 
 
-def test_evaluation_reports_raw_post_policy_baselines_and_required_segments(tmp_path: Path):
+def test_evaluation_reports_raw_post_policy_baselines_and_required_segments(
+    tmp_path: Path,
+):
     rows = _rows(requests_per_split=6)
     dataset = _write_dataset(tmp_path, rows)
     output = tmp_path / "nrms"
@@ -310,7 +331,9 @@ def test_evaluation_reports_raw_post_policy_baselines_and_required_segments(tmp_
     assert report["promotion"]["eligible"] in {True, False}
 
 
-def test_evaluation_rejects_insufficient_power_and_missing_segment_results(tmp_path: Path):
+def test_evaluation_rejects_insufficient_power_and_missing_segment_results(
+    tmp_path: Path,
+):
     rows = _rows(requests_per_split=2)
     dataset = _write_dataset(tmp_path, rows)
     output = tmp_path / "nrms"
@@ -352,6 +375,7 @@ def test_evaluate_cli_dispatches_dataset_v2_to_nrms_report(tmp_path: Path):
             "1",
         ],
         cwd=REPO_ROOT,
+        check=False,
         capture_output=True,
         text=True,
     )
@@ -366,7 +390,8 @@ def test_promotion_rejects_a_model_that_regresses_against_logged_order():
     rows = _rows(requests_per_split=4)
 
     class DeliberatelyBadArtifact:
-        manifest: dict[str, Any] = {}
+        def __init__(self) -> None:
+            self.manifest: dict[str, Any] = {}
 
         def predict_scores(self, records: list[dict[str, Any]]) -> list[float]:
             return [float(1 - int(row["click_label"])) for row in records]
@@ -469,9 +494,7 @@ def test_nrms_loader_rejects_manifest_payload_architecture_mismatch(tmp_path: Pa
 
 
 @pytest.mark.parametrize("epochs", [0, -1])
-def test_nrms_training_rejects_non_positive_epoch_count(
-    tmp_path: Path, epochs: int
-):
+def test_nrms_training_rejects_non_positive_epoch_count(tmp_path: Path, epochs: int):
     dataset = _write_dataset(tmp_path)
 
     with pytest.raises(DatasetValidationError, match="epochs"):

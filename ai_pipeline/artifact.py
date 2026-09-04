@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 import joblib
 from sklearn.pipeline import Pipeline
@@ -128,8 +129,7 @@ def load_artifact(directory: Path) -> LoadedArtifact | LoadedNRMSArtifact:
             )
         if (
             payload.popular_embedding is not None
-            and payload.popular_embedding.shape
-            != (architecture.embedding_dimension,)
+            and payload.popular_embedding.shape != (architecture.embedding_dimension,)
         ):
             raise ArtifactIntegrityError(
                 "NRMS fallback vector does not match model architecture"

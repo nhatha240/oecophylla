@@ -6,9 +6,10 @@ import json
 import math
 import random
 from collections import defaultdict
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from statistics import fmean
-from typing import Any, Mapping, Protocol, Sequence
+from typing import Any, Protocol
 
 import numpy as np
 import pyarrow.parquet as pq
@@ -135,9 +136,7 @@ def _evaluate_scores(
     }
     metrics["coverage"] = round(len(top_posts) / len(catalog), 6) if catalog else 0.0
     metrics["sample_impressions"] = len(rows)
-    metrics["impression_auc_eligible_requests"] = len(
-        per_request["impression_auc"]
-    )
+    metrics["impression_auc_eligible_requests"] = len(per_request["impression_auc"])
     metrics["impression_auc_excluded_requests"] = len(grouped) - len(
         per_request["impression_auc"]
     )
@@ -223,15 +222,11 @@ def compare_holdout(
     auc_eligible_requests = ml["impression_auc_eligible_requests"]
     auc_excluded_requests = ml["impression_auc_excluded_requests"]
     conclusion = "no_regression"
-    if (
-        request_count < minimum_requests
-        or auc_eligible_requests < minimum_auc_requests
-    ):
+    if request_count < minimum_requests or auc_eligible_requests < minimum_auc_requests:
         conclusion = "inconclusive"
     elif (
         ml["ndcg_at_k"] < baseline["ndcg_at_k"] - ndcg_tolerance
-        or ml["impression_auc"]
-        < baseline["impression_auc"] - ndcg_tolerance
+        or ml["impression_auc"] < baseline["impression_auc"] - ndcg_tolerance
         or ml["mrr"] < baseline["mrr"] - ndcg_tolerance
         or ml["ndcg_at_5"] < baseline["ndcg_at_5"] - ndcg_tolerance
         or ml["ndcg_at_10"] < baseline["ndcg_at_10"] - ndcg_tolerance
@@ -264,9 +259,7 @@ def compare_holdout(
                 else None
             )
             confidence_intervals[f"ml_{metric}"] = (
-                _bootstrap_ci95(ml_values, seed=index * 2 + 1)
-                if ml_values
-                else None
+                _bootstrap_ci95(ml_values, seed=index * 2 + 1) if ml_values else None
             )
     sample_ids = sorted(str(row["sample_id"]) for row in holdout)
     checksum = hashlib.sha256("\n".join(sample_ids).encode()).hexdigest()
@@ -471,9 +464,7 @@ def _aggregate_model_metrics(
     result["impression_auc_eligible_requests"] = len(auc_values)
     result["requests"] = len(per_request)
     catalog = {
-        str(row["candidate_group"])
-        for rows in rows_by_request.values()
-        for row in rows
+        str(row["candidate_group"]) for rows in rows_by_request.values() for row in rows
     }
     selected: list[Mapping[str, Any]] = []
     diversity_values: list[float] = []
@@ -496,9 +487,9 @@ def _aggregate_model_metrics(
             else 0.0
         )
     selected_candidates = {str(row["candidate_group"]) for row in selected}
-    result["coverage_at_k"] = round(
-        len(selected_candidates) / len(catalog), 6
-    ) if catalog else 0.0
+    result["coverage_at_k"] = (
+        round(len(selected_candidates) / len(catalog), 6) if catalog else 0.0
+    )
     result["embedding_diversity_at_k"] = _mean(diversity_values)
     result["strong_negative_rate_at_k"] = _mean(strong_negative_values)
     return result
@@ -522,7 +513,9 @@ def _bucket_article_tenure(
     served = row.get("served_at")
     if updated is None or served is None:
         return "unknown"
-    age_hours = (parse_datetime(served) - parse_datetime(updated)).total_seconds() / 3600.0
+    age_hours = (
+        parse_datetime(served) - parse_datetime(updated)
+    ).total_seconds() / 3600.0
     return "new" if age_hours <= threshold_hours else "established"
 
 
@@ -632,7 +625,9 @@ def compare_nrms_holdout(
     for request_rows in test_by_request.values():
         ids = [str(row["sample_id"]) for row in request_rows]
         request_pure = {sample_id: pure_scores[sample_id] for sample_id in ids}
-        request_heuristic = {sample_id: heuristic_scores[sample_id] for sample_id in ids}
+        request_heuristic = {
+            sample_id: heuristic_scores[sample_id] for sample_id in ids
+        }
         post_policy_scores.update(
             _post_policy_scores(request_rows, request_pure, request_heuristic)
         )
@@ -654,9 +649,7 @@ def compare_nrms_holdout(
     request_count = len(test_by_request)
     auc_eligible_requests = models["pure_model"]["impression_auc_eligible_requests"]
     missing_segment_metadata = any(
-        bucket == "unknown"
-        for segment in segments.values()
-        for bucket in segment
+        bucket == "unknown" for segment in segments.values() for bucket in segment
     )
     ranking_regression = any(
         models["pure_model"][metric]
@@ -842,7 +835,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         json_path, markdown_path = write_nrms_comparison_report(report, args.output)
         conclusion = (
-            "eligible" if report["promotion"]["eligible"] else report["promotion"]["reason"]
+            "eligible"
+            if report["promotion"]["eligible"]
+            else report["promotion"]["reason"]
         )
     else:
         report = compare_holdout(
