@@ -29,6 +29,15 @@ def test_mind_and_local_use_the_same_v2_validator_and_private_schema():
     assert {row.split for row in result.rows} == {"train", "validation", "test"}
     assert all(row.dataset_scope == "served-impression-reranking" for row in result.rows)
     assert all(row.article.representation_type == "mind-text-v1" for row in result.rows)
+    histories_by_time = {
+        row.served_at: row.history for row in result.rows if row.position == 0
+    }
+    latest_history = histories_by_time[max(histories_by_time)]
+    assert [entry.ordinal for entry in latest_history] == [0, 1]
+    assert [entry.article.title for entry in latest_history] == [
+        "Home side wins",
+        "Storm approaches",
+    ]
     exported = json.dumps([row.to_record() for row in result.rows], default=str)
     for raw_identity in ("I1", "I2", "I3", "U1", "U2", "N1", "N2", "N3", "N4", "N5"):
         assert raw_identity not in exported

@@ -196,6 +196,28 @@ def test_v2_validator_rejects_encoder_dimension_and_identity_mismatch(
     with pytest.raises(ValueError, match="encoder version"):
         validate_dataset_v2(replace(result, rows=(wrong_encoder, *result.rows[1:])))
 
+    history_row = next(row for row in result.rows if row.history)
+    wrong_history = replace(
+        history_row.history[0].article,
+        encoder_version=ENCODER[:-1] + "0",
+    )
+    invalid_history = (
+        replace(history_row.history[0], article=wrong_history),
+        *history_row.history[1:],
+    )
+    with pytest.raises(ValueError, match="encoder version"):
+        validate_dataset_v2(
+            replace(
+                result,
+                rows=tuple(
+                    replace(row, history=invalid_history)
+                    if row.request_group == history_row.request_group
+                    else row
+                    for row in result.rows
+                ),
+            )
+        )
+
     wrong_dimension = replace(first, article=replace(first.article, embedding=(1.0, 0.0)))
     with pytest.raises(ValueError, match="embedding dimension"):
         validate_dataset_v2(replace(result, rows=(wrong_dimension, *result.rows[1:])))
@@ -224,6 +246,24 @@ def test_v2_keeps_click_that_precedes_proven_visibility(config: DatasetConfig):
 
     assert row.click_label == 1
     assert row.utility_label == 1
+
+
+@pytest.mark.parametrize("timestamp_field", ["source_updated_at", "computed_at"])
+def test_v2_never_uses_candidate_feature_revision_from_after_serving(
+    config: DatasetConfig,
+    timestamp_field: str,
+):
+    _, impressions, events, features = _load_local_fixture()
+    target = impressions[0]
+    features = [
+        replace(feature, **{timestamp_field: target.served_at + timedelta(seconds=1)})
+        if feature.post_id == target.post_id
+        else feature
+        for feature in features
+    ]
+
+    with pytest.raises(ValueError, match="missing article representation"):
+        build_ranking_samples_v2(impressions, events, features, config)
 
 
 def test_v2_validator_rejects_reordered_or_non_contiguous_history(
@@ -312,6 +352,16 @@ def test_v2_artifact_pins_versions_and_contains_no_raw_identity(
     serialized = table.to_pydict()
     assert payload["user_id"] not in json.dumps(serialized, default=str)
 
+    other_encoder = replace(config, encoder_version=ENCODER[:-40] + "0" * 40)
+    with pytest.raises(ValueError, match="encoder version was not verified"):
+        write_dataset_v2_artifact(
+            result,
+            other_encoder,
+            tmp_path / "mismatched.parquet",
+            code_version="test-sha",
+            source_format="oecophylla-telemetry-v2",
+        )
+
 
 def test_v2_config_requires_explicit_v2_label_and_pinned_encoder(config: DatasetConfig):
     with pytest.raises(ValueError, match="dataset v2 requires label v2"):
@@ -320,3 +370,9 @@ def test_v2_config_requires_explicit_v2_label_and_pinned_encoder(config: Dataset
         replace(config, encoder_version="mutable/latest")
     with pytest.raises(ValueError, match="encoder_dimension"):
         replace(config, encoder_dimension=0)
+    with pytest.raises(ValueError, match="identity_mode=hash"):
+        replace(config, identity_mode="drop", hash_salt=None)
+    with pytest.raises(ValueError, match="post-content-features-v1"):
+        replace(config, feature_schema_version="post-content-features-v2")
+    with pytest.raises(ValueError, match="event-time-window-v1"):
+        replace(config, query_window_version="processing-time-window-v1")

@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Literal, Mapping
+from typing import Any, Literal
 from uuid import UUID
 
 SplitName = Literal["train", "validation", "test"]
@@ -19,6 +20,8 @@ LabelName = Literal[
 ]
 HistoryEventType = Literal["click"]
 HISTORY_SCHEMA_VERSION = "user-history-snapshot-v1"
+DATASET_V2_SCOPE = "served-impression-reranking"
+ArticleRepresentationType = Literal["post-content-embedding-v1", "mind-text-v1"]
 
 
 def parse_datetime(value: Any) -> datetime:
@@ -118,7 +121,7 @@ class ArticleFeatureRecord:
     computed_at: datetime
 
     @classmethod
-    def from_mapping(cls, row: Mapping[str, Any]) -> "ArticleFeatureRecord":
+    def from_mapping(cls, row: Mapping[str, Any]) -> ArticleFeatureRecord:
         return cls(
             id=UUID(str(row["id"])),
             post_id=UUID(str(row["post_id"])),
@@ -255,3 +258,107 @@ class BuildStats:
 class BuildResult:
     rows: tuple[DatasetRow, ...]
     stats: BuildStats
+
+
+@dataclass(frozen=True)
+class ArticleRepresentation:
+    article_group: str
+    representation_type: ArticleRepresentationType
+    encoder_version: str | None = None
+    content_hash: str | None = None
+    embedding: tuple[float, ...] | None = None
+    category: str | None = None
+    subcategory: str | None = None
+    title: str | None = None
+    abstract: str | None = None
+
+    def to_record(self) -> dict[str, Any]:
+        return {
+            "article_group": self.article_group,
+            "representation_type": self.representation_type,
+            "encoder_version": self.encoder_version,
+            "content_hash": self.content_hash,
+            "embedding": list(self.embedding) if self.embedding is not None else None,
+            "category": self.category,
+            "subcategory": self.subcategory,
+            "title": self.title,
+            "abstract": self.abstract,
+        }
+
+
+@dataclass(frozen=True)
+class RankingHistoryEntry:
+    article: ArticleRepresentation
+    ordinal: int
+    engaged_at: datetime | None
+    provenance: Literal["oecophylla-click-v2", "mind-pre-impression-snapshot"]
+
+    def to_record(self) -> dict[str, Any]:
+        return {
+            "article": self.article.to_record(),
+            "ordinal": self.ordinal,
+            "engaged_at": self.engaged_at,
+            "provenance": self.provenance,
+        }
+
+
+@dataclass(frozen=True)
+class RankingDatasetRow:
+    sample_id: str
+    request_group: str
+    candidate_group: str
+    split: SplitName
+    served_at: datetime
+    visible_at: datetime
+    position: int
+    served: bool
+    visible: bool
+    click_label: int
+    utility_label: int
+    utility_label_name: LabelName
+    article: ArticleRepresentation
+    history: tuple[RankingHistoryEntry, ...]
+    feed_source: str
+    model_version: str
+    source_format: str
+    dataset_scope: Literal["served-impression-reranking"] = DATASET_V2_SCOPE
+    audit_request_identity: str = ""
+
+    def to_record(self) -> dict[str, Any]:
+        return {
+            "sample_id": self.sample_id,
+            "request_group": self.request_group,
+            "candidate_group": self.candidate_group,
+            "split": self.split,
+            "served_at": self.served_at,
+            "visible_at": self.visible_at,
+            "position": self.position,
+            "served": self.served,
+            "visible": self.visible,
+            "click_label": self.click_label,
+            "utility_label": self.utility_label,
+            "utility_label_name": self.utility_label_name,
+            "article": self.article.to_record(),
+            "history": [entry.to_record() for entry in self.history],
+            "feed_source": self.feed_source,
+            "model_version": self.model_version,
+            "source_format": self.source_format,
+            "dataset_scope": self.dataset_scope,
+        }
+
+
+@dataclass(frozen=True)
+class RankingBuildResult:
+    rows: tuple[RankingDatasetRow, ...]
+    stats: BuildStats
+    expected_encoder_version: str | None = None
+    expected_embedding_dimension: int | None = None
+
+
+@dataclass(frozen=True)
+class DatasetV2ValidationReport:
+    request_count: int
+    candidate_count: int
+    empty_history_requests: int
+    click_class_balance: Mapping[int, int]
+    utility_class_balance: Mapping[int, int]
