@@ -200,9 +200,30 @@ def test_v2_validator_rejects_encoder_dimension_and_identity_mismatch(
     with pytest.raises(ValueError, match="embedding dimension"):
         validate_dataset_v2(replace(result, rows=(wrong_dimension, *result.rows[1:])))
 
+    zero_vector = replace(first, article=replace(first.article, embedding=(0.0,) * 384))
+    with pytest.raises(ValueError, match="L2-normalized"):
+        validate_dataset_v2(replace(result, rows=(zero_vector, *result.rows[1:])))
+
     bad_sample = replace(first, sample_id="not-a-private-hash")
     with pytest.raises(ValueError, match="private hashes"):
         validate_dataset_v2(replace(result, rows=(bad_sample, *result.rows[1:])))
+
+
+def test_v2_keeps_click_that_precedes_proven_visibility(config: DatasetConfig):
+    _, impressions, events, features = _load_local_fixture()
+    target = impressions[0]
+    events = [
+        replace(event, occurred_at=target.served_at + timedelta(milliseconds=500))
+        if event.impression_id == target.id and event.event_type == "click"
+        else event
+        for event in events
+    ]
+
+    result = build_ranking_samples_v2(impressions, events, features, config)
+    row = next(item for item in result.rows if item.position == target.position and item.served_at == target.served_at)
+
+    assert row.click_label == 1
+    assert row.utility_label == 1
 
 
 def test_v2_validator_rejects_reordered_or_non_contiguous_history(
@@ -263,7 +284,7 @@ def test_v2_validator_accepts_and_counts_empty_history(config: DatasetConfig):
 def test_v2_artifact_pins_versions_and_contains_no_raw_identity(
     config: DatasetConfig, tmp_path: Path
 ):
-    import pyarrow.parquet as parquet
+    from pyarrow import parquet
 
     payload, impressions, events, features = _load_local_fixture()
     result = build_ranking_samples_v2(impressions, events, features, config)
@@ -282,6 +303,7 @@ def test_v2_artifact_pins_versions_and_contains_no_raw_identity(
     assert metadata["dataset_scope"] == "served-impression-reranking"
     assert metadata["feature_schema_version"] == "post-content-features-v1"
     assert metadata["label_definition_version"] == "engagement-label-v2"
+    assert metadata["qualified_read_ms"] == 10_000
     assert metadata["encoder_version"] == ENCODER
     assert metadata["encoder_dimension"] == 384
     assert metadata["code_version"] == "test-sha"
