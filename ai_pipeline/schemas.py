@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal, Mapping
@@ -15,6 +17,8 @@ LabelName = Literal[
     "positive",
     "strong_positive",
 ]
+HistoryEventType = Literal["click"]
+HISTORY_SCHEMA_VERSION = "user-history-snapshot-v1"
 
 
 def parse_datetime(value: Any) -> datetime:
@@ -101,6 +105,88 @@ class BehaviorEvent:
             ),
             metadata=metadata,
         )
+
+
+@dataclass(frozen=True)
+class ArticleFeatureRecord:
+    id: UUID
+    post_id: UUID
+    encoder_version: str
+    content_hash: str
+    embedding: tuple[float, ...]
+    source_updated_at: datetime
+    computed_at: datetime
+
+    @classmethod
+    def from_mapping(cls, row: Mapping[str, Any]) -> "ArticleFeatureRecord":
+        return cls(
+            id=UUID(str(row["id"])),
+            post_id=UUID(str(row["post_id"])),
+            encoder_version=str(row["encoder_version"]),
+            content_hash=str(row["content_hash"]),
+            embedding=tuple(float(value) for value in row["embedding"]),
+            source_updated_at=parse_datetime(row["source_updated_at"]),
+            computed_at=parse_datetime(row["computed_at"]),
+        )
+
+
+@dataclass(frozen=True)
+class HistoryEntry:
+    event_id: UUID
+    post_id: UUID
+    event_type: HistoryEventType
+    engaged_at: datetime
+    encoder_version: str
+    content_hash: str
+    feature_source_updated_at: datetime
+    feature_computed_at: datetime
+    embedding: tuple[float, ...]
+
+    def to_audit_record(
+        self, *, identity_mode: Literal["hash", "drop"], hash_salt: str | None
+    ) -> dict[str, Any]:
+        record = {
+            "event_type": self.event_type,
+            "engaged_at": self.engaged_at,
+            "encoder_version": self.encoder_version,
+            "content_hash": self.content_hash,
+            "feature_source_updated_at": self.feature_source_updated_at,
+            "feature_computed_at": self.feature_computed_at,
+        }
+        if identity_mode == "hash":
+            if not hash_salt:
+                raise ValueError("hash_salt is required when identity_mode=hash")
+            record["post_group"] = hmac.new(
+                hash_salt.encode(),
+                str(self.post_id).encode(),
+                hashlib.sha256,
+            ).hexdigest()
+        else:
+            record["post_group"] = None
+        return record
+
+
+@dataclass(frozen=True)
+class HistorySnapshot:
+    schema_version: str
+    user_id: UUID
+    reference_at: datetime
+    entries: tuple[HistoryEntry, ...]
+
+    def to_audit_record(
+        self, *, identity_mode: Literal["hash", "drop"], hash_salt: str | None
+    ) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "reference_at": self.reference_at,
+            "entries": [
+                entry.to_audit_record(
+                    identity_mode=identity_mode,
+                    hash_salt=hash_salt,
+                )
+                for entry in self.entries
+            ],
+        }
 
 
 @dataclass(frozen=True)

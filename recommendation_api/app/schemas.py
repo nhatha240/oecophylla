@@ -4,6 +4,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from ai_pipeline.schemas import HistoryEntry, HistorySnapshot
+
 
 class RecommendFeedRequest(BaseModel):
     limit: int = Field(default=50, ge=1, le=200)
@@ -80,3 +82,62 @@ class EvaluateResponse(BaseModel):
     label_window_hours: int = Field(ge=1)
     ctr_simulation: Optional[float] = Field(default=None, deprecated=True)
     diversity: Optional[float] = Field(default=None, deprecated=True)
+
+
+class HistoryEntryPayload(BaseModel):
+    event_id: UUID
+    post_id: UUID
+    event_type: Literal["click"]
+    engaged_at: datetime
+    encoder_version: str = Field(min_length=1)
+    content_hash: str = Field(min_length=64, max_length=64)
+    feature_source_updated_at: datetime
+    feature_computed_at: datetime
+    embedding: list[float]
+
+    def to_offline_entry(self) -> HistoryEntry:
+        return HistoryEntry(
+            event_id=self.event_id,
+            post_id=self.post_id,
+            event_type=self.event_type,
+            engaged_at=self.engaged_at,
+            encoder_version=self.encoder_version,
+            content_hash=self.content_hash,
+            feature_source_updated_at=self.feature_source_updated_at,
+            feature_computed_at=self.feature_computed_at,
+            embedding=tuple(self.embedding),
+        )
+
+    def to_cache_record(self) -> dict[str, object]:
+        return {
+            "event_id": str(self.event_id),
+            "post_id": str(self.post_id),
+            "event_type": self.event_type,
+            "engaged_at": self.engaged_at.isoformat(),
+            "encoder_version": self.encoder_version,
+            "content_hash": self.content_hash,
+            "feature_source_updated_at": self.feature_source_updated_at.isoformat(),
+            "feature_computed_at": self.feature_computed_at.isoformat(),
+        }
+
+
+class UserHistorySnapshotPayload(BaseModel):
+    schema_version: Literal["user-history-snapshot-v1"]
+    user_id: UUID
+    reference_at: datetime
+    entries: list[HistoryEntryPayload] = Field(default_factory=list)
+
+    def to_offline_snapshot(self) -> HistorySnapshot:
+        return HistorySnapshot(
+            schema_version=self.schema_version,
+            user_id=self.user_id,
+            reference_at=self.reference_at,
+            entries=tuple(entry.to_offline_entry() for entry in self.entries),
+        )
+
+    def to_cache_payload(self) -> dict[str, object]:
+        return {
+            "schema_version": self.schema_version,
+            "reference_at": self.reference_at.isoformat(),
+            "entries": [entry.to_cache_record() for entry in self.entries],
+        }

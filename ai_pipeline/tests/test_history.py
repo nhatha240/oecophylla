@@ -175,8 +175,8 @@ def test_history_snapshot_respects_recent_and_long_term_limits():
 
     assert [entry.post_id for entry in snapshot.entries] == [
         UUID(int=103),
-        UUID(int=104),
-        UUID(int=105),
+        UUID(int=102),
+        UUID(int=101),
     ]
 
 

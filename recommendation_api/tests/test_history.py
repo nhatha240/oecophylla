@@ -138,7 +138,18 @@ async def test_fetch_user_history_matches_offline_snapshot_and_caches_reconstruc
     assert online.to_offline_snapshot() == offline
     assert redis_client.writes == []
 
-    live_pool = FakePool(event_rows, feature_rows)
+    live_reference_at = datetime.now(timezone.utc)
+    live_event_rows = [
+        _event_row(21, posts[0], live_reference_at - timedelta(hours=3)),
+        _event_row(22, posts[1], live_reference_at - timedelta(hours=2)),
+        _event_row(23, posts[2], live_reference_at - timedelta(hours=1)),
+    ]
+    live_feature_rows = [
+        _feature_row(31, posts[0], "a" * 64, live_reference_at - timedelta(days=1)),
+        _feature_row(32, posts[1], "b" * 64, live_reference_at - timedelta(days=1)),
+        _feature_row(33, posts[2], "c" * 64, live_reference_at - timedelta(days=1)),
+    ]
+    live_pool = FakePool(live_event_rows, live_feature_rows)
     live_redis = FakeRedisClient()
     live = await fetch_user_history(
         SimpleNamespace(pool=live_pool),
@@ -146,10 +157,18 @@ async def test_fetch_user_history_matches_offline_snapshot_and_caches_reconstruc
         USER_ID,
         config=_cfg(),
     )
+    live_offline = build_history_snapshot(
+        USER_ID,
+        live.reference_at,
+        [BehaviorEvent.from_mapping(row) for row in live_event_rows],
+        [ArticleFeatureRecord.from_mapping(row) for row in live_feature_rows],
+        _dataset_config(),
+    )
 
-    assert live.to_offline_snapshot() == offline
+    assert live.to_offline_snapshot() == live_offline
     assert live_redis.writes
     payload = json.loads(live_redis.writes[0][2])
     assert payload["schema_version"] == "user-history-snapshot-v1"
     assert "embedding" not in payload["entries"][0]
+    assert payload["entries"][0]["event_id"] == str(UUID(int=21))
     assert payload["entries"][0]["content_hash"] == "a" * 64
