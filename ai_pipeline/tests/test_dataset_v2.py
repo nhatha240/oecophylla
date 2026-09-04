@@ -185,6 +185,67 @@ def test_v2_validator_rejects_missing_embedding_and_future_history(config: Datas
         validate_dataset_v2(replace(result, rows=(leaked, *result.rows[1:])))
 
 
+def test_v2_validator_rejects_encoder_dimension_and_identity_mismatch(
+    config: DatasetConfig,
+):
+    _, impressions, events, features = _load_local_fixture()
+    result = build_ranking_samples_v2(impressions, events, features, config)
+    first = result.rows[0]
+
+    wrong_encoder = replace(first, article=replace(first.article, encoder_version=ENCODER[:-1] + "0"))
+    with pytest.raises(ValueError, match="encoder version"):
+        validate_dataset_v2(replace(result, rows=(wrong_encoder, *result.rows[1:])))
+
+    wrong_dimension = replace(first, article=replace(first.article, embedding=(1.0, 0.0)))
+    with pytest.raises(ValueError, match="embedding dimension"):
+        validate_dataset_v2(replace(result, rows=(wrong_dimension, *result.rows[1:])))
+
+    bad_sample = replace(first, sample_id="not-a-private-hash")
+    with pytest.raises(ValueError, match="private hashes"):
+        validate_dataset_v2(replace(result, rows=(bad_sample, *result.rows[1:])))
+
+
+def test_v2_validator_rejects_reordered_or_non_contiguous_history(
+    config: DatasetConfig,
+):
+    _, impressions, events, features = _load_local_fixture()
+    result = build_ranking_samples_v2(impressions, events, features, config)
+    first = next(row for row in result.rows if len(row.history) >= 2)
+
+    duplicate_ordinal = replace(first.history[1], ordinal=first.history[0].ordinal)
+    invalid_ordinals = replace(first, history=(first.history[0], duplicate_ordinal))
+    with pytest.raises(ValueError, match="history ordinals"):
+        validate_dataset_v2(
+            replace(
+                result,
+                rows=tuple(
+                    replace(row, history=invalid_ordinals.history)
+                    if row.request_group == first.request_group
+                    else row
+                    for row in result.rows
+                ),
+            )
+        )
+
+    decreasing = replace(
+        first.history[1],
+        engaged_at=first.history[0].engaged_at - timedelta(seconds=1),
+    )
+    invalid_times = replace(first, history=(first.history[0], decreasing))
+    with pytest.raises(ValueError, match="history timestamps must be ordered"):
+        validate_dataset_v2(
+            replace(
+                result,
+                rows=tuple(
+                    replace(row, history=invalid_times.history)
+                    if row.request_group == first.request_group
+                    else row
+                    for row in result.rows
+                ),
+            )
+        )
+
+
 def test_v2_validator_accepts_and_counts_empty_history(config: DatasetConfig):
     _, impressions, events, features = _load_local_fixture()
     result = build_ranking_samples_v2(impressions, events, features, config)
