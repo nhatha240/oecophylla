@@ -13,7 +13,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from ai_pipeline.artifact import load_artifact
+from ai_pipeline.artifact import ArtifactIntegrityError, load_artifact
 from ai_pipeline.evaluate import compare_nrms_holdout
 from ai_pipeline.model import NRMSArchitecture, NRMSLikeRanker, build_pairwise_examples
 from ai_pipeline.train import DatasetValidationError, train_from_dataset
@@ -284,8 +284,8 @@ def test_evaluation_reports_raw_post_policy_baselines_and_required_segments(tmp_
     )
 
     assert set(report["models"]) == {
-        "heuristic_baseline",
-        "logistic_baseline",
+        "logged_position_baseline",
+        "mean_pool_logistic_baseline",
         "pure_model",
         "post_policy",
     }
@@ -294,6 +294,9 @@ def test_evaluation_reports_raw_post_policy_baselines_and_required_segments(tmp_
         "mrr",
         "ndcg_at_5",
         "ndcg_at_10",
+        "coverage_at_k",
+        "embedding_diversity_at_k",
+        "strong_negative_rate_at_k",
     }
     assert set(report["segments"]) == {
         "user_tenure",
@@ -450,3 +453,26 @@ def test_real_v2_shape_reports_missing_segment_metadata_without_crashing(
         "eligible": False,
         "reason": "missing_segment_metadata",
     }
+
+
+def test_nrms_loader_rejects_manifest_payload_architecture_mismatch(tmp_path: Path):
+    dataset = _write_dataset(tmp_path)
+    artifact_path = tmp_path / "nrms"
+    train_from_dataset(dataset, artifact_path, epochs=1)
+    manifest_path = artifact_path / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["architecture"]["attention_heads"] = 4
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ArtifactIntegrityError, match="architecture"):
+        load_artifact(artifact_path)
+
+
+@pytest.mark.parametrize("epochs", [0, -1])
+def test_nrms_training_rejects_non_positive_epoch_count(
+    tmp_path: Path, epochs: int
+):
+    dataset = _write_dataset(tmp_path)
+
+    with pytest.raises(DatasetValidationError, match="epochs"):
+        train_from_dataset(dataset, tmp_path / f"nrms-{epochs}", epochs=epochs)
