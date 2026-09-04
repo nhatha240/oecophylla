@@ -460,6 +460,8 @@ def _article_representation_from_feature(
         encoder_version=feature.encoder_version,
         content_hash=feature.content_hash,
         embedding=feature.embedding,
+        feature_source_updated_at=feature.source_updated_at,
+        feature_computed_at=feature.computed_at,
     )
 
 
@@ -673,6 +675,7 @@ def _validate_article_representation(
     *,
     expected_encoder_version: str | None,
     expected_embedding_dimension: int | None,
+    available_at: datetime | None,
 ) -> None:
     if article.representation_type == "post-content-embedding-v1":
         if article.embedding is None:
@@ -681,6 +684,23 @@ def _validate_article_representation(
             raise ValueError("invalid article embedding")
         if not article.encoder_version or not article.content_hash:
             raise ValueError("missing article representation provenance")
+        if (
+            article.feature_source_updated_at is None
+            or article.feature_computed_at is None
+        ):
+            raise ValueError("missing article feature revision timestamps")
+        if (
+            article.feature_source_updated_at.tzinfo is None
+            or article.feature_computed_at.tzinfo is None
+        ):
+            raise ValueError("article feature revision timestamps require a timezone")
+        if article.feature_source_updated_at > article.feature_computed_at:
+            raise ValueError("article feature source timestamp exceeds computation time")
+        if available_at is not None and (
+            article.feature_source_updated_at > available_at
+            or article.feature_computed_at > available_at
+        ):
+            raise ValueError("article feature revision must not be from the future")
         if not _is_private_hash(article.content_hash):
             raise ValueError(
                 "article content_hash must be 64 lowercase hexadecimal characters"
@@ -705,6 +725,11 @@ def _validate_article_representation(
             raise ValueError("MIND text representation must not contain an unpinned embedding")
         if article.content_hash is None or not _is_private_hash(article.content_hash):
             raise ValueError("MIND text representation requires a versioned content hash")
+        if (
+            article.feature_source_updated_at is not None
+            or article.feature_computed_at is not None
+        ):
+            raise ValueError("MIND text representation must not fabricate feature timestamps")
     else:
         raise ValueError("unsupported article representation")
 
@@ -777,6 +802,7 @@ def validate_dataset_v2(result: RankingBuildResult) -> DatasetV2ValidationReport
             row.article,
             expected_encoder_version=result.expected_encoder_version,
             expected_embedding_dimension=result.expected_embedding_dimension,
+            available_at=row.served_at,
         )
         if [entry.ordinal for entry in row.history] != list(range(len(row.history))):
             raise ValueError("history ordinals must be contiguous and ordered")
@@ -794,6 +820,7 @@ def validate_dataset_v2(result: RankingBuildResult) -> DatasetV2ValidationReport
                 entry.article,
                 expected_encoder_version=result.expected_encoder_version,
                 expected_embedding_dimension=result.expected_embedding_dimension,
+                available_at=entry.engaged_at,
             )
             if entry.provenance == "oecophylla-click-v2":
                 if entry.engaged_at is None or entry.engaged_at >= row.served_at:

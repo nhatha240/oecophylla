@@ -267,6 +267,8 @@ class ArticleRepresentation:
     encoder_version: str | None = None
     content_hash: str | None = None
     embedding: tuple[float, ...] | None = None
+    feature_source_updated_at: datetime | None = None
+    feature_computed_at: datetime | None = None
     category: str | None = None
     subcategory: str | None = None
     title: str | None = None
@@ -279,6 +281,8 @@ class ArticleRepresentation:
             "encoder_version": self.encoder_version,
             "content_hash": self.content_hash,
             "embedding": list(self.embedding) if self.embedding is not None else None,
+            "feature_source_updated_at": self.feature_source_updated_at,
+            "feature_computed_at": self.feature_computed_at,
             "category": self.category,
             "subcategory": self.subcategory,
             "title": self.title,
