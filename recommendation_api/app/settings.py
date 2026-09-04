@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     preference_behavior_coefficient: float = Field(default=0.75, ge=0)
     preference_declared_coefficient: float = Field(default=0.25, ge=0)
     preference_evidence_saturation: float = Field(default=2.5, gt=0)
+    history_recent_limit: int = Field(default=20, ge=0, le=500)
+    history_long_term_limit: int = Field(default=30, ge=0, le=500)
+    history_cache_ttl_seconds: int = Field(default=1800, ge=1, le=86_400)
+    history_lookup_slack: int = Field(default=50, ge=0, le=500)
 
 
 def settings() -> Settings:

@@ -11,6 +11,7 @@ from ai_pipeline.build_dataset import build_history_snapshot
 from ai_pipeline.config import DatasetConfig
 from ai_pipeline.schemas import ArticleFeatureRecord, BehaviorEvent
 from app.db import fetch_user_history
+from app.settings import Settings
 
 USER_ID = UUID("00000000-0000-0000-0000-000000000001")
 REFERENCE_AT = datetime(2026, 9, 4, 8, 0, tzinfo=timezone.utc)
@@ -172,3 +173,12 @@ async def test_fetch_user_history_matches_offline_snapshot_and_caches_reconstruc
     assert "embedding" not in payload["entries"][0]
     assert payload["entries"][0]["event_id"] == str(UUID(int=21))
     assert payload["entries"][0]["content_hash"] == "a" * 64
+
+
+def test_runtime_settings_expose_history_loader_controls():
+    settings = Settings()
+
+    assert settings.history_recent_limit == 20
+    assert settings.history_long_term_limit == 30
+    assert settings.history_cache_ttl_seconds == 1800
+    assert settings.history_lookup_slack == 50
