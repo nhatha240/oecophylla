@@ -316,28 +316,64 @@ def _compute_popular_embedding(
     return np.asarray(vectors, dtype=float).mean(axis=0).tolist()
 
 
-def _save_nrms_checkpoint(path: Path, ranker: NRMSLikeRanker, epoch: int) -> None:
+def _checkpoint_contract(
+    dataset: Path,
+    metadata: Mapping[str, Any],
+    architecture: NRMSArchitecture,
+) -> dict[str, Any]:
+    return {
+        "checkpoint_schema_version": "nrms-training-checkpoint-v1",
+        "dataset_sha256": sha256_file(dataset),
+        "metadata_sha256": sha256_file(
+            dataset.with_suffix(f"{dataset.suffix}.metadata.json")
+        ),
+        "embedding_dimension": architecture.embedding_dimension,
+        "attention_heads": architecture.attention_heads,
+        "history_length": architecture.history_length,
+        "seed": architecture.seed,
+        "encoder_version": metadata["encoder_version"],
+        "history_schema_version": metadata["history_schema_version"],
+        "label_definition_version": metadata["label_definition_version"],
+        "learning_rate": NRMS_LEARNING_RATE,
+    }
+
+
+def _save_nrms_checkpoint(
+    path: Path,
+    ranker: NRMSLikeRanker,
+    epoch: int,
+    contract: Mapping[str, Any],
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     popular = (
         ranker.popular_embedding
         if ranker.popular_embedding is not None
         else np.zeros(ranker.architecture.embedding_dimension)
     )
-    np.savez(
-        path,
-        query_projection=ranker.query_projection,
-        key_projection=ranker.key_projection,
-        value_projection=ranker.value_projection,
-        popular_embedding=np.asarray(popular, dtype=float),
-        embedding_dimension=ranker.architecture.embedding_dimension,
-        attention_heads=ranker.architecture.attention_heads,
-        history_length=ranker.architecture.history_length,
-        seed=ranker.architecture.seed,
-        epoch=epoch,
-    )
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            prefix=f".{path.name}.", suffix=".tmp", dir=path.parent, delete=False
+        ) as handle:
+            temporary_path = Path(handle.name)
+            np.savez(
+                handle,
+                query_projection=ranker.query_projection,
+                key_projection=ranker.key_projection,
+                value_projection=ranker.value_projection,
+                popular_embedding=np.asarray(popular, dtype=float),
+                epoch=epoch,
+                **contract,
+            )
+        temporary_path.replace(path)
+    finally:
+        if temporary_path is not None and temporary_path.exists():
+            temporary_path.unlink()
 
 
-def _load_nrms_checkpoint(path: Path) -> tuple[NRMSLikeRanker, int]:
+def _load_nrms_checkpoint(
+    path: Path,
+) -> tuple[NRMSLikeRanker, int, dict[str, Any]]:
     with np.load(path) as data:
         architecture = NRMSArchitecture(
             embedding_dimension=int(data["embedding_dimension"]),
@@ -355,7 +391,46 @@ def _load_nrms_checkpoint(path: Path) -> tuple[NRMSLikeRanker, int]:
             popular_embedding=np.array(data["popular_embedding"]),
         )
         epoch = int(data["epoch"])
-    return ranker, epoch
+        contract = {
+            key: data[key].item()
+            for key in (
+                "checkpoint_schema_version",
+                "dataset_sha256",
+                "metadata_sha256",
+                "embedding_dimension",
+                "attention_heads",
+                "history_length",
+                "seed",
+                "encoder_version",
+                "history_schema_version",
+                "label_definition_version",
+                "learning_rate",
+            )
+        }
+    return ranker, epoch, contract
+
+
+def _validate_checkpoint_contract(
+    actual: Mapping[str, Any], expected: Mapping[str, Any]
+) -> None:
+    labels = {
+        "checkpoint_schema_version": "schema version",
+        "dataset_sha256": "dataset checksum",
+        "metadata_sha256": "metadata checksum",
+        "embedding_dimension": "embedding dimension",
+        "attention_heads": "attention heads",
+        "history_length": "history length",
+        "seed": "seed",
+        "encoder_version": "encoder version",
+        "history_schema_version": "history schema version",
+        "label_definition_version": "label definition version",
+        "learning_rate": "learning rate",
+    }
+    for key, expected_value in expected.items():
+        if actual.get(key) != expected_value:
+            raise DatasetValidationError(
+                f"checkpoint {labels[key]} does not match the requested training run"
+            )
 
 
 def _calibrate_ranker(
@@ -416,6 +491,7 @@ def _train_nrms_from_dataset(
     popular_embedding = _compute_popular_embedding(
         rows_by_split["train"], embedding_dimension
     )
+    checkpoint_contract = _checkpoint_contract(dataset, metadata, architecture)
 
     start_epoch = 0
     if resume:
@@ -423,7 +499,12 @@ def _train_nrms_from_dataset(
             raise DatasetValidationError(
                 "resume requested but checkpoint file does not exist"
             )
-        ranker, start_epoch = _load_nrms_checkpoint(checkpoint)
+        ranker, start_epoch, stored_contract = _load_nrms_checkpoint(checkpoint)
+        _validate_checkpoint_contract(stored_contract, checkpoint_contract)
+        if start_epoch >= epochs:
+            raise DatasetValidationError(
+                "checkpoint epoch must be lower than the requested target epoch"
+            )
     else:
         ranker = NRMSLikeRanker.initialize(
             architecture, popular_embedding=popular_embedding
@@ -440,7 +521,12 @@ def _train_nrms_from_dataset(
             ranker, train_examples, learning_rate=NRMS_LEARNING_RATE
         )
         if checkpoint is not None:
-            _save_nrms_checkpoint(checkpoint, ranker, epoch + 1)
+            _save_nrms_checkpoint(
+                checkpoint,
+                ranker,
+                epoch + 1,
+                checkpoint_contract,
+            )
 
     ranker = _calibrate_ranker(ranker, rows_by_split["validation"])
 

@@ -14,7 +14,7 @@ import numpy as np
 import pyarrow.parquet as pq
 from sklearn.linear_model import LogisticRegression
 
-from .artifact import MODEL_FILENAME, load_artifact
+from .artifact import MODEL_FILENAME, NRMS_MODEL_TYPE, load_artifact
 from .model import FEATURE_COLUMNS
 from .schemas import parse_datetime
 
@@ -457,11 +457,8 @@ def _aggregate_model_metrics(
 
 def _validate_v2_segment_contract(rows: Sequence[Mapping[str, Any]]) -> None:
     missing_feed_source = any("feed_source" not in row for row in rows)
-    missing_language = any("language" not in row for row in rows)
-    if missing_feed_source or missing_language:
-        raise ValueError(
-            "dataset rows are missing required segment fields (feed_source/language)"
-        )
+    if missing_feed_source:
+        raise ValueError("dataset rows are missing required segment field feed_source")
 
 
 def _bucket_user_tenure(row: Mapping[str, Any]) -> str:
@@ -478,6 +475,12 @@ def _bucket_article_tenure(
         return "unknown"
     age_hours = (parse_datetime(served) - parse_datetime(updated)).total_seconds() / 3600.0
     return "new" if age_hours <= threshold_hours else "established"
+
+
+def _bucket_language(row: Mapping[str, Any]) -> str:
+    article = row.get("article") or {}
+    language = row.get("language") or article.get("language")
+    return str(language) if language else "unknown"
 
 
 def _bucket_history_length(row: Mapping[str, Any]) -> str:
@@ -506,7 +509,7 @@ def _segment_bucket_keys(rows: Sequence[Mapping[str, Any]]) -> dict[str, str]:
         "article_tenure": _bucket_article_tenure(positive),
         "history_length": _bucket_history_length(representative),
         "feed_source": str(representative.get("feed_source")),
-        "language": str(representative.get("language")),
+        "language": _bucket_language(representative),
     }
 
 
@@ -540,6 +543,7 @@ def compare_nrms_holdout(
     *,
     minimum_requests: int = 30,
     minimum_auc_requests: int | None = None,
+    ranking_tolerance: float = 0.01,
 ) -> dict[str, Any]:
     if minimum_requests <= 0:
         raise ValueError("minimum_requests must be positive")
@@ -592,6 +596,18 @@ def compare_nrms_holdout(
 
     request_count = len(test_by_request)
     auc_eligible_requests = models["pure_model"]["impression_auc_eligible_requests"]
+    missing_segment_metadata = any(
+        bucket == "unknown"
+        for segment in segments.values()
+        for bucket in segment
+    )
+    ranking_regression = any(
+        models["pure_model"][metric]
+        < models["heuristic_baseline"][metric] - ranking_tolerance
+        for metric in ("mrr", "ndcg_at_5", "ndcg_at_10", "impression_auc")
+        if models["pure_model"][metric] is not None
+        and models["heuristic_baseline"][metric] is not None
+    )
     if request_count < minimum_requests:
         promotion: dict[str, Any] = {
             "eligible": False,
@@ -601,6 +617,16 @@ def compare_nrms_holdout(
         promotion = {
             "eligible": False,
             "reason": "insufficient_auc_eligible_requests",
+        }
+    elif missing_segment_metadata:
+        promotion = {
+            "eligible": False,
+            "reason": "missing_segment_metadata",
+        }
+    elif ranking_regression:
+        promotion = {
+            "eligible": False,
+            "reason": "ranking_metric_regression",
         }
     else:
         promotion = {"eligible": True}
@@ -618,6 +644,52 @@ def compare_nrms_holdout(
         "segments": segments,
         "promotion": promotion,
     }
+
+
+def write_nrms_comparison_report(
+    report: Mapping[str, Any], output: Path
+) -> tuple[Path, Path]:
+    json_path = output if output.suffix == ".json" else output.with_suffix(".json")
+    markdown_path = json_path.with_suffix(".md")
+    json_path.parent.mkdir(parents=True, exist_ok=True)
+    json_path.write_text(
+        json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    models = report["models"]
+    metric_names = ("impression_auc", "mrr", "ndcg_at_5", "ndcg_at_10")
+    markdown_path.write_text(
+        "\n".join(
+            [
+                "# NRMS recommendation model comparison",
+                "",
+                f"- Promotion eligible: **{report['promotion']['eligible']}**",
+                f"- Promotion reason: `{report['promotion'].get('reason', 'eligible')}`",
+                f"- Holdout impressions: {report['sample']['impressions']}",
+                f"- Holdout requests: {report['sample']['requests']}",
+                "",
+                "| Model | Impression AUC | MRR | nDCG@5 | nDCG@10 |",
+                "|---|---:|---:|---:|---:|",
+                *[
+                    "| "
+                    + name
+                    + " | "
+                    + " | ".join(
+                        (
+                            f"{metrics[metric]:.6f}"
+                            if metrics[metric] is not None
+                            else "n/a"
+                        )
+                        for metric in metric_names
+                    )
+                    + " |"
+                    for name, metrics in models.items()
+                ],
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return json_path, markdown_path
 
 
 def write_comparison_report(
@@ -677,18 +749,31 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     rows = pq.read_table(args.dataset).to_pylist()
     artifact = load_artifact(args.artifact)
-    report = compare_holdout(
-        rows,
-        artifact,
-        k=args.k,
-        minimum_requests=args.minimum_requests,
-        minimum_auc_requests=args.minimum_auc_requests,
-    )
-    json_path, markdown_path = write_comparison_report(report, args.output)
+    if artifact.manifest.get("model_type") == NRMS_MODEL_TYPE:
+        report = compare_nrms_holdout(
+            rows,
+            artifact,
+            minimum_requests=args.minimum_requests,
+            minimum_auc_requests=args.minimum_auc_requests,
+        )
+        json_path, markdown_path = write_nrms_comparison_report(report, args.output)
+        conclusion = (
+            "eligible" if report["promotion"]["eligible"] else report["promotion"]["reason"]
+        )
+    else:
+        report = compare_holdout(
+            rows,
+            artifact,
+            k=args.k,
+            minimum_requests=args.minimum_requests,
+            minimum_auc_requests=args.minimum_auc_requests,
+        )
+        json_path, markdown_path = write_comparison_report(report, args.output)
+        conclusion = report["conclusion"]
     print(
         json.dumps(
             {
-                "conclusion": report["conclusion"],
+                "conclusion": conclusion,
                 "json": str(json_path),
                 "markdown": str(markdown_path),
             },
