@@ -266,6 +266,30 @@ def test_v2_never_uses_candidate_feature_revision_from_after_serving(
         build_ranking_samples_v2(impressions, events, features, config)
 
 
+def test_v2_artifact_keeps_and_validates_feature_revision_timestamps(
+    config: DatasetConfig,
+):
+    _, impressions, events, features = _load_local_fixture()
+    result = build_ranking_samples_v2(impressions, events, features, config)
+
+    for row in result.rows:
+        assert row.article.feature_source_updated_at <= row.served_at
+        assert row.article.feature_computed_at <= row.served_at
+        for entry in row.history:
+            assert entry.article.feature_source_updated_at <= entry.engaged_at
+            assert entry.article.feature_computed_at <= entry.engaged_at
+
+    first = result.rows[0]
+    future_article = replace(
+        first.article,
+        feature_computed_at=first.served_at + timedelta(seconds=1),
+    )
+    with pytest.raises(ValueError, match="feature revision must not be from the future"):
+        validate_dataset_v2(
+            replace(result, rows=(replace(first, article=future_article), *result.rows[1:]))
+        )
+
+
 def test_v2_validator_rejects_reordered_or_non_contiguous_history(
     config: DatasetConfig,
 ):
