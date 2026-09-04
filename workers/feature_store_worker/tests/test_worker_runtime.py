@@ -156,7 +156,9 @@ async def test_trending_is_updated_as_an_approximate_weighted_projection():
 
 
 def test_envelope_helpers_handle_legacy_users_and_malformed_values():
-    assert _extract_user({"data": {"reporter_id": "user-1"}}) == "user-1"
+    reporter_id = "0198f36d-0d80-7000-8000-000000000002"
+    assert _extract_user({"data": {"reporter_id": reporter_id}}) == reporter_id
+    assert _extract_user({"data": {"reporter_id": "not-a-uuid"}}) is None
     assert _extract_user({"data": {}}) is None
     assert _event_id({"event_id": "not-a-uuid"}) is None
     assert _occurred_at({"occurred_at": "2026-08-28T03:15:00"}).tzinfo is not None

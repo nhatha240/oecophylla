@@ -266,4 +266,28 @@ mod tests {
         }
         assert!(!invalidates_preferences("future_unknown_event"));
     }
+
+    #[tokio::test]
+    async fn live_redis_deletes_every_registered_user_cache_key() {
+        let Ok(redis_url) = std::env::var("TEST_REDIS_URL") else {
+            eprintln!("TEST_REDIS_URL unset; skipping live Redis assertion");
+            return;
+        };
+        let pool = common::redis::redis_pool(&redis_url).expect("build test Redis pool");
+        let user_id = uuid::Uuid::new_v4().to_string();
+        let keys = cache_keys_for_user(&user_id);
+        let mut conn = pool.get().await.expect("connect to test Redis");
+        for key in &keys {
+            let _: () = conn.set(key, "stale").await.expect("seed cache key");
+        }
+
+        let deleted = invalidate_user_caches(&pool, &user_id)
+            .await
+            .expect("invalidate user caches");
+
+        assert_eq!(deleted, keys.len() as i64);
+        for key in &keys {
+            assert!(!conn.exists::<_, bool>(key).await.expect("query cache key"));
+        }
+    }
 }

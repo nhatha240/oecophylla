@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -313,6 +314,28 @@ async def test_unknown_event_is_counted_and_skipped_safely(monkeypatch):
     assert conn.vector == {}
     assert conn.vector_updates == 0
     assert ("unknown", "future_signal", 1) in counter.records
+
+
+@pytest.mark.parametrize("identity_field", ["user_id", "reporter_id", "commenter_id"])
+async def test_malformed_identity_is_not_retried_or_logged(
+    monkeypatch, caplog, identity_field
+):
+    worker, conn, _redis, counter = worker_with_fakes(monkeypatch)
+    malformed_identity = "raw-identity-must-not-leak"
+    envelope = event("0198f36d-0d80-7000-8000-000000000032", "liked")
+    envelope["data"] = {
+        "post_id": envelope["data"]["post_id"],
+        identity_field: malformed_identity,
+    }
+    worker._buffer = [envelope]
+
+    with caplog.at_level(logging.WARNING, logger="feature_store_worker"):
+        assert await worker._flush() is True
+
+    assert worker._buffer == []
+    assert conn.vector_updates == 0
+    assert ("invalid", "liked", 1) in counter.records
+    assert malformed_identity not in caplog.text
 
 
 async def test_event_for_deleted_user_is_receipted_and_not_retried(monkeypatch):
