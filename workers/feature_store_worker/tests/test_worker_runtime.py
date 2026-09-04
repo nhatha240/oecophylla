@@ -5,7 +5,6 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-
 from app import main
 from app.main import Worker, _event_id, _extract_user, _occurred_at
 

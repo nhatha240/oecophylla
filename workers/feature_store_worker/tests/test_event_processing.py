@@ -6,7 +6,6 @@ from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
-
 from app.main import Worker
 
 ROOT = Path(__file__).resolve().parents[3]
