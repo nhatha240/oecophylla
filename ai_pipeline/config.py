@@ -53,5 +53,3 @@ class DatasetConfig:
             raise ValueError("history_recent_limit must be non-negative")
         if self.history_long_term_limit < 0:
             raise ValueError("history_long_term_limit must be non-negative")
-        if self.history_recent_limit + self.history_long_term_limit <= 0:
-            raise ValueError("history limits must leave at least one slot")
