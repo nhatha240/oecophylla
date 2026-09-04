@@ -182,3 +182,33 @@ def test_runtime_settings_expose_history_loader_controls():
     assert settings.history_long_term_limit == 30
     assert settings.history_cache_ttl_seconds == 1800
     assert settings.history_lookup_slack == 50
+
+
+@pytest.mark.asyncio
+async def test_fetch_user_history_treats_malformed_cache_as_a_miss():
+    post_id = UUID(int=700)
+    occurred_at = REFERENCE_AT - timedelta(hours=1)
+    pool = FakePool(
+        [_event_row(701, post_id, occurred_at)],
+        [_feature_row(702, post_id, "7" * 64, occurred_at - timedelta(days=1))],
+    )
+    redis_client = FakeRedisClient(
+        {
+            f"history:v2:{USER_ID}": json.dumps(
+                {
+                    "schema_version": "user-history-snapshot-v1",
+                    "entries": [{"post_id": "not-a-uuid"}],
+                }
+            )
+        }
+    )
+
+    result = await fetch_user_history(
+        SimpleNamespace(pool=pool),
+        SimpleNamespace(cli=redis_client),
+        USER_ID,
+        config=_cfg(),
+    )
+
+    assert [entry.post_id for entry in result.entries] == [post_id]
+    assert any("FROM behavior_events" in query for query in pool.queries)

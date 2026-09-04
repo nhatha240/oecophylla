@@ -208,3 +208,24 @@ def test_history_snapshot_can_be_empty_for_users_without_eligible_clicks():
     )
 
     assert snapshot.entries == ()
+
+
+def test_history_snapshot_is_empty_when_both_history_limits_are_zero():
+    event = _event(201, POST_A, "click", REFERENCE_AT - timedelta(hours=1))
+    feature = _feature(
+        202,
+        POST_A,
+        source_updated_at=REFERENCE_AT - timedelta(days=2),
+        computed_at=REFERENCE_AT - timedelta(days=2),
+        content_hash="a" * 64,
+    )
+
+    snapshot = build_history_snapshot(
+        USER_ID,
+        REFERENCE_AT,
+        [event],
+        [feature],
+        _config(history_recent_limit=0, history_long_term_limit=0),
+    )
+
+    assert snapshot.entries == ()
