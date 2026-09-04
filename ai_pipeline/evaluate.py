@@ -10,10 +10,13 @@ from pathlib import Path
 from statistics import fmean
 from typing import Any, Mapping, Protocol, Sequence
 
+import numpy as np
 import pyarrow.parquet as pq
+from sklearn.linear_model import LogisticRegression
 
 from .artifact import MODEL_FILENAME, load_artifact
 from .model import FEATURE_COLUMNS
+from .schemas import parse_datetime
 
 METRIC_NAMES = (
     "impression_auc",
@@ -295,6 +298,325 @@ def compare_holdout(
         "confidence_intervals": confidence_intervals,
         "confidence_interval_method": "request_group_bootstrap_percentile_95",
         "conclusion": conclusion,
+    }
+
+
+# --- NRMS-like impression-aware ranker evaluation (T7, dataset schema v2) -
+
+NRMS_SEGMENT_NAMES = (
+    "user_tenure",
+    "article_tenure",
+    "history_length",
+    "feed_source",
+    "language",
+)
+
+
+def _cosine_similarity(left: Sequence[float], right: Sequence[float]) -> float:
+    left_vector = np.asarray(left, dtype=float)
+    right_vector = np.asarray(right, dtype=float)
+    left_norm = np.linalg.norm(left_vector)
+    right_norm = np.linalg.norm(right_vector)
+    if left_norm == 0.0 or right_norm == 0.0:
+        return 0.0
+    return float(np.dot(left_vector, right_vector) / (left_norm * right_norm))
+
+
+def _mean_pool(vectors: Sequence[Sequence[float]]) -> np.ndarray | None:
+    if not vectors:
+        return None
+    return np.asarray(vectors, dtype=float).mean(axis=0)
+
+
+def _naive_user_vector(row: Mapping[str, Any]) -> np.ndarray | None:
+    history_vectors = [
+        entry["article"]["embedding"]
+        for entry in row.get("history") or ()
+        if (entry.get("article") or {}).get("embedding") is not None
+    ]
+    pooled = _mean_pool(history_vectors)
+    if pooled is not None:
+        return pooled
+    declared = row.get("declared_topic_embedding")
+    return np.asarray(declared, dtype=float) if declared is not None else None
+
+
+def _logistic_baseline_feature(row: Mapping[str, Any]) -> float:
+    user_vector = _naive_user_vector(row)
+    candidate = (row.get("article") or {}).get("embedding")
+    if user_vector is None or candidate is None:
+        return 0.0
+    return _cosine_similarity(user_vector, candidate)
+
+
+def _logistic_baseline_scores(
+    rows_by_split: Mapping[str, Sequence[Mapping[str, Any]]],
+) -> dict[str, float]:
+    train_rows = rows_by_split.get("train", ())
+    test_rows = rows_by_split.get("test", ())
+    train_labels = [int(row["click_label"]) for row in train_rows]
+    test_feature_rows = [[_logistic_baseline_feature(row)] for row in test_rows]
+    if len(set(train_labels)) < 2:
+        return {str(row["sample_id"]): 0.5 for row in test_rows}
+    train_features = [[_logistic_baseline_feature(row)] for row in train_rows]
+    model = LogisticRegression()
+    model.fit(train_features, train_labels)
+    probabilities = model.predict_proba(test_feature_rows)[:, 1]
+    return {
+        str(row["sample_id"]): float(score)
+        for row, score in zip(test_rows, probabilities, strict=True)
+    }
+
+
+def _post_policy_scores(
+    request_rows: Sequence[Mapping[str, Any]],
+    pure_scores: Mapping[str, float],
+    heuristic_scores: Mapping[str, float],
+    *,
+    confidence_threshold: float = 0.5,
+) -> dict[str, float]:
+    top_score = max(pure_scores.values())
+    if top_score < confidence_threshold:
+        return dict(heuristic_scores)
+    return dict(pure_scores)
+
+
+def _ndcg_binary(ranked_labels: Sequence[int], k: int) -> float:
+    if not any(ranked_labels):
+        return 0.0
+    dcg = sum(
+        1.0 / math.log2(index + 2)
+        for index, label in enumerate(ranked_labels[:k])
+        if label
+    )
+    ideal_hits = min(k, sum(ranked_labels))
+    ideal = sum(1.0 / math.log2(index + 2) for index in range(ideal_hits))
+    return dcg / ideal if ideal else 0.0
+
+
+def _mrr_binary(ranked_labels: Sequence[int]) -> float:
+    for rank, label in enumerate(ranked_labels, start=1):
+        if label:
+            return 1.0 / rank
+    return 0.0
+
+
+def _pairwise_auc(pairs: Sequence[tuple[float, int]]) -> float | None:
+    positives = [score for score, label in pairs if label]
+    negatives = [score for score, label in pairs if not label]
+    if not positives or not negatives:
+        return None
+    credit = sum(
+        1.0 if positive > negative else (0.5 if positive == negative else 0.0)
+        for positive in positives
+        for negative in negatives
+    )
+    return credit / (len(positives) * len(negatives))
+
+
+def _request_metrics(
+    rows: Sequence[Mapping[str, Any]], scores_by_id: Mapping[str, float]
+) -> dict[str, float | None]:
+    ranked = sorted(
+        rows,
+        key=lambda row: (-scores_by_id[str(row["sample_id"])], int(row["position"])),
+    )
+    ranked_labels = [int(row["click_label"]) for row in ranked]
+    pairs = [
+        (scores_by_id[str(row["sample_id"])], int(row["click_label"])) for row in rows
+    ]
+    return {
+        "mrr": _mrr_binary(ranked_labels),
+        "ndcg_at_5": _ndcg_binary(ranked_labels, 5),
+        "ndcg_at_10": _ndcg_binary(ranked_labels, 10),
+        "impression_auc": _pairwise_auc(pairs),
+    }
+
+
+def _aggregate_model_metrics(
+    rows_by_request: Mapping[str, Sequence[Mapping[str, Any]]],
+    scores_by_id: Mapping[str, float],
+) -> dict[str, Any]:
+    per_request = [
+        _request_metrics(rows, scores_by_id) for rows in rows_by_request.values()
+    ]
+    result: dict[str, Any] = {}
+    for key in ("mrr", "ndcg_at_5", "ndcg_at_10"):
+        values = [entry[key] for entry in per_request]
+        result[key] = round(fmean(values), 6) if values else 0.0
+    auc_values = [
+        entry["impression_auc"]
+        for entry in per_request
+        if entry["impression_auc"] is not None
+    ]
+    result["impression_auc"] = round(fmean(auc_values), 6) if auc_values else None
+    result["impression_auc_eligible_requests"] = len(auc_values)
+    result["requests"] = len(per_request)
+    return result
+
+
+def _validate_v2_segment_contract(rows: Sequence[Mapping[str, Any]]) -> None:
+    missing_feed_source = any("feed_source" not in row for row in rows)
+    missing_language = any("language" not in row for row in rows)
+    if missing_feed_source or missing_language:
+        raise ValueError(
+            "dataset rows are missing required segment fields (feed_source/language)"
+        )
+
+
+def _bucket_user_tenure(row: Mapping[str, Any]) -> str:
+    return "existing" if row.get("history") else "new"
+
+
+def _bucket_article_tenure(
+    row: Mapping[str, Any], *, threshold_hours: float = 24.0
+) -> str:
+    article = row.get("article") or {}
+    updated = article.get("feature_source_updated_at")
+    served = row.get("served_at")
+    if updated is None or served is None:
+        return "unknown"
+    age_hours = (parse_datetime(served) - parse_datetime(updated)).total_seconds() / 3600.0
+    return "new" if age_hours <= threshold_hours else "established"
+
+
+def _bucket_history_length(row: Mapping[str, Any]) -> str:
+    length = len(row.get("history") or ())
+    if length == 0:
+        return "0"
+    if length <= 2:
+        return "1-2"
+    return "3+"
+
+
+def _representative_positive(
+    rows: Sequence[Mapping[str, Any]],
+) -> Mapping[str, Any]:
+    for row in rows:
+        if int(row["click_label"]) == 1:
+            return row
+    return rows[0]
+
+
+def _segment_bucket_keys(rows: Sequence[Mapping[str, Any]]) -> dict[str, str]:
+    representative = rows[0]
+    positive = _representative_positive(rows)
+    return {
+        "user_tenure": _bucket_user_tenure(representative),
+        "article_tenure": _bucket_article_tenure(positive),
+        "history_length": _bucket_history_length(representative),
+        "feed_source": str(representative.get("feed_source")),
+        "language": str(representative.get("language")),
+    }
+
+
+def _segment_report(
+    rows_by_request: Mapping[str, Sequence[Mapping[str, Any]]],
+    scores_by_id: Mapping[str, float],
+) -> dict[str, dict[str, Any]]:
+    bucket_requests: dict[str, dict[str, list[str]]] = {
+        name: defaultdict(list) for name in NRMS_SEGMENT_NAMES
+    }
+    for request_group, rows in rows_by_request.items():
+        keys = _segment_bucket_keys(rows)
+        for name, bucket in keys.items():
+            bucket_requests[name][bucket].append(request_group)
+
+    segments: dict[str, dict[str, Any]] = {}
+    for name, buckets in bucket_requests.items():
+        segments[name] = {
+            bucket: _aggregate_model_metrics(
+                {request: rows_by_request[request] for request in requests},
+                scores_by_id,
+            )
+            for bucket, requests in buckets.items()
+        }
+    return segments
+
+
+def compare_nrms_holdout(
+    rows: Sequence[Mapping[str, Any]],
+    artifact: ScoreArtifact,
+    *,
+    minimum_requests: int = 30,
+    minimum_auc_requests: int | None = None,
+) -> dict[str, Any]:
+    if minimum_requests <= 0:
+        raise ValueError("minimum_requests must be positive")
+    minimum_auc_requests = (
+        minimum_requests if minimum_auc_requests is None else minimum_auc_requests
+    )
+    if minimum_auc_requests <= 0:
+        raise ValueError("minimum_auc_requests must be positive")
+    _validate_v2_segment_contract(rows)
+
+    rows_by_split: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
+    for row in rows:
+        rows_by_split[str(row["split"])].append(row)
+    test_rows = rows_by_split.get("test", [])
+    if not test_rows:
+        raise ValueError("dataset has no test holdout")
+
+    test_by_request: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
+    for row in test_rows:
+        test_by_request[str(row["request_group"])].append(row)
+
+    heuristic_scores = {
+        str(row["sample_id"]): -float(row["position"]) for row in test_rows
+    }
+    logistic_scores = _logistic_baseline_scores(rows_by_split)
+    pure_scores = dict(
+        zip(
+            (str(row["sample_id"]) for row in test_rows),
+            artifact.predict_scores(test_rows),
+            strict=True,
+        )
+    )
+
+    post_policy_scores: dict[str, float] = {}
+    for request_rows in test_by_request.values():
+        ids = [str(row["sample_id"]) for row in request_rows]
+        request_pure = {sample_id: pure_scores[sample_id] for sample_id in ids}
+        request_heuristic = {sample_id: heuristic_scores[sample_id] for sample_id in ids}
+        post_policy_scores.update(
+            _post_policy_scores(request_rows, request_pure, request_heuristic)
+        )
+
+    models = {
+        "heuristic_baseline": _aggregate_model_metrics(test_by_request, heuristic_scores),
+        "logistic_baseline": _aggregate_model_metrics(test_by_request, logistic_scores),
+        "pure_model": _aggregate_model_metrics(test_by_request, pure_scores),
+        "post_policy": _aggregate_model_metrics(test_by_request, post_policy_scores),
+    }
+    segments = _segment_report(test_by_request, pure_scores)
+
+    request_count = len(test_by_request)
+    auc_eligible_requests = models["pure_model"]["impression_auc_eligible_requests"]
+    if request_count < minimum_requests:
+        promotion: dict[str, Any] = {
+            "eligible": False,
+            "reason": "insufficient_test_requests",
+        }
+    elif auc_eligible_requests < minimum_auc_requests:
+        promotion = {
+            "eligible": False,
+            "reason": "insufficient_auc_eligible_requests",
+        }
+    else:
+        promotion = {"eligible": True}
+
+    return {
+        "report_schema_version": "recommendation-nrms-comparison-v1",
+        "evaluation_scope": "untouched-temporal-test-requests",
+        "raw_model_precedes_post_policy": True,
+        "sample": {
+            "requests": request_count,
+            "impressions": len(test_rows),
+            "auc_eligible_requests": auc_eligible_requests,
+        },
+        "models": models,
+        "segments": segments,
+        "promotion": promotion,
     }
 
 

@@ -5,13 +5,15 @@ import json
 import platform
 import shutil
 import tempfile
-from collections import Counter
+from collections import Counter, defaultdict
 from importlib.metadata import version
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 import joblib
+import numpy as np
 import pyarrow.parquet as pq
+from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
     accuracy_score,
     precision_score,
@@ -23,10 +25,24 @@ from .artifact import (
     ARTIFACT_SCHEMA_VERSION,
     MANIFEST_FILENAME,
     MODEL_FILENAME,
+    NRMS_MODEL_TYPE,
     sha256_file,
 )
-from .build_dataset import DATASET_SCHEMA_VERSION, FEATURE_SCHEMA_VERSION
-from .model import FEATURE_COLUMNS, build_pipeline, records_to_matrix
+from .build_dataset import (
+    DATASET_SCHEMA_VERSION,
+    DATASET_SCHEMA_VERSION_V2,
+    FEATURE_SCHEMA_VERSION,
+)
+from .model import (
+    FEATURE_COLUMNS,
+    NRMSArchitecture,
+    NRMSLikeRanker,
+    build_pipeline,
+    build_pairwise_examples,
+    records_to_matrix,
+    train_pairwise_epoch,
+)
+from .schemas import HISTORY_SCHEMA_VERSION, parse_datetime
 
 MODEL_TYPE = "sklearn-logistic-regression"
 DEFAULT_SEED = 20260829
@@ -35,17 +51,39 @@ REQUIRED_DATASET_COLUMNS = frozenset(
     {"split", "label", "feature_schema_version", *FEATURE_COLUMNS}
 )
 
+NRMS_DEFAULT_EPOCHS = 5
+NRMS_LEARNING_RATE = 0.1
+NRMS_HISTORY_CAP = 20
+NRMS_REQUIRED_ROW_COLUMNS = frozenset(
+    {
+        "sample_id",
+        "request_group",
+        "candidate_group",
+        "split",
+        "served_at",
+        "position",
+        "click_label",
+        "article",
+        "history",
+        "feed_source",
+    }
+)
+
 
 class DatasetValidationError(ValueError):
     """Raised when a dataset cannot safely be used for model training."""
 
 
-def _read_metadata(dataset: Path) -> dict[str, Any]:
+def _peek_metadata(dataset: Path) -> dict[str, Any]:
     metadata_path = dataset.with_suffix(f"{dataset.suffix}.metadata.json")
     try:
-        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        return json.loads(metadata_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
         raise DatasetValidationError(f"invalid dataset metadata: {error}") from error
+
+
+def _read_metadata(dataset: Path) -> dict[str, Any]:
+    metadata = _peek_metadata(dataset)
     if metadata.get("dataset_schema_version") != DATASET_SCHEMA_VERSION:
         raise DatasetValidationError("dataset schema version is not supported")
     if metadata.get("feature_schema_versions") != [FEATURE_SCHEMA_VERSION]:
@@ -136,7 +174,7 @@ def _dependency_versions() -> dict[str, str]:
 
 
 def _write_artifact(
-    pipeline: Any,
+    model_object: Any,
     manifest: dict[str, Any],
     output: Path,
 ) -> dict[str, Any]:
@@ -144,7 +182,7 @@ def _write_artifact(
     temporary = Path(tempfile.mkdtemp(prefix=f".{output.name}.", dir=output.parent))
     try:
         model_path = temporary / MODEL_FILENAME
-        joblib.dump(pipeline, model_path, compress=0)
+        joblib.dump(model_object, model_path, compress=0)
         manifest["files"] = {
             MODEL_FILENAME: {
                 "sha256": sha256_file(model_path),
@@ -162,15 +200,321 @@ def _write_artifact(
     return manifest
 
 
+# --- NRMS-like impression-aware ranker training (T7, dataset schema v2) ---
+
+
+def _validate_v2_metadata(metadata: Mapping[str, Any]) -> None:
+    if metadata.get("dataset_schema_version") != DATASET_SCHEMA_VERSION_V2:
+        raise DatasetValidationError("dataset schema version is not supported")
+    if metadata.get("history_schema_version") != HISTORY_SCHEMA_VERSION:
+        raise DatasetValidationError("history schema version is not supported")
+    if not metadata.get("feature_schema_version"):
+        raise DatasetValidationError("feature schema version is missing")
+    if not metadata.get("label_definition_version"):
+        raise DatasetValidationError("label definition version is missing")
+    if not metadata.get("encoder_version"):
+        raise DatasetValidationError("encoder version is missing")
+    dimension = metadata.get("encoder_dimension")
+    if not isinstance(dimension, int) or dimension <= 0:
+        raise DatasetValidationError("encoder dimension is missing or invalid")
+    if not isinstance(metadata.get("query_window"), dict):
+        raise DatasetValidationError("dataset data window is missing")
+
+
+def _read_v2_rows(dataset: Path, metadata: Mapping[str, Any]) -> list[dict[str, Any]]:
+    try:
+        table = pq.read_table(dataset)
+    except (OSError, ValueError) as error:
+        raise DatasetValidationError(f"invalid parquet dataset: {error}") from error
+    missing = sorted(NRMS_REQUIRED_ROW_COLUMNS - set(table.schema.names))
+    if missing:
+        raise DatasetValidationError(f"missing required columns: {', '.join(missing)}")
+    rows = table.to_pylist()
+    if metadata.get("row_count") != len(rows):
+        raise DatasetValidationError("dataset row count does not match metadata")
+    return rows
+
+
+def _validate_v2_contract(rows: Sequence[Mapping[str, Any]]) -> None:
+    splits_by_request: dict[str, set[str]] = defaultdict(set)
+    for row in rows:
+        request_group = row.get("request_group")
+        split = row.get("split")
+        if not request_group or split not in ("train", "validation", "test"):
+            raise DatasetValidationError(
+                "row is missing request_group or has an unsupported split"
+            )
+        splits_by_request[str(request_group)].add(str(split))
+
+        article = row.get("article") or {}
+        if not article.get("embedding"):
+            raise DatasetValidationError("candidate article is missing an embedding")
+
+        served_at = parse_datetime(row["served_at"])
+        for entry in row.get("history") or ():
+            entry_article = entry.get("article") or {}
+            if not entry_article.get("embedding"):
+                raise DatasetValidationError("history entry is missing an embedding")
+            engaged_at = parse_datetime(entry["engaged_at"])
+            if engaged_at >= served_at:
+                raise DatasetValidationError(
+                    "history event occurs at or after the request was served"
+                )
+
+    leaked = [
+        request for request, splits in splits_by_request.items() if len(splits) != 1
+    ]
+    if leaked:
+        raise DatasetValidationError(
+            "request_group appears in multiple dataset splits"
+        )
+
+
+def _split_v2_rows(
+    rows: Sequence[Mapping[str, Any]],
+) -> dict[str, list[Mapping[str, Any]]]:
+    by_split: dict[str, list[Mapping[str, Any]]] = {
+        "train": [],
+        "validation": [],
+        "test": [],
+    }
+    for row in rows:
+        by_split[row["split"]].append(row)
+    if not by_split["train"]:
+        raise DatasetValidationError("train split must not be empty")
+    if not by_split["validation"]:
+        raise DatasetValidationError("validation split must not be empty")
+    if not by_split["test"]:
+        raise DatasetValidationError("test holdout must not be empty")
+    return by_split
+
+
+def _select_attention_heads(dimension: int) -> int:
+    for candidate in (2, 4, 8, 1):
+        if dimension % candidate == 0:
+            return candidate
+    return 1
+
+
+def _select_history_length(
+    rows: Sequence[Mapping[str, Any]], *, cap: int = NRMS_HISTORY_CAP
+) -> int:
+    observed = max((len(row.get("history") or ()) for row in rows), default=0)
+    return min(max(observed, 1), cap)
+
+
+def _compute_popular_embedding(
+    rows: Sequence[Mapping[str, Any]], dimension: int
+) -> list[float]:
+    vectors = [
+        row["article"]["embedding"]
+        for row in rows
+        if (row.get("article") or {}).get("embedding") is not None
+    ]
+    if not vectors:
+        return [0.0] * dimension
+    return np.asarray(vectors, dtype=float).mean(axis=0).tolist()
+
+
+def _save_nrms_checkpoint(path: Path, ranker: NRMSLikeRanker, epoch: int) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    popular = (
+        ranker.popular_embedding
+        if ranker.popular_embedding is not None
+        else np.zeros(ranker.architecture.embedding_dimension)
+    )
+    np.savez(
+        path,
+        query_projection=ranker.query_projection,
+        key_projection=ranker.key_projection,
+        value_projection=ranker.value_projection,
+        popular_embedding=np.asarray(popular, dtype=float),
+        embedding_dimension=ranker.architecture.embedding_dimension,
+        attention_heads=ranker.architecture.attention_heads,
+        history_length=ranker.architecture.history_length,
+        seed=ranker.architecture.seed,
+        epoch=epoch,
+    )
+
+
+def _load_nrms_checkpoint(path: Path) -> tuple[NRMSLikeRanker, int]:
+    with np.load(path) as data:
+        architecture = NRMSArchitecture(
+            embedding_dimension=int(data["embedding_dimension"]),
+            attention_heads=int(data["attention_heads"]),
+            history_length=int(data["history_length"]),
+            seed=int(data["seed"]),
+        )
+        ranker = NRMSLikeRanker(
+            architecture=architecture,
+            query_projection=np.array(data["query_projection"]),
+            key_projection=np.array(data["key_projection"]),
+            value_projection=np.array(data["value_projection"]),
+            calibration_scale=1.0,
+            calibration_bias=0.0,
+            popular_embedding=np.array(data["popular_embedding"]),
+        )
+        epoch = int(data["epoch"])
+    return ranker, epoch
+
+
+def _calibrate_ranker(
+    ranker: NRMSLikeRanker, validation_rows: Sequence[Mapping[str, Any]]
+) -> NRMSLikeRanker:
+    raw_scores: list[float] = []
+    labels: list[int] = []
+    for row in validation_rows:
+        history_entries = sorted(
+            row.get("history") or (), key=lambda entry: int(entry["ordinal"])
+        )
+        history_embeddings = [
+            entry["article"]["embedding"]
+            for entry in history_entries
+            if (entry.get("article") or {}).get("embedding") is not None
+        ]
+        context = ranker.prepare_user_context(
+            history_embeddings=history_embeddings,
+            declared_topic_embedding=row.get("declared_topic_embedding"),
+        )
+        raw_scores.append(
+            ranker.raw_score(context.vector, row["article"]["embedding"])
+        )
+        labels.append(int(row["click_label"]))
+    if len(set(labels)) < 2:
+        return ranker
+    calibrator = LogisticRegression()
+    calibrator.fit([[score] for score in raw_scores], labels)
+    return ranker.with_calibration(
+        scale=float(calibrator.coef_[0][0]), bias=float(calibrator.intercept_[0])
+    )
+
+
+def _train_nrms_from_dataset(
+    dataset: Path,
+    output: Path,
+    metadata: Mapping[str, Any],
+    *,
+    seed: int,
+    epochs: int,
+    checkpoint: Path | None,
+    resume: bool,
+) -> dict[str, Any]:
+    _validate_v2_metadata(metadata)
+    rows = _read_v2_rows(dataset, metadata)
+    _validate_v2_contract(rows)
+    rows_by_split = _split_v2_rows(rows)
+
+    embedding_dimension = int(metadata["encoder_dimension"])
+    attention_heads = _select_attention_heads(embedding_dimension)
+    history_length = _select_history_length(rows_by_split["train"])
+    architecture = NRMSArchitecture(
+        embedding_dimension=embedding_dimension,
+        attention_heads=attention_heads,
+        history_length=history_length,
+        seed=seed,
+    )
+    popular_embedding = _compute_popular_embedding(
+        rows_by_split["train"], embedding_dimension
+    )
+
+    start_epoch = 0
+    if resume:
+        if checkpoint is None or not checkpoint.exists():
+            raise DatasetValidationError(
+                "resume requested but checkpoint file does not exist"
+            )
+        ranker, start_epoch = _load_nrms_checkpoint(checkpoint)
+    else:
+        ranker = NRMSLikeRanker.initialize(
+            architecture, popular_embedding=popular_embedding
+        )
+
+    train_examples = build_pairwise_examples(rows_by_split["train"])
+    if not train_examples:
+        raise DatasetValidationError(
+            "train split has no eligible positive/negative pairs"
+        )
+
+    for epoch in range(start_epoch, epochs):
+        ranker = train_pairwise_epoch(
+            ranker, train_examples, learning_rate=NRMS_LEARNING_RATE
+        )
+        if checkpoint is not None:
+            _save_nrms_checkpoint(checkpoint, ranker, epoch + 1)
+
+    ranker = _calibrate_ranker(ranker, rows_by_split["validation"])
+
+    row_counts = {split: len(values) for split, values in sorted(rows_by_split.items())}
+    manifest: dict[str, Any] = {
+        "artifact_schema_version": ARTIFACT_SCHEMA_VERSION,
+        "model_version": output.name,
+        "model_type": NRMS_MODEL_TYPE,
+        "seed": seed,
+        "dataset_schema_version": DATASET_SCHEMA_VERSION_V2,
+        "architecture": {
+            "embedding_dimension": architecture.embedding_dimension,
+            "attention_heads": architecture.attention_heads,
+            "history_length": architecture.history_length,
+        },
+        "embedding": {
+            "version": metadata["encoder_version"],
+            "dimension": metadata["encoder_dimension"],
+        },
+        "history": {
+            "schema_version": metadata["history_schema_version"],
+        },
+        "label_schema": {
+            "training_target": "click_label",
+            "label_definition_version": metadata.get("label_definition_version"),
+        },
+        "row_counts": row_counts,
+        "calibration": {
+            "method": "temperature-scaled-sigmoid",
+            "scale": ranker.calibration_scale,
+            "bias": ranker.calibration_bias,
+        },
+        "training": {
+            "epochs": epochs,
+            "resumed_from_epoch": start_epoch,
+            "learning_rate": NRMS_LEARNING_RATE,
+            "pairwise_examples": len(train_examples),
+        },
+        "dependency_versions": _dependency_versions(),
+        "dataset": {
+            "parquet_sha256": sha256_file(dataset),
+            "metadata_sha256": sha256_file(
+                dataset.with_suffix(f"{dataset.suffix}.metadata.json")
+            ),
+            "source_code_version": metadata.get("code_version"),
+        },
+    }
+    return _write_artifact(ranker, manifest, output)
+
+
 def train_from_dataset(
     dataset: Path,
     output: Path,
     *,
     seed: int = DEFAULT_SEED,
     min_train_rows: int = MIN_TRAIN_ROWS,
+    epochs: int | None = None,
+    checkpoint: Path | None = None,
+    resume: bool = False,
 ) -> dict[str, Any]:
     if output.exists():
         raise FileExistsError(f"artifact output already exists: {output}")
+    preview_metadata = _peek_metadata(dataset)
+    if preview_metadata.get("dataset_schema_version") == DATASET_SCHEMA_VERSION_V2:
+        return _train_nrms_from_dataset(
+            dataset,
+            output,
+            preview_metadata,
+            seed=seed,
+            epochs=epochs if epochs is not None else NRMS_DEFAULT_EPOCHS,
+            checkpoint=checkpoint,
+            resume=resume,
+        )
+
     metadata = _read_metadata(dataset)
     records, labels = _load_training_rows(dataset, metadata)
     _validate_population(records, labels, min_train_rows)
@@ -218,6 +562,9 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--dataset", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
+    parser.add_argument("--epochs", type=int, default=None)
+    parser.add_argument("--checkpoint", type=Path, default=None)
+    parser.add_argument("--resume", action="store_true")
     return parser
 
 
@@ -225,7 +572,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
     try:
-        manifest = train_from_dataset(args.dataset, args.output, seed=args.seed)
+        manifest = train_from_dataset(
+            args.dataset,
+            args.output,
+            seed=args.seed,
+            epochs=args.epochs,
+            checkpoint=args.checkpoint,
+            resume=args.resume,
+        )
     except (DatasetValidationError, FileExistsError) as error:
         parser.error(str(error))
     print(
