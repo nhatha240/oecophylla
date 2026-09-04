@@ -9,12 +9,19 @@ from uuid import UUID
 import pytest
 
 from ai_pipeline.build_dataset import (
+    _split_ranking_rows,
     build_ranking_samples_v2,
     validate_dataset_v2,
     write_dataset_v2_artifact,
 )
 from ai_pipeline.config import DatasetConfig
-from ai_pipeline.schemas import ArticleFeatureRecord, BehaviorEvent, Impression
+from ai_pipeline.schemas import (
+    ArticleFeatureRecord,
+    ArticleRepresentation,
+    BehaviorEvent,
+    Impression,
+    RankingDatasetRow,
+)
 
 FIXTURE = Path(__file__).parent / "fixtures" / "local_telemetry_v2.json"
 ENCODER = (
@@ -246,6 +253,57 @@ def test_v2_keeps_click_that_precedes_proven_visibility(config: DatasetConfig):
 
     assert row.click_label == 1
     assert row.utility_label == 1
+
+
+def test_v2_split_keeps_same_timestamp_request_bucket_atomic_without_emptying_train():
+    shared_served_at = datetime(2026, 9, 1, tzinfo=timezone.utc)
+
+    def row(request_identity: str, position: int) -> RankingDatasetRow:
+        candidate_group = f"{request_identity}{position}".ljust(64, "c")[:64]
+        return RankingDatasetRow(
+            sample_id=f"{request_identity}:{position}".ljust(64, "a")[:64],
+            request_group=request_identity.ljust(64, "b")[:64],
+            candidate_group=candidate_group,
+            split="train",
+            served_at=shared_served_at,
+            visible_at=shared_served_at,
+            position=position,
+            served=True,
+            visible=True,
+            click_label=int(position == 0),
+            utility_label=int(position == 0),
+            utility_label_name="click" if position == 0 else "negative",
+            article=ArticleRepresentation(
+                article_group=candidate_group,
+                representation_type="mind-text-v1",
+                content_hash="d" * 64,
+                title="fixture",
+            ),
+            history=(),
+            feed_source="mind-benchmark",
+            model_version="mind-logged-policy-unknown",
+            source_format="official-mind-tsv-v1",
+            audit_request_identity=request_identity,
+        )
+
+    rows = tuple(
+        row(request_identity, position)
+        for request_identity in ("request-a", "request-b", "request-c")
+        for position in (0, 1)
+    )
+
+    split_rows = _split_ranking_rows(rows, train_fraction=0.34, validation_fraction=0.33)
+    request_splits = {
+        request_identity: {
+            candidate.split
+            for candidate in split_rows
+            if candidate.audit_request_identity == request_identity
+        }
+        for request_identity in ("request-a", "request-b", "request-c")
+    }
+
+    assert {row.split for row in split_rows} == {"train"}
+    assert all(splits == {"train"} for splits in request_splits.values())
 
 
 @pytest.mark.parametrize("timestamp_field", ["source_updated_at", "computed_at"])
