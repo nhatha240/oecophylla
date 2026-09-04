@@ -474,6 +474,8 @@ def _train_nrms_from_dataset(
     checkpoint: Path | None,
     resume: bool,
 ) -> dict[str, Any]:
+    if epochs <= 0:
+        raise DatasetValidationError("epochs must be positive")
     _validate_v2_metadata(metadata)
     rows = _read_v2_rows(dataset, metadata)
     _validate_v2_contract(rows)

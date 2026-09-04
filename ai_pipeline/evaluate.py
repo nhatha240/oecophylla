@@ -433,9 +433,27 @@ def _request_metrics(
     }
 
 
+def _embedding_diversity(rows: Sequence[Mapping[str, Any]]) -> float:
+    vectors = [
+        (row.get("article") or {}).get("embedding")
+        for row in rows
+        if (row.get("article") or {}).get("embedding") is not None
+    ]
+    if len(vectors) < 2:
+        return 0.0
+    distances = [
+        1.0 - _cosine_similarity(vectors[left], vectors[right])
+        for left in range(len(vectors))
+        for right in range(left + 1, len(vectors))
+    ]
+    return fmean(distances)
+
+
 def _aggregate_model_metrics(
     rows_by_request: Mapping[str, Sequence[Mapping[str, Any]]],
     scores_by_id: Mapping[str, float],
+    *,
+    k: int = 5,
 ) -> dict[str, Any]:
     per_request = [
         _request_metrics(rows, scores_by_id) for rows in rows_by_request.values()
@@ -452,6 +470,37 @@ def _aggregate_model_metrics(
     result["impression_auc"] = round(fmean(auc_values), 6) if auc_values else None
     result["impression_auc_eligible_requests"] = len(auc_values)
     result["requests"] = len(per_request)
+    catalog = {
+        str(row["candidate_group"])
+        for rows in rows_by_request.values()
+        for row in rows
+    }
+    selected: list[Mapping[str, Any]] = []
+    diversity_values: list[float] = []
+    strong_negative_values: list[float] = []
+    for rows in rows_by_request.values():
+        ranked = sorted(
+            rows,
+            key=lambda row: (
+                -scores_by_id[str(row["sample_id"])],
+                int(row["position"]),
+            ),
+        )
+        top = ranked[:k]
+        selected.extend(top)
+        diversity_values.append(_embedding_diversity(top))
+        strong_negative_values.append(
+            sum(row.get("utility_label_name") == "strong_negative" for row in top)
+            / len(top)
+            if top
+            else 0.0
+        )
+    selected_candidates = {str(row["candidate_group"]) for row in selected}
+    result["coverage_at_k"] = round(
+        len(selected_candidates) / len(catalog), 6
+    ) if catalog else 0.0
+    result["embedding_diversity_at_k"] = _mean(diversity_values)
+    result["strong_negative_rate_at_k"] = _mean(strong_negative_values)
     return result
 
 
@@ -544,6 +593,8 @@ def compare_nrms_holdout(
     minimum_requests: int = 30,
     minimum_auc_requests: int | None = None,
     ranking_tolerance: float = 0.01,
+    guardrail_tolerance: float = 0.02,
+    k: int = 5,
 ) -> dict[str, Any]:
     if minimum_requests <= 0:
         raise ValueError("minimum_requests must be positive")
@@ -587,10 +638,16 @@ def compare_nrms_holdout(
         )
 
     models = {
-        "heuristic_baseline": _aggregate_model_metrics(test_by_request, heuristic_scores),
-        "logistic_baseline": _aggregate_model_metrics(test_by_request, logistic_scores),
-        "pure_model": _aggregate_model_metrics(test_by_request, pure_scores),
-        "post_policy": _aggregate_model_metrics(test_by_request, post_policy_scores),
+        "logged_position_baseline": _aggregate_model_metrics(
+            test_by_request, heuristic_scores, k=k
+        ),
+        "mean_pool_logistic_baseline": _aggregate_model_metrics(
+            test_by_request, logistic_scores, k=k
+        ),
+        "pure_model": _aggregate_model_metrics(test_by_request, pure_scores, k=k),
+        "post_policy": _aggregate_model_metrics(
+            test_by_request, post_policy_scores, k=k
+        ),
     }
     segments = _segment_report(test_by_request, pure_scores)
 
@@ -603,10 +660,20 @@ def compare_nrms_holdout(
     )
     ranking_regression = any(
         models["pure_model"][metric]
-        < models["heuristic_baseline"][metric] - ranking_tolerance
+        < models["logged_position_baseline"][metric] - ranking_tolerance
         for metric in ("mrr", "ndcg_at_5", "ndcg_at_10", "impression_auc")
         if models["pure_model"][metric] is not None
-        and models["heuristic_baseline"][metric] is not None
+        and models["logged_position_baseline"][metric] is not None
+    )
+    guardrail_regression = (
+        models["pure_model"]["coverage_at_k"]
+        < models["logged_position_baseline"]["coverage_at_k"] - guardrail_tolerance
+        or models["pure_model"]["embedding_diversity_at_k"]
+        < models["logged_position_baseline"]["embedding_diversity_at_k"]
+        - guardrail_tolerance
+        or models["pure_model"]["strong_negative_rate_at_k"]
+        > models["logged_position_baseline"]["strong_negative_rate_at_k"]
+        + guardrail_tolerance
     )
     if request_count < minimum_requests:
         promotion: dict[str, Any] = {
@@ -628,6 +695,11 @@ def compare_nrms_holdout(
             "eligible": False,
             "reason": "ranking_metric_regression",
         }
+    elif guardrail_regression:
+        promotion = {
+            "eligible": False,
+            "reason": "product_guardrail_regression",
+        }
     else:
         promotion = {"eligible": True}
 
@@ -635,6 +707,17 @@ def compare_nrms_holdout(
         "report_schema_version": "recommendation-nrms-comparison-v1",
         "evaluation_scope": "untouched-temporal-test-requests",
         "raw_model_precedes_post_policy": True,
+        "baseline_definitions": {
+            "logged_position_baseline": "original served order",
+            "mean_pool_logistic_baseline": (
+                "logistic regression over mean-history candidate cosine similarity"
+            ),
+        },
+        "config": {
+            "k": k,
+            "ranking_tolerance": ranking_tolerance,
+            "guardrail_tolerance": guardrail_tolerance,
+        },
         "sample": {
             "requests": request_count,
             "impressions": len(test_rows),
@@ -753,6 +836,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         report = compare_nrms_holdout(
             rows,
             artifact,
+            k=args.k,
             minimum_requests=args.minimum_requests,
             minimum_auc_requests=args.minimum_auc_requests,
         )

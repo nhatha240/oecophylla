@@ -87,6 +87,53 @@ def load_artifact(directory: Path) -> LoadedArtifact | LoadedNRMSArtifact:
     if is_nrms:
         if not isinstance(payload, NRMSLikeRanker):
             raise ArtifactIntegrityError("model payload is not an NRMS ranker")
+        architecture = payload.architecture
+        expected_architecture = {
+            "embedding_dimension": architecture.embedding_dimension,
+            "attention_heads": architecture.attention_heads,
+            "history_length": architecture.history_length,
+        }
+        if manifest.get("architecture") != expected_architecture:
+            raise ArtifactIntegrityError(
+                "NRMS manifest architecture does not match model payload"
+            )
+        if manifest.get("seed") != architecture.seed:
+            raise ArtifactIntegrityError(
+                "NRMS manifest seed does not match model payload architecture"
+            )
+        embedding = manifest.get("embedding")
+        if (
+            not isinstance(embedding, Mapping)
+            or embedding.get("dimension") != architecture.embedding_dimension
+            or not embedding.get("version")
+        ):
+            raise ArtifactIntegrityError(
+                "NRMS manifest embedding contract does not match model payload"
+            )
+        head_shape = (
+            architecture.attention_heads,
+            architecture.embedding_dimension,
+            architecture.head_dimension,
+        )
+        if any(
+            projection.shape != head_shape
+            for projection in (
+                payload.query_projection,
+                payload.key_projection,
+                payload.value_projection,
+            )
+        ):
+            raise ArtifactIntegrityError(
+                "NRMS projection shape does not match model architecture"
+            )
+        if (
+            payload.popular_embedding is not None
+            and payload.popular_embedding.shape
+            != (architecture.embedding_dimension,)
+        ):
+            raise ArtifactIntegrityError(
+                "NRMS fallback vector does not match model architecture"
+            )
         return LoadedNRMSArtifact(ranker=payload, manifest=manifest)
 
     if not isinstance(payload, Pipeline):
