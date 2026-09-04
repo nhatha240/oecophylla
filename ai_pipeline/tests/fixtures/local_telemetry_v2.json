@@ -1,0 +1,49 @@
+{
+  "fixture_version": "local-vietnamese-telemetry-v2",
+  "user_id": "10000000-0000-0000-0000-000000000001",
+  "seed_history": [
+    {
+      "event_id": "20000000-0000-0000-0000-000000000001",
+      "post_id": "30000000-0000-0000-0000-000000000001",
+      "clicked_at": "2026-08-31T08:00:00Z"
+    }
+  ],
+  "requests": [
+    {
+      "request_id": "40000000-0000-0000-0000-000000000001",
+      "served_at": "2026-09-01T08:00:00Z",
+      "candidates": [
+        {"impression_id": "50000000-0000-0000-0000-000000000001", "post_id": "60000000-0000-0000-0000-000000000001", "position": 0, "outcome": "click"},
+        {"impression_id": "50000000-0000-0000-0000-000000000002", "post_id": "60000000-0000-0000-0000-000000000002", "position": 1, "outcome": "skip"},
+        {"impression_id": "50000000-0000-0000-0000-000000000003", "post_id": "60000000-0000-0000-0000-000000000003", "position": 2, "outcome": "not_visible"}
+      ]
+    },
+    {
+      "request_id": "40000000-0000-0000-0000-000000000002",
+      "served_at": "2026-09-02T08:00:00Z",
+      "candidates": [
+        {"impression_id": "50000000-0000-0000-0000-000000000004", "post_id": "60000000-0000-0000-0000-000000000004", "position": 0, "outcome": "qualified_read"},
+        {"impression_id": "50000000-0000-0000-0000-000000000005", "post_id": "60000000-0000-0000-0000-000000000005", "position": 1, "outcome": "hide"}
+      ]
+    },
+    {
+      "request_id": "40000000-0000-0000-0000-000000000003",
+      "served_at": "2026-09-03T08:00:00Z",
+      "candidates": [
+        {"impression_id": "50000000-0000-0000-0000-000000000006", "post_id": "60000000-0000-0000-0000-000000000006", "position": 0, "outcome": "click_then_report"},
+        {"impression_id": "50000000-0000-0000-0000-000000000007", "post_id": "60000000-0000-0000-0000-000000000007", "position": 1, "outcome": "skip"}
+      ]
+    }
+  ],
+  "articles": [
+    {"post_id": "30000000-0000-0000-0000-000000000001", "title": "Kinh tế Việt Nam tăng trưởng", "embedding_axis": 0},
+    {"post_id": "60000000-0000-0000-0000-000000000001", "title": "Thị trường chứng khoán khởi sắc", "embedding_axis": 1},
+    {"post_id": "60000000-0000-0000-0000-000000000002", "title": "Đội tuyển giành chiến thắng", "embedding_axis": 2},
+    {"post_id": "60000000-0000-0000-0000-000000000003", "title": "Bài chưa được nhìn thấy", "embedding_axis": 3},
+    {"post_id": "60000000-0000-0000-0000-000000000004", "title": "Mưa lớn tại miền Trung", "embedding_axis": 4},
+    {"post_id": "60000000-0000-0000-0000-000000000005", "title": "Tin không phù hợp", "embedding_axis": 5},
+    {"post_id": "60000000-0000-0000-0000-000000000006", "title": "Cảnh báo nội dung sai lệch", "embedding_axis": 6},
+    {"post_id": "60000000-0000-0000-0000-000000000007", "title": "Giáo dục trong tuần", "embedding_axis": 7}
+  ],
+  "retrieved_but_not_served": ["70000000-0000-0000-0000-000000000001"]
+}
