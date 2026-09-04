@@ -396,6 +396,11 @@ async def _history_from_cache(
     except (TypeError, ValueError, _json.JSONDecodeError):
         return None
 
+    try:
+        post_ids = [UUID(str(entry["post_id"])) for entry in entries]
+    except (KeyError, TypeError, ValueError):
+        return None
+
     feature_rows = (
         await db.pool.fetch(
             """
@@ -405,7 +410,7 @@ async def _history_from_cache(
             WHERE post_id = ANY($1::uuid[])
             ORDER BY post_id, source_updated_at DESC, computed_at DESC, id DESC
             """,
-            [UUID(str(entry["post_id"])) for entry in entries],
+            post_ids,
         )
         if entries
         else []
@@ -418,31 +423,34 @@ async def _history_from_cache(
         ): ArticleFeatureRecord.from_mapping(row)
         for row in feature_rows
     }
-    rebuilt_entries: list[HistoryEntryPayload] = []
-    for entry in entries:
-        key = (
-            str(entry["post_id"]),
-            str(entry["encoder_version"]),
-            str(entry["content_hash"]),
-        )
-        feature = features.get(key)
-        if feature is None:
-            continue
-        rebuilt_entries.append(
-            HistoryEntryPayload(
-                post_id=UUID(str(entry["post_id"])),
-                event_id=UUID(str(entry["event_id"])),
-                event_type="click",
-                engaged_at=_parse_timestamp(entry["engaged_at"]),
-                encoder_version=str(entry["encoder_version"]),
-                content_hash=str(entry["content_hash"]),
-                feature_source_updated_at=_parse_timestamp(
-                    entry["feature_source_updated_at"]
-                ),
-                feature_computed_at=_parse_timestamp(entry["feature_computed_at"]),
-                embedding=list(feature.embedding),
+    try:
+        rebuilt_entries: list[HistoryEntryPayload] = []
+        for entry in entries:
+            key = (
+                str(entry["post_id"]),
+                str(entry["encoder_version"]),
+                str(entry["content_hash"]),
             )
-        )
+            feature = features.get(key)
+            if feature is None:
+                continue
+            rebuilt_entries.append(
+                HistoryEntryPayload(
+                    post_id=UUID(str(entry["post_id"])),
+                    event_id=UUID(str(entry["event_id"])),
+                    event_type="click",
+                    engaged_at=_parse_timestamp(entry["engaged_at"]),
+                    encoder_version=str(entry["encoder_version"]),
+                    content_hash=str(entry["content_hash"]),
+                    feature_source_updated_at=_parse_timestamp(
+                        entry["feature_source_updated_at"]
+                    ),
+                    feature_computed_at=_parse_timestamp(entry["feature_computed_at"]),
+                    embedding=list(feature.embedding),
+                )
+            )
+    except (KeyError, TypeError, ValueError):
+        return None
     return UserHistorySnapshotPayload(
         schema_version=HISTORY_SCHEMA_VERSION,
         user_id=user_id,

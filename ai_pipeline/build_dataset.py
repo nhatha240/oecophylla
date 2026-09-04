@@ -251,14 +251,18 @@ def build_history_snapshot(
     config: Any,
 ) -> HistorySnapshot:
     total_limit = _history_total_limit(config)
-    selected_events = sorted(
-        (
-            event
-            for event in events
-            if event.user_id == user_id and _qualifies_for_history(event, reference_at)
-        ),
-        key=lambda event: (event.occurred_at, event.id),
-    )[-total_limit:]
+    selected_events = (
+        sorted(
+            (
+                event
+                for event in events
+                if event.user_id == user_id and _qualifies_for_history(event, reference_at)
+            ),
+            key=lambda event: (event.occurred_at, event.id),
+        )[-total_limit:]
+        if total_limit
+        else []
+    )
     features_by_post = defaultdict(list)
     for feature in _deduplicate(article_features).values():
         features_by_post[feature.post_id].append(feature)

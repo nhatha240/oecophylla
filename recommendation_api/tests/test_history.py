@@ -187,7 +187,7 @@ def test_runtime_settings_expose_history_loader_controls():
 @pytest.mark.asyncio
 async def test_fetch_user_history_treats_malformed_cache_as_a_miss():
     post_id = UUID(int=700)
-    occurred_at = REFERENCE_AT - timedelta(hours=1)
+    occurred_at = datetime.now(timezone.utc) - timedelta(hours=1)
     pool = FakePool(
         [_event_row(701, post_id, occurred_at)],
         [_feature_row(702, post_id, "7" * 64, occurred_at - timedelta(days=1))],
