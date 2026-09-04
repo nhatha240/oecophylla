@@ -101,15 +101,11 @@ pub async fn run(brokers: String, redis: RedisPool) -> anyhow::Result<()> {
             .is_some_and(invalidates_preferences)
         {
             if let Some(user_id) = extract_user_id(&env) {
-                let keys = cache_keys_for_user(&user_id);
-                match redis.get().await {
-                    Ok(mut conn) => match conn.del::<_, i64>(&keys).await {
-                        Ok(deleted) => {
-                            tracing::debug!(%deleted, "recommendation caches invalidated")
-                        }
-                        Err(err) => tracing::warn!(error = %err, "redis DEL failed"),
-                    },
-                    Err(err) => tracing::warn!(error = %err, "redis pool acquire failed"),
+                match invalidate_user_caches(&redis, &user_id).await {
+                    Ok(deleted) => {
+                        tracing::debug!(%deleted, "recommendation caches invalidated")
+                    }
+                    Err(err) => tracing::warn!(error = %err, "redis invalidation failed"),
                 }
             }
         }
@@ -135,6 +131,14 @@ fn cache_keys_for_user(user_id: &str) -> Vec<String> {
         .iter()
         .map(|prefix| format!("{prefix}{user_id}"))
         .collect()
+}
+
+async fn invalidate_user_caches(redis: &RedisPool, user_id: &str) -> anyhow::Result<i64> {
+    let mut conn = redis.get().await.context("acquire Redis connection")?;
+    let keys = cache_keys_for_user(user_id);
+    conn.del(&keys)
+        .await
+        .context("delete registered cache keys")
 }
 
 fn invalidates_preferences(event_type: &str) -> bool {

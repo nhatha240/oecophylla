@@ -45,4 +45,3 @@ COMMENT ON TABLE user_preference_vectors_v2 IS
     'Bounded positive/negative event-time preference-vector-v2 channels; v1 is retained for rollback.';
 COMMENT ON VIEW preference_vector_v2_backfill_users IS
     'Users eligible for canonical behavior_events replay by the feature worker.';
-

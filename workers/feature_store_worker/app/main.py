@@ -160,7 +160,11 @@ class Worker:
                 _record_outcome("invalid", event_type)
                 continue
             user = _extract_user(env)
-            if not user or _event_id(env) is None:
+            if user is None:
+                outcome = "invalid" if _identity_field_is_present(env) else "unknown"
+                _record_outcome(outcome, event_type)
+                continue
+            if _event_id(env) is None:
                 _record_outcome("unknown", event_type)
                 continue
             per_user[user].append(env)
@@ -428,11 +432,22 @@ class Worker:
 
 
 def _extract_user(env: dict[str, Any]) -> str | None:
-    data = env.get("data") or {}
+    data = env.get("data")
+    if not isinstance(data, dict):
+        return None
     for key in UUID_KEYS:
-        if data.get(key):
-            return str(data[key])
+        if key not in data:
+            continue
+        try:
+            return str(UUID(str(data[key])))
+        except (TypeError, ValueError, AttributeError):
+            return None
     return None
+
+
+def _identity_field_is_present(env: dict[str, Any]) -> bool:
+    data = env.get("data")
+    return isinstance(data, dict) and any(key in data for key in UUID_KEYS)
 
 
 def _event_type(env: dict[str, Any]) -> str:
