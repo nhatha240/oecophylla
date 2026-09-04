@@ -493,13 +493,16 @@ def _split_ranking_rows(
     train_end = group_count - validation_count - test_count
     validation_end = train_end + validation_count
     group_times = [min(row.served_at for row in group) for group in ordered_groups]
-    while 0 < train_end < group_count and group_times[train_end - 1] == group_times[train_end]:
-        train_end -= 1
-    while (
-        train_end < validation_end < group_count
-        and group_times[validation_end - 1] == group_times[validation_end]
-    ):
-        validation_end -= 1
+    train_end = _snap_split_boundary(
+        train_end,
+        group_times,
+        prefer_non_empty_side="left",
+    )
+    validation_end = _snap_split_boundary(
+        validation_end,
+        group_times,
+        prefer_non_empty_side="right",
+    )
     validation_end = max(train_end, validation_end)
 
     split_rows: list[RankingDatasetRow] = []
@@ -513,6 +516,45 @@ def _split_ranking_rows(
             split = "test"
         split_rows.extend(replace(row, split=split) for row in group)
     return tuple(sorted(split_rows, key=lambda row: (row.served_at, row.position, row.sample_id)))
+
+
+def _snap_split_boundary(
+    boundary: int,
+    group_times: Sequence[datetime],
+    *,
+    prefer_non_empty_side: Literal["left", "right"],
+) -> int:
+    group_count = len(group_times)
+    if boundary <= 0:
+        return 0
+    if boundary >= group_count:
+        return group_count
+    if group_times[boundary - 1] != group_times[boundary]:
+        return boundary
+
+    left_boundary = boundary
+    while (
+        0 < left_boundary < group_count
+        and group_times[left_boundary - 1] == group_times[left_boundary]
+    ):
+        left_boundary -= 1
+    right_boundary = boundary
+    while (
+        0 < right_boundary < group_count
+        and group_times[right_boundary - 1] == group_times[right_boundary]
+    ):
+        right_boundary += 1
+
+    def score(candidate: int) -> tuple[int, int, int, int]:
+        left_non_empty = int(candidate > 0)
+        right_non_empty = int(candidate < group_count)
+        populated_sides = left_non_empty + right_non_empty
+        preferred_side = (
+            left_non_empty if prefer_non_empty_side == "left" else right_non_empty
+        )
+        return (-populated_sides, -preferred_side, abs(candidate - boundary), candidate)
+
+    return min((left_boundary, right_boundary), key=score)
 
 
 def build_ranking_samples_v2(
@@ -947,7 +989,7 @@ def write_dataset_v2_artifact(
         },
         "split_policy": {
             "atomic_unit": "canonical_request",
-            "boundary": "chronological_request_count_with_timestamp_ties_assigned_to_later_split",
+            "boundary": "chronological_request_count_with_unsplit_timestamp_buckets",
         },
         "privacy": {
             "raw_user_ids": False,

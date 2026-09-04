@@ -430,6 +430,9 @@ def test_v2_artifact_pins_versions_and_contains_no_raw_identity(
     assert metadata["encoder_dimension"] == 384
     assert metadata["code_version"] == "test-sha"
     assert metadata["query_window_version"] == "event-time-window-v1"
+    assert metadata["split_policy"]["boundary"] == (
+        "chronological_request_count_with_unsplit_timestamp_buckets"
+    )
     assert metadata["class_balance"]["click_label"] == {"0": 4, "1": 2}
     serialized = table.to_pydict()
     assert payload["user_id"] not in json.dumps(serialized, default=str)
