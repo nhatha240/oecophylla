@@ -426,6 +426,52 @@ def _request_metrics(
     }
 
 
+def _paired_bootstrap_delta_ci95(
+    deltas: Sequence[float], *, seed: int, resamples: int = 1_000
+) -> list[float]:
+    if not deltas:
+        raise ValueError("paired confidence interval requires request-level deltas")
+    if len(deltas) == 1:
+        value = round(float(deltas[0]), 6)
+        return [value, value]
+    generator = random.Random(seed)
+    sample_size = len(deltas)
+    means = sorted(
+        fmean(generator.choice(deltas) for _ in range(sample_size))
+        for _ in range(resamples)
+    )
+    lower = means[round(0.025 * (resamples - 1))]
+    upper = means[round(0.975 * (resamples - 1))]
+    return [round(lower, 6), round(upper, 6)]
+
+
+def _paired_ranking_comparison(
+    rows_by_request: Mapping[str, Sequence[Mapping[str, Any]]],
+    model_scores: Mapping[str, float],
+    baseline_scores: Mapping[str, float],
+) -> dict[str, dict[str, Any]]:
+    metrics = ("impression_auc", "mrr", "ndcg_at_5", "ndcg_at_10")
+    deltas: dict[str, list[float]] = {metric: [] for metric in metrics}
+    for request_group in sorted(rows_by_request):
+        rows = rows_by_request[request_group]
+        model_metrics = _request_metrics(rows, model_scores)
+        baseline_metrics = _request_metrics(rows, baseline_scores)
+        for metric in metrics:
+            model_value = model_metrics[metric]
+            baseline_value = baseline_metrics[metric]
+            if model_value is not None and baseline_value is not None:
+                deltas[metric].append(float(model_value - baseline_value))
+    return {
+        metric: {
+            "delta": _mean(values),
+            "ci95": _paired_bootstrap_delta_ci95(values, seed=index),
+            "requests": len(values),
+        }
+        for index, (metric, values) in enumerate(deltas.items())
+        if values
+    }
+
+
 def _embedding_diversity(rows: Sequence[Mapping[str, Any]]) -> float:
     vectors = [
         (row.get("article") or {}).get("embedding")
@@ -645,6 +691,13 @@ def compare_nrms_holdout(
         ),
     }
     segments = _segment_report(test_by_request, pure_scores)
+    comparisons = {
+        "pure_vs_logged_position": _paired_ranking_comparison(
+            test_by_request,
+            pure_scores,
+            heuristic_scores,
+        )
+    }
 
     request_count = len(test_by_request)
     auc_eligible_requests = models["pure_model"]["impression_auc_eligible_requests"]
@@ -694,7 +747,11 @@ def compare_nrms_holdout(
             "reason": "product_guardrail_regression",
         }
     else:
-        promotion = {"eligible": True}
+        ndcg_ci = comparisons["pure_vs_logged_position"]["ndcg_at_10"]["ci95"]
+        promotion = {
+            "eligible": True,
+            "conclusion": "win" if ndcg_ci[0] > 0.0 else "no_regression",
+        }
 
     return {
         "report_schema_version": "recommendation-nrms-comparison-v1",
@@ -717,6 +774,7 @@ def compare_nrms_holdout(
             "auc_eligible_requests": auc_eligible_requests,
         },
         "models": models,
+        "comparisons": comparisons,
         "segments": segments,
         "promotion": promotion,
     }
@@ -739,7 +797,13 @@ def write_nrms_comparison_report(
                 "# NRMS recommendation model comparison",
                 "",
                 f"- Promotion eligible: **{report['promotion']['eligible']}**",
-                f"- Promotion reason: `{report['promotion'].get('reason', 'eligible')}`",
+                (
+                    "- Promotion outcome: `"
+                    + report["promotion"].get(
+                        "reason", report["promotion"].get("conclusion", "eligible")
+                    )
+                    + "`"
+                ),
                 f"- Holdout impressions: {report['sample']['impressions']}",
                 f"- Holdout requests: {report['sample']['requests']}",
                 "",
@@ -835,7 +899,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         json_path, markdown_path = write_nrms_comparison_report(report, args.output)
         conclusion = (
-            "eligible"
+            report["promotion"].get("conclusion", "eligible")
             if report["promotion"]["eligible"]
             else report["promotion"]["reason"]
         )
