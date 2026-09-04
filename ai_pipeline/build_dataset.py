@@ -18,10 +18,14 @@ from recommendation_label import CONTRACT_VERSION, derive_label, event_label_ver
 
 from .config import DatasetConfig
 from .schemas import (
+    ArticleFeatureRecord,
     BehaviorEvent,
     BuildResult,
     BuildStats,
     DatasetRow,
+    HistoryEntry,
+    HistorySnapshot,
+    HISTORY_SCHEMA_VERSION,
     Impression,
     LabelName,
     SplitName,
@@ -199,6 +203,90 @@ def _validate_request_envelopes(impressions: Iterable[Impression]) -> None:
             raise ValueError("conflicting canonical request identity")
         positions[identity].add(impression.position)
         posts[identity].add(impression.post_id)
+
+
+def _history_total_limit(config: Any) -> int:
+    recent_limit = int(getattr(config, "history_recent_limit", 0))
+    long_term_limit = int(getattr(config, "history_long_term_limit", 0))
+    if recent_limit < 0 or long_term_limit < 0:
+        raise ValueError("history limits must be non-negative")
+    return recent_limit + long_term_limit
+
+
+def _qualifies_for_history(event: BehaviorEvent, reference_at: datetime) -> bool:
+    return (
+        event.user_id is not None
+        and event.event_type == "click"
+        and event_label_version(event) == "v2"
+        and event.occurred_at < reference_at
+        and (event.ingested_at is None or event.ingested_at <= reference_at)
+    )
+
+
+def _select_history_feature(
+    features: Sequence[ArticleFeatureRecord], engaged_at: datetime
+) -> ArticleFeatureRecord | None:
+    eligible = [
+        feature
+        for feature in features
+        if feature.source_updated_at <= engaged_at and feature.computed_at <= engaged_at
+    ]
+    if not eligible:
+        return None
+    return max(
+        eligible,
+        key=lambda feature: (
+            feature.source_updated_at,
+            feature.computed_at,
+            feature.id,
+        ),
+    )
+
+
+def build_history_snapshot(
+    user_id: UUID,
+    reference_at: datetime,
+    events: Iterable[BehaviorEvent],
+    article_features: Iterable[ArticleFeatureRecord],
+    config: Any,
+) -> HistorySnapshot:
+    total_limit = _history_total_limit(config)
+    selected_events = sorted(
+        (
+            event
+            for event in events
+            if event.user_id == user_id and _qualifies_for_history(event, reference_at)
+        ),
+        key=lambda event: (event.occurred_at, event.id),
+    )[-total_limit:]
+    features_by_post = defaultdict(list)
+    for feature in _deduplicate(article_features).values():
+        features_by_post[feature.post_id].append(feature)
+
+    entries: list[HistoryEntry] = []
+    for event in selected_events:
+        feature = _select_history_feature(features_by_post.get(event.post_id, ()), event.occurred_at)
+        if feature is None:
+            continue
+        entries.append(
+            HistoryEntry(
+                event_id=event.id,
+                post_id=event.post_id,
+                event_type="click",
+                engaged_at=event.occurred_at,
+                encoder_version=feature.encoder_version,
+                content_hash=feature.content_hash,
+                feature_source_updated_at=feature.source_updated_at,
+                feature_computed_at=feature.computed_at,
+                embedding=feature.embedding,
+            )
+        )
+    return HistorySnapshot(
+        schema_version=HISTORY_SCHEMA_VERSION,
+        user_id=user_id,
+        reference_at=reference_at,
+        entries=tuple(entries),
+    )
 
 
 def build_samples(
@@ -466,7 +554,7 @@ async def fetch_telemetry(
             await connection.fetch(
                 """
                 SELECT id, impression_id, user_id, post_id, event_type,
-                       dwell_ms, metadata, occurred_at, ingested_at
+                       dwell_ms, metadata, occurred_at, ingested_at, event_version
                 FROM behavior_events
                 WHERE impression_id = ANY($1::uuid[])
                   AND occurred_at <= $2

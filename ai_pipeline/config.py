@@ -22,6 +22,8 @@ class DatasetConfig:
     hash_salt: str | None = None
     train_fraction: float = 0.70
     validation_fraction: float = 0.15
+    history_recent_limit: int = 20
+    history_long_term_limit: int = 30
 
     def __post_init__(self) -> None:
         for name in ("start", "end", "extraction_time"):
@@ -47,3 +49,9 @@ class DatasetConfig:
             raise ValueError("validation_fraction must be between zero and one")
         if self.train_fraction + self.validation_fraction >= 1:
             raise ValueError("train and validation fractions must leave a test holdout")
+        if self.history_recent_limit < 0:
+            raise ValueError("history_recent_limit must be non-negative")
+        if self.history_long_term_limit < 0:
+            raise ValueError("history_long_term_limit must be non-negative")
+        if self.history_recent_limit + self.history_long_term_limit <= 0:
+            raise ValueError("history limits must leave at least one slot")
