@@ -324,3 +324,129 @@ def test_evaluation_rejects_insufficient_power_and_missing_segment_results(tmp_p
         row.pop("feed_source")
     with pytest.raises(ValueError, match="segment"):
         compare_nrms_holdout(rows, artifact, minimum_requests=1)
+
+
+def test_evaluate_cli_dispatches_dataset_v2_to_nrms_report(tmp_path: Path):
+    dataset = _write_dataset(tmp_path)
+    artifact = tmp_path / "nrms"
+    report_path = tmp_path / "comparison.json"
+    train_from_dataset(dataset, artifact, epochs=1)
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "ai_pipeline.evaluate",
+            "--dataset",
+            str(dataset),
+            "--artifact",
+            str(artifact),
+            "--output",
+            str(report_path),
+            "--minimum-requests",
+            "1",
+            "--minimum-auc-requests",
+            "1",
+        ],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["report_schema_version"] == "recommendation-nrms-comparison-v1"
+    assert report_path.with_suffix(".md").is_file()
+
+
+def test_promotion_rejects_a_model_that_regresses_against_logged_order():
+    rows = _rows(requests_per_split=4)
+
+    class DeliberatelyBadArtifact:
+        manifest: dict[str, Any] = {}
+
+        def predict_scores(self, records: list[dict[str, Any]]) -> list[float]:
+            return [float(1 - int(row["click_label"])) for row in records]
+
+    report = compare_nrms_holdout(
+        rows,
+        DeliberatelyBadArtifact(),
+        minimum_requests=1,
+        minimum_auc_requests=1,
+    )
+
+    assert report["models"]["pure_model"]["impression_auc"] == 0.0
+    assert report["promotion"] == {
+        "eligible": False,
+        "reason": "ranking_metric_regression",
+    }
+
+
+def test_resume_rejects_checkpoint_from_a_different_seed(tmp_path: Path):
+    dataset = _write_dataset(tmp_path)
+    checkpoint = tmp_path / "checkpoint.npz"
+    train_from_dataset(
+        dataset,
+        tmp_path / "first",
+        seed=77,
+        epochs=1,
+        checkpoint=checkpoint,
+    )
+
+    with pytest.raises(DatasetValidationError, match="seed"):
+        train_from_dataset(
+            dataset,
+            tmp_path / "resumed",
+            seed=999,
+            epochs=2,
+            checkpoint=checkpoint,
+            resume=True,
+        )
+
+
+def test_resume_rejects_checkpoint_from_a_different_dataset(tmp_path: Path):
+    dataset = _write_dataset(tmp_path)
+    checkpoint = tmp_path / "checkpoint.npz"
+    train_from_dataset(
+        dataset,
+        tmp_path / "first",
+        epochs=1,
+        checkpoint=checkpoint,
+    )
+    changed_rows = _rows()
+    changed_rows[0]["article"]["embedding"] = _unit(7)
+    _write_dataset(tmp_path, changed_rows)
+
+    with pytest.raises(DatasetValidationError, match="dataset checksum"):
+        train_from_dataset(
+            dataset,
+            tmp_path / "resumed",
+            epochs=2,
+            checkpoint=checkpoint,
+            resume=True,
+        )
+
+
+def test_real_v2_shape_reports_missing_segment_metadata_without_crashing(
+    tmp_path: Path,
+):
+    rows = _rows(requests_per_split=4)
+    for row in rows:
+        row.pop("language")
+        row.pop("declared_topic_embedding")
+    dataset = _write_dataset(tmp_path, rows)
+    artifact_path = tmp_path / "nrms"
+    train_from_dataset(dataset, artifact_path, epochs=1)
+
+    report = compare_nrms_holdout(
+        rows,
+        load_artifact(artifact_path),
+        minimum_requests=1,
+        minimum_auc_requests=1,
+    )
+
+    assert report["segments"]["language"]["unknown"]["requests"] == 4
+    assert report["promotion"] == {
+        "eligible": False,
+        "reason": "missing_segment_metadata",
+    }
