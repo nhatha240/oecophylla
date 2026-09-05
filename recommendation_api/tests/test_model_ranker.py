@@ -203,6 +203,44 @@ async def test_recommend_endpoint_wires_ml_scores_before_diversity(monkeypatch):
     assert response.items[0].features.ml_score == 0.9
 
 
+@pytest.mark.asyncio
+async def test_recommend_endpoint_snapshots_declared_topics_before_serving(monkeypatch):
+    observed_at = datetime(2026, 9, 5, 10, 0, tzinfo=timezone.utc)
+    candidate = CandidatePost(
+        id=UUID("00000000-0000-0000-0000-000000000001"),
+        author_id=uuid4(),
+        topics=["ai"],
+        safety_score=1.0,
+        created_at=observed_at.replace(hour=8),
+        source="topic",
+        content="Công nghệ mới tại Việt Nam",
+    )
+    monkeypatch.setattr(main, "utc_now", lambda: observed_at)
+    monkeypatch.setattr(
+        main, "fetch_user_vector", AsyncMock(return_value={"ai": 1.0})
+    )
+    monkeypatch.setattr(
+        main, "fetch_declared_topics", AsyncMock(return_value=["ai", "tech"])
+    )
+    monkeypatch.setattr(main, "gather_candidates", AsyncMock(return_value=[candidate]))
+    main.app.state.db = object()
+    main.app.state.redis = object()
+    main.app.state.cfg = SimpleNamespace(
+        feed_candidate_pool=100,
+        seen_cooldown_days=7,
+        half_life_hours=36.0,
+    )
+    main.app.state.ranker = RankerRuntime(mode="heuristic")
+
+    response = await main.recommend_feed(uuid4(), RecommendFeedRequest(limit=1))
+    snapshot = response.items[0].features
+
+    assert snapshot.declared_topics == ["ai", "tech"]
+    assert snapshot.preference_observed_at == observed_at
+    assert snapshot.candidate_published_at == candidate.created_at
+    assert snapshot.content_language == "vi"
+
+
 def test_container_and_deployments_use_compatible_read_only_artifact_mount():
     runtime_requirements = (
         REPO_ROOT / "recommendation_api" / "requirements.runtime.txt"

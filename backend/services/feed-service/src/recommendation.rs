@@ -125,6 +125,33 @@ mod recommendation_contract_tests {
         "generated_at": "2026-08-27T00:00:00Z"
     }"#;
 
+    const V2_RESPONSE: &str = r#"{
+        "items": [{
+            "post_id": "00000000-0000-0000-0000-000000000001",
+            "score": 0.79,
+            "source": "topic",
+            "reason": "heuristic-rank",
+            "features": {
+                "schema_version": "rank-features-v2",
+                "topic_relevance": 0.8,
+                "freshness": 0.7,
+                "safety_score": 0.9,
+                "candidate_source": "topic",
+                "is_followed_author": null,
+                "author_affinity": null,
+                "heuristic_score": 0.79,
+                "ml_score": null,
+                "candidate_published_at": "2026-08-26T23:00:00Z",
+                "content_language": "vi",
+                "language_detector_version": "unicode-script-heuristic-v1",
+                "declared_topics": ["ai", "tech"],
+                "preference_observed_at": "2026-08-27T00:00:00Z"
+            }
+        }],
+        "model_version": "heuristic-v1",
+        "generated_at": "2026-08-27T00:00:00Z"
+    }"#;
+
     #[test]
     fn recommendation_contract_decodes_versioned_feature_snapshot() {
         let response: RecommendFeedResponse = serde_json::from_str(VALID_RESPONSE).unwrap();
@@ -159,10 +186,28 @@ mod recommendation_contract_tests {
     }
 
     #[test]
-    fn recommendation_contract_rejects_unsupported_feature_schema_version() {
-        let payload = VALID_RESPONSE.replace("rank-features-v1", "rank-features-v2");
+    fn recommendation_contract_decodes_v2_temporal_context() {
+        let response: RecommendFeedResponse = serde_json::from_str(V2_RESPONSE).unwrap();
+        let features = &response.items[0].features;
 
-        assert!(serde_json::from_str::<RecommendFeedResponse>(&payload).is_err());
+        assert!(matches!(
+            features.schema_version,
+            RankFeatureSchemaVersion::V2
+        ));
+        assert_eq!(
+            features.candidate_published_at.unwrap().to_rfc3339(),
+            "2026-08-26T23:00:00+00:00"
+        );
+        assert_eq!(features.content_language.as_deref(), Some("vi"));
+        assert_eq!(
+            features.language_detector_version.as_deref(),
+            Some("unicode-script-heuristic-v1")
+        );
+        assert_eq!(features.declared_topics, ["ai", "tech"]);
+        assert_eq!(
+            features.preference_observed_at.unwrap().to_rfc3339(),
+            "2026-08-27T00:00:00+00:00"
+        );
     }
 
     #[test]
