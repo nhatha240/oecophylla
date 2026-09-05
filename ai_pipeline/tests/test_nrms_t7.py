@@ -541,3 +541,26 @@ def test_equal_model_is_no_regression_and_not_a_statistical_win():
         "eligible": True,
         "conclusion": "no_regression",
     }
+
+
+def test_article_tenure_uses_published_time_not_feature_refresh_time(tmp_path: Path):
+    rows = _rows(requests_per_split=4)
+    for row in rows:
+        article = row["article"]
+        article["feature_source_updated_at"] = row["served_at"] - timedelta(hours=1)
+        article["published_at"] = row["served_at"] - timedelta(days=10)
+        article["language"] = row.pop("language")
+        article["language_detector_version"] = "fixture-v1"
+    dataset = _write_dataset(tmp_path, rows)
+    artifact_path = tmp_path / "nrms"
+    train_from_dataset(dataset, artifact_path, epochs=1)
+
+    report = compare_nrms_holdout(
+        rows,
+        load_artifact(artifact_path),
+        minimum_requests=1,
+        minimum_auc_requests=1,
+    )
+
+    assert set(report["segments"]["article_tenure"]) == {"established"}
+    assert set(report["segments"]["language"]) == {"en", "vi"}
