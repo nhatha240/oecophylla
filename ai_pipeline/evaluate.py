@@ -555,12 +555,12 @@ def _bucket_article_tenure(
     row: Mapping[str, Any], *, threshold_hours: float = 24.0
 ) -> str:
     article = row.get("article") or {}
-    updated = article.get("feature_source_updated_at")
+    published_at = article.get("published_at")
     served = row.get("served_at")
-    if updated is None or served is None:
+    if published_at is None or served is None:
         return "unknown"
     age_hours = (
-        parse_datetime(served) - parse_datetime(updated)
+        parse_datetime(served) - parse_datetime(published_at)
     ).total_seconds() / 3600.0
     return "new" if age_hours <= threshold_hours else "established"
 

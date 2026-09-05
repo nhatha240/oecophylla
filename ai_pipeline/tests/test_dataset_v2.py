@@ -24,10 +24,7 @@ from ai_pipeline.schemas import (
 )
 
 FIXTURE = Path(__file__).parent / "fixtures" / "local_telemetry_v2.json"
-ENCODER = (
-    "intfloat/multilingual-e5-small@"
-    "614241f622f53c4eeff9890bdc4f31cfecc418b3"
-)
+ENCODER = "intfloat/multilingual-e5-small@614241f622f53c4eeff9890bdc4f31cfecc418b3"
 
 
 def _load_local_fixture():
@@ -167,17 +164,28 @@ def test_local_v2_preserves_visibility_labels_history_and_scope(config: DatasetC
     assert report.empty_history_requests == 0
     assert {row.dataset_scope for row in result.rows} == {"served-impression-reranking"}
     assert all(row.served and row.visible for row in result.rows)
-    assert all(entry.engaged_at < row.served_at for row in result.rows for entry in row.history)
-    assert all(len({row.split for row in result.rows if row.request_group == group}) == 1 for group in {row.request_group for row in result.rows})
+    assert all(
+        entry.engaged_at < row.served_at for row in result.rows for entry in row.history
+    )
+    assert all(
+        len({row.split for row in result.rows if row.request_group == group}) == 1
+        for group in {row.request_group for row in result.rows}
+    )
     assert any(row.click_label == 0 and row.utility_label == 1 for row in result.rows)
     assert any(row.click_label == 1 and row.utility_label == 0 for row in result.rows)
     exported = json.dumps([row.to_record() for row in result.rows], default=str)
     for raw_id in [payload["user_id"], *payload["retrieved_but_not_served"]]:
         assert raw_id not in exported
-    assert all(candidate["post_id"] not in exported for request in payload["requests"] for candidate in request["candidates"])
+    assert all(
+        candidate["post_id"] not in exported
+        for request in payload["requests"]
+        for candidate in request["candidates"]
+    )
 
 
-def test_v2_validator_rejects_missing_embedding_and_future_history(config: DatasetConfig):
+def test_v2_validator_rejects_missing_embedding_and_future_history(
+    config: DatasetConfig,
+):
     _, impressions, events, features = _load_local_fixture()
     result = build_ranking_samples_v2(impressions, events, features, config)
     first = result.rows[0]
@@ -199,7 +207,9 @@ def test_v2_validator_rejects_encoder_dimension_and_identity_mismatch(
     result = build_ranking_samples_v2(impressions, events, features, config)
     first = result.rows[0]
 
-    wrong_encoder = replace(first, article=replace(first.article, encoder_version=ENCODER[:-1] + "0"))
+    wrong_encoder = replace(
+        first, article=replace(first.article, encoder_version=ENCODER[:-1] + "0")
+    )
     with pytest.raises(ValueError, match="encoder version"):
         validate_dataset_v2(replace(result, rows=(wrong_encoder, *result.rows[1:])))
 
@@ -225,7 +235,9 @@ def test_v2_validator_rejects_encoder_dimension_and_identity_mismatch(
             )
         )
 
-    wrong_dimension = replace(first, article=replace(first.article, embedding=(1.0, 0.0)))
+    wrong_dimension = replace(
+        first, article=replace(first.article, embedding=(1.0, 0.0))
+    )
     with pytest.raises(ValueError, match="embedding dimension"):
         validate_dataset_v2(replace(result, rows=(wrong_dimension, *result.rows[1:])))
 
@@ -249,7 +261,11 @@ def test_v2_keeps_click_that_precedes_proven_visibility(config: DatasetConfig):
     ]
 
     result = build_ranking_samples_v2(impressions, events, features, config)
-    row = next(item for item in result.rows if item.position == target.position and item.served_at == target.served_at)
+    row = next(
+        item
+        for item in result.rows
+        if item.position == target.position and item.served_at == target.served_at
+    )
 
     assert row.click_label == 1
     assert row.utility_label == 1
@@ -292,7 +308,9 @@ def test_v2_split_keeps_same_timestamp_request_bucket_atomic_without_emptying_tr
         for position in (0, 1)
     )
 
-    split_rows = _split_ranking_rows(rows, train_fraction=0.34, validation_fraction=0.33)
+    split_rows = _split_ranking_rows(
+        rows, train_fraction=0.34, validation_fraction=0.33
+    )
     request_splits = {
         request_identity: {
             candidate.split
@@ -342,9 +360,13 @@ def test_v2_artifact_keeps_and_validates_feature_revision_timestamps(
         first.article,
         feature_computed_at=first.served_at + timedelta(seconds=1),
     )
-    with pytest.raises(ValueError, match="feature revision must not be from the future"):
+    with pytest.raises(
+        ValueError, match="feature revision must not be from the future"
+    ):
         validate_dataset_v2(
-            replace(result, rows=(replace(first, article=future_article), *result.rows[1:]))
+            replace(
+                result, rows=(replace(first, article=future_article), *result.rows[1:])
+            )
         )
 
 
@@ -512,7 +534,9 @@ def test_v2_rejects_future_article_and_declared_topic_context(
     )
     with pytest.raises(ValueError, match="published_at"):
         validate_dataset_v2(
-            replace(result, rows=(replace(first, article=future_article), *result.rows[1:]))
+            replace(
+                result, rows=(replace(first, article=future_article), *result.rows[1:])
+            )
         )
 
     future_context = replace(
@@ -521,9 +545,7 @@ def test_v2_rejects_future_article_and_declared_topic_context(
         declared_topics_observed_at=first.served_at + timedelta(seconds=1),
     )
     with pytest.raises(ValueError, match="declared topic"):
-        validate_dataset_v2(
-            replace(result, rows=(future_context, *result.rows[1:]))
-        )
+        validate_dataset_v2(replace(result, rows=(future_context, *result.rows[1:])))
 
 
 def test_v2_config_requires_explicit_v2_label_and_pinned_encoder(config: DatasetConfig):

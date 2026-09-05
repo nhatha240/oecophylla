@@ -14,7 +14,7 @@ from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from itertools import pairwise
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any, Literal, TypeVar
 from uuid import UUID
 
 from recommendation_label import CONTRACT_VERSION, derive_label, event_label_version
@@ -99,6 +99,22 @@ def _optional_float(value: Any) -> float | None:
     return float(value) if value is not None else None
 
 
+def _optional_snapshot_datetime(
+    snapshot: Mapping[str, Any], field: str
+) -> datetime | None:
+    value = snapshot.get(field)
+    return parse_datetime(value) if value is not None else None
+
+
+def _snapshot_declared_topics(snapshot: Mapping[str, Any]) -> tuple[str, ...]:
+    values = snapshot.get("declared_topics") or ()
+    if isinstance(values, (str, bytes)) or not isinstance(values, Sequence):
+        raise TypeError("declared_topics must be a sequence of strings")
+    return tuple(
+        sorted({str(value).strip().lower() for value in values if str(value).strip()})
+    )
+
+
 def _validate_snapshot(snapshot: Mapping[str, Any]) -> bool:
     return (
         snapshot.get("schema_version") == FEATURE_SCHEMA_VERSION
@@ -129,10 +145,7 @@ def _split_rows(
 
     test_count = max(
         1,
-        round(
-            group_count
-            * (1 - config.train_fraction - config.validation_fraction)
-        ),
+        round(group_count * (1 - config.train_fraction - config.validation_fraction)),
     )
     validation_count = (
         max(1, round(group_count * config.validation_fraction))
@@ -149,9 +162,10 @@ def _split_rows(
         min(candidate.served_at for candidate in candidates)
         for candidates in ordered_groups
     ]
-    while 0 < train_end < group_count and group_times[train_end - 1] == group_times[
-        train_end
-    ]:
+    while (
+        0 < train_end < group_count
+        and group_times[train_end - 1] == group_times[train_end]
+    ):
         train_end -= 1
     while (
         train_end < validation_end < group_count
@@ -171,9 +185,7 @@ def _split_rows(
             split = "test"
         split_rows.extend(replace(row, split=split) for row in candidates)
 
-    result = tuple(
-        sorted(split_rows, key=lambda row: (row.visible_at, row.sample_id))
-    )
+    result = tuple(sorted(split_rows, key=lambda row: (row.visible_at, row.sample_id)))
     _assert_atomic_request_splits(rows, result)
     return result
 
@@ -266,7 +278,8 @@ def build_history_snapshot(
             (
                 event
                 for event in events
-                if event.user_id == user_id and _qualifies_for_history(event, reference_at)
+                if event.user_id == user_id
+                and _qualifies_for_history(event, reference_at)
             ),
             key=lambda event: (event.occurred_at, event.id),
         )[-total_limit:]
@@ -279,7 +292,9 @@ def build_history_snapshot(
 
     entries: list[HistoryEntry] = []
     for event in selected_events:
-        feature = _select_history_feature(features_by_post.get(event.post_id, ()), event.occurred_at)
+        feature = _select_history_feature(
+            features_by_post.get(event.post_id, ()), event.occurred_at
+        )
         if feature is None:
             continue
         entries.append(
@@ -320,12 +335,8 @@ def build_samples(
     _validate_request_envelopes(window_impressions)
     events_by_impression: dict[UUID, list[BehaviorEvent]] = defaultdict(list)
     for event in unique_events.values():
-        if (
-            event.impression_id is not None
-            and (
-                event.ingested_at is None
-                or event.ingested_at <= config.extraction_time
-            )
+        if event.impression_id is not None and (
+            event.ingested_at is None or event.ingested_at <= config.extraction_time
         ):
             events_by_impression[event.impression_id].append(event)
 
@@ -452,7 +463,12 @@ def build_samples(
 
 
 def _article_representation_from_feature(
-    feature: ArticleFeatureRecord, salt: str
+    feature: ArticleFeatureRecord,
+    salt: str,
+    *,
+    published_at: datetime | None = None,
+    language: str | None = None,
+    language_detector_version: str | None = None,
 ) -> ArticleRepresentation:
     return ArticleRepresentation(
         article_group=_hash_identity(feature.post_id, salt),
@@ -462,6 +478,9 @@ def _article_representation_from_feature(
         embedding=feature.embedding,
         feature_source_updated_at=feature.source_updated_at,
         feature_computed_at=feature.computed_at,
+        published_at=published_at,
+        language=language,
+        language_detector_version=language_detector_version,
     )
 
 
@@ -487,7 +506,9 @@ def _split_ranking_rows(
         return tuple(replace(row, split="train") for row in ordered_groups[0])
 
     test_count = max(1, round(group_count * (1 - train_fraction - validation_fraction)))
-    validation_count = max(1, round(group_count * validation_fraction)) if group_count >= 3 else 0
+    validation_count = (
+        max(1, round(group_count * validation_fraction)) if group_count >= 3 else 0
+    )
     if test_count + validation_count >= group_count:
         validation_count = max(0, group_count - test_count - 1)
     train_end = group_count - validation_count - test_count
@@ -515,7 +536,9 @@ def _split_ranking_rows(
         else:
             split = "test"
         split_rows.extend(replace(row, split=split) for row in group)
-    return tuple(sorted(split_rows, key=lambda row: (row.served_at, row.position, row.sample_id)))
+    return tuple(
+        sorted(split_rows, key=lambda row: (row.served_at, row.position, row.sample_id))
+    )
 
 
 def _snap_split_boundary(
@@ -580,9 +603,8 @@ def build_ranking_samples_v2(
 
     events_by_impression: dict[UUID, list[BehaviorEvent]] = defaultdict(list)
     for event in unique_events.values():
-        if (
-            event.impression_id is not None
-            and (event.ingested_at is None or event.ingested_at <= config.extraction_time)
+        if event.impression_id is not None and (
+            event.ingested_at is None or event.ingested_at <= config.extraction_time
         ):
             events_by_impression[event.impression_id].append(event)
     features_by_post: dict[UUID, list[ArticleFeatureRecord]] = defaultdict(list)
@@ -596,16 +618,20 @@ def build_ranking_samples_v2(
     label_window = timedelta(hours=config.label_window_hours)
     salt = config.hash_salt or ""
 
-    for impression in sorted(window_impressions, key=lambda item: (item.served_at, item.position, item.id)):
+    for impression in sorted(
+        window_impressions, key=lambda item: (item.served_at, item.position, item.id)
+    ):
         linked_events = [
             event
             for event in events_by_impression.get(impression.id, ())
-            if event.user_id == impression.user_id and event.post_id == impression.post_id
+            if event.user_id == impression.user_id
+            and event.post_id == impression.post_id
         ]
         visible_events = [
             event
             for event in linked_events
-            if event.event_type == "visible" and event.occurred_at >= impression.served_at
+            if event.event_type == "visible"
+            and event.occurred_at >= impression.served_at
         ]
         if not visible_events:
             served_without_visible += 1
@@ -625,7 +651,9 @@ def build_ranking_samples_v2(
         ]
         persisted_versions = {event_label_version(event) for event in label_events}
         if persisted_versions != {"v2"}:
-            raise ValueError("recommendation dataset v2 requires only persisted label v2 events")
+            raise ValueError(
+                "recommendation dataset v2 requires only persisted label v2 events"
+            )
         label = derive_label(
             label_events,
             label_version="v2",
@@ -633,18 +661,41 @@ def build_ranking_samples_v2(
             label_window_closed=True,
         )
         if label.training_target is None:
-            raise ValueError("recommendation dataset v2 requires finalized utility labels")
+            raise ValueError(
+                "recommendation dataset v2 requires finalized utility labels"
+            )
 
         feature = _select_history_feature(
             features_by_post.get(impression.post_id, ()), impression.served_at
         )
+        snapshot = impression.feature_snapshot
+        published_at = _optional_snapshot_datetime(snapshot, "candidate_published_at")
+        language_value = snapshot.get("content_language")
+        language = str(language_value).strip().lower() if language_value else None
+        detector_value = snapshot.get("language_detector_version")
+        language_detector_version = (
+            str(detector_value).strip() if detector_value else None
+        )
         article = (
-            _article_representation_from_feature(feature, salt)
+            _article_representation_from_feature(
+                feature,
+                salt,
+                published_at=published_at,
+                language=language,
+                language_detector_version=language_detector_version,
+            )
             if feature is not None
             else ArticleRepresentation(
                 article_group=_hash_identity(impression.post_id, salt),
                 representation_type="post-content-embedding-v1",
+                published_at=published_at,
+                language=language,
+                language_detector_version=language_detector_version,
             )
+        )
+        declared_topics = _snapshot_declared_topics(snapshot)
+        declared_topics_observed_at = _optional_snapshot_datetime(
+            snapshot, "preference_observed_at"
         )
         history_snapshot = build_history_snapshot(
             impression.user_id,
@@ -684,7 +735,9 @@ def build_ranking_samples_v2(
                 position=impression.position,
                 served=True,
                 visible=True,
-                click_label=int(any(event.event_type == "click" for event in label_events)),
+                click_label=int(
+                    any(event.event_type == "click" for event in label_events)
+                ),
                 utility_label=int(label.training_target),
                 utility_label_name=label.semantic,
                 article=article,
@@ -693,11 +746,15 @@ def build_ranking_samples_v2(
                 model_version=impression.model_version,
                 source_format="oecophylla-telemetry-v2",
                 audit_request_identity=_canonical_request_identity(impression),
+                declared_topics=declared_topics,
+                declared_topics_observed_at=declared_topics_observed_at,
             )
         )
 
     result = RankingBuildResult(
-        rows=_split_ranking_rows(rows, config.train_fraction, config.validation_fraction),
+        rows=_split_ranking_rows(
+            rows, config.train_fraction, config.validation_fraction
+        ),
         stats=BuildStats(
             impressions_read=len(impression_list),
             events_read=len(event_list),
@@ -719,10 +776,25 @@ def _validate_article_representation(
     expected_embedding_dimension: int | None,
     available_at: datetime | None,
 ) -> None:
+    if article.published_at is not None:
+        if article.published_at.tzinfo is None:
+            raise ValueError("article published_at requires a timezone")
+        if available_at is not None and article.published_at > available_at:
+            raise ValueError("article published_at must not be after availability")
+    if article.language is None:
+        if article.language_detector_version is not None:
+            raise ValueError("article language detector requires a language value")
+    else:
+        if not article.language.islower() or not 2 <= len(article.language) <= 16:
+            raise ValueError("article language must be a canonical lowercase code")
+        if not article.language_detector_version:
+            raise ValueError("article language requires detector provenance")
     if article.representation_type == "post-content-embedding-v1":
         if article.embedding is None:
             raise ValueError("missing article representation")
-        if not article.embedding or any(not math.isfinite(value) for value in article.embedding):
+        if not article.embedding or any(
+            not math.isfinite(value) for value in article.embedding
+        ):
             raise ValueError("invalid article embedding")
         if not article.encoder_version or not article.content_hash:
             raise ValueError("missing article representation provenance")
@@ -737,7 +809,9 @@ def _validate_article_representation(
         ):
             raise ValueError("article feature revision timestamps require a timezone")
         if article.feature_source_updated_at > article.feature_computed_at:
-            raise ValueError("article feature source timestamp exceeds computation time")
+            raise ValueError(
+                "article feature source timestamp exceeds computation time"
+            )
         if available_at is not None and (
             article.feature_source_updated_at > available_at
             or article.feature_computed_at > available_at
@@ -756,7 +830,9 @@ def _validate_article_representation(
             expected_embedding_dimension is not None
             and len(article.embedding) != expected_embedding_dimension
         ):
-            raise ValueError("article embedding dimension does not match dataset metadata")
+            raise ValueError(
+                "article embedding dimension does not match dataset metadata"
+            )
         norm = math.sqrt(sum(value * value for value in article.embedding))
         if not math.isclose(norm, 1.0, rel_tol=1e-5, abs_tol=1e-5):
             raise ValueError("article embedding must be finite and L2-normalized")
@@ -764,14 +840,20 @@ def _validate_article_representation(
         if not ((article.title or "").strip() or (article.abstract or "").strip()):
             raise ValueError("missing article representation")
         if article.embedding is not None:
-            raise ValueError("MIND text representation must not contain an unpinned embedding")
+            raise ValueError(
+                "MIND text representation must not contain an unpinned embedding"
+            )
         if article.content_hash is None or not _is_private_hash(article.content_hash):
-            raise ValueError("MIND text representation requires a versioned content hash")
+            raise ValueError(
+                "MIND text representation requires a versioned content hash"
+            )
         if (
             article.feature_source_updated_at is not None
             or article.feature_computed_at is not None
         ):
-            raise ValueError("MIND text representation must not fabricate feature timestamps")
+            raise ValueError(
+                "MIND text representation must not fabricate feature timestamps"
+            )
     else:
         raise ValueError("unsupported article representation")
 
@@ -846,6 +928,19 @@ def validate_dataset_v2(result: RankingBuildResult) -> DatasetV2ValidationReport
             expected_embedding_dimension=result.expected_embedding_dimension,
             available_at=row.served_at,
         )
+        if row.declared_topics != tuple(sorted(set(row.declared_topics))):
+            raise ValueError("declared topics must be canonical, unique, and sorted")
+        if any(
+            not topic or topic != topic.strip().lower() for topic in row.declared_topics
+        ):
+            raise ValueError("declared topics must be normalized lowercase labels")
+        if row.declared_topics and row.declared_topics_observed_at is None:
+            raise ValueError("declared topic provenance timestamp is required")
+        if row.declared_topics_observed_at is not None:
+            if row.declared_topics_observed_at.tzinfo is None:
+                raise ValueError("declared topic timestamp requires a timezone")
+            if row.declared_topics_observed_at > row.served_at:
+                raise ValueError("declared topic context must not be from the future")
         if [entry.ordinal for entry in row.history] != list(range(len(row.history))):
             raise ValueError("history ordinals must be contiguous and ordered")
         local_history_times = [
@@ -890,13 +985,33 @@ def validate_dataset_v2(result: RankingBuildResult) -> DatasetV2ValidationReport
             raise ValueError("candidates must be unique within a request")
         if len({row.history for row in candidates}) != 1:
             raise ValueError("request candidates must share one history snapshot")
-        if len(
-            {
-                (row.served_at, row.feed_source, row.model_version, row.source_format)
-                for row in candidates
-            }
-        ) != 1:
-            raise ValueError("request candidates must share one immutable serving envelope")
+        if (
+            len(
+                {
+                    (row.declared_topics, row.declared_topics_observed_at)
+                    for row in candidates
+                }
+            )
+            != 1
+        ):
+            raise ValueError("request candidates must share declared topic context")
+        if (
+            len(
+                {
+                    (
+                        row.served_at,
+                        row.feed_source,
+                        row.model_version,
+                        row.source_format,
+                    )
+                    for row in candidates
+                }
+            )
+            != 1
+        ):
+            raise ValueError(
+                "request candidates must share one immutable serving envelope"
+            )
         if not candidates[0].history:
             empty_history_requests += 1
 
@@ -904,7 +1019,9 @@ def validate_dataset_v2(result: RankingBuildResult) -> DatasetV2ValidationReport
     for candidates in by_request.values():
         request_times_by_split[candidates[0].split].append(candidates[0].served_at)
     split_order: tuple[SplitName, ...] = ("train", "validation", "test")
-    populated = [split_name for split_name in split_order if request_times_by_split[split_name]]
+    populated = [
+        split_name for split_name in split_order if request_times_by_split[split_name]
+    ]
     for earlier, later in pairwise(populated):
         if max(request_times_by_split[earlier]) > min(request_times_by_split[later]):
             raise ValueError("dataset splits are not chronological")
@@ -912,9 +1029,13 @@ def validate_dataset_v2(result: RankingBuildResult) -> DatasetV2ValidationReport
     click_balance = Counter(row.click_label for row in result.rows)
     utility_balance = Counter(row.utility_label for row in result.rows)
     if set(click_balance) != {0, 1}:
-        raise ValueError("click_label class balance requires positive and negative candidates")
+        raise ValueError(
+            "click_label class balance requires positive and negative candidates"
+        )
     if set(utility_balance) != {0, 1}:
-        raise ValueError("utility_label class balance requires positive and negative candidates")
+        raise ValueError(
+            "utility_label class balance requires positive and negative candidates"
+        )
     return DatasetV2ValidationReport(
         request_count=len(by_request),
         candidate_count=len(result.rows),
@@ -945,7 +1066,9 @@ def write_dataset_v2_artifact(
     if result.expected_encoder_version != config.encoder_version:
         raise ValueError("artifact encoder version was not verified by dataset rows")
     if result.expected_embedding_dimension != config.encoder_dimension:
-        raise ValueError("artifact embedding dimension was not verified by dataset rows")
+        raise ValueError(
+            "artifact embedding dimension was not verified by dataset rows"
+        )
     if {row.source_format for row in result.rows} != {source_format}:
         raise ValueError("artifact source format does not match dataset rows")
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -955,6 +1078,9 @@ def write_dataset_v2_artifact(
         compression="zstd",
     )
     candidates_per_request = Counter(row.request_group for row in result.rows)
+    declared_topic_requests = {
+        row.request_group for row in result.rows if row.declared_topics
+    }
     metadata = {
         "dataset_schema_version": DATASET_SCHEMA_VERSION_V2,
         "dataset_scope": DATASET_V2_SCOPE,
@@ -976,11 +1102,30 @@ def write_dataset_v2_artifact(
         "row_count": len(result.rows),
         "request_count": report.request_count,
         "empty_history_requests": report.empty_history_requests,
+        "segment_metadata_missing": {
+            "article_language_candidates": sum(
+                row.article.language is None for row in result.rows
+            ),
+            "article_published_at_candidates": sum(
+                row.article.published_at is None for row in result.rows
+            ),
+            "declared_topic_requests": (
+                report.request_count - len(declared_topic_requests)
+            ),
+        },
         "split_counts": dict(sorted(Counter(row.split for row in result.rows).items())),
-        "candidate_count_distribution": dict(sorted(Counter(candidates_per_request.values()).items())),
+        "candidate_count_distribution": dict(
+            sorted(Counter(candidates_per_request.values()).items())
+        ),
         "class_balance": {
-            "click_label": {str(key): value for key, value in sorted(report.click_class_balance.items())},
-            "utility_label": {str(key): value for key, value in sorted(report.utility_class_balance.items())},
+            "click_label": {
+                str(key): value
+                for key, value in sorted(report.click_class_balance.items())
+            },
+            "utility_label": {
+                str(key): value
+                for key, value in sorted(report.utility_class_balance.items())
+            },
         },
         "exclusions": {
             "served_without_visible": result.stats.served_without_visible,
@@ -999,7 +1144,9 @@ def write_dataset_v2_artifact(
         "retrieval_recall_supported": False,
     }
     metadata_path = output.with_suffix(f"{output.suffix}.metadata.json")
-    metadata_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    metadata_path.write_text(
+        json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     return metadata_path
 
 
@@ -1068,12 +1215,8 @@ def write_artifact(
                 if config.identity_mode == "hash"
                 else "not_exported"
             ),
-            "internal_grouping": (
-                "canonical_user_and_request_identity_in_memory_only"
-            ),
-            "legacy_compatibility": (
-                "request_group_rekeyed_from_sha256_request_id"
-            ),
+            "internal_grouping": ("canonical_user_and_request_identity_in_memory_only"),
+            "legacy_compatibility": ("request_group_rekeyed_from_sha256_request_id"),
         },
         "split_request_stats": split_request_stats,
         "class_balance": dict(

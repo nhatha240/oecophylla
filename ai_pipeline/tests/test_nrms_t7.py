@@ -37,6 +37,7 @@ def _article(group: str, axis: int, *, served_at: datetime) -> dict[str, Any]:
         "embedding": _unit(axis),
         "feature_source_updated_at": served_at - timedelta(days=axis % 3),
         "feature_computed_at": served_at - timedelta(hours=1),
+        "published_at": served_at - timedelta(days=axis % 3),
         "category": None,
         "subcategory": None,
         "title": "Tin kinh tế Việt Nam" if axis % 2 == 0 else "Global markets",
