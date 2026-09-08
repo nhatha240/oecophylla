@@ -1,0 +1,42 @@
+import { describe, expect, it, vi } from 'vitest';
+import type { HandleFetch } from '@sveltejs/kit';
+import { handleFetch } from './hooks.server';
+
+async function invoke(request: Request) {
+  const upstream = vi.fn<typeof fetch>().mockResolvedValue(new Response('{}'));
+  const event = {
+    url: new URL('http://localhost:3000/settings'),
+    request: new Request('http://localhost:3000/settings', {
+      headers: { cookie: 'oec_access=test-token' }
+    })
+  };
+  await handleFetch({ event, request, fetch: upstream } as unknown as Parameters<HandleFetch>[0]);
+  return upstream;
+}
+
+describe('server API fetch hook', () => {
+  it.each(['GET', 'HEAD'])('forwards %s with cookies and no body', async (method) => {
+    const upstream = await invoke(new Request('http://localhost:3000/api/v1/auth/me?fresh=1', { method }));
+    const [url, init] = upstream.mock.calls[0];
+    expect(String(url)).toBe('http://envoy:8080/api/v1/auth/me?fresh=1');
+    expect(init?.method).toBe(method);
+    expect(new Headers(init?.headers).get('cookie')).toBe('oec_access=test-token');
+    expect(init?.body).toBeUndefined();
+  });
+
+  it.each(['POST', 'PUT', 'PATCH', 'DELETE'])('preserves %s payload bytes', async (method) => {
+    const bytes = new Uint8Array([0, 255, 128, 65]);
+    const upstream = await invoke(new Request('http://localhost:3000/api/v1/users/u/avatar', {
+      method, body: bytes, headers: { 'content-type': 'application/octet-stream' }
+    }));
+    const init = upstream.mock.calls[0][1];
+    expect(new Uint8Array(await new Response(init?.body).arrayBuffer())).toEqual(bytes);
+    expect(new Headers(init?.headers).get('content-type')).toBe('application/octet-stream');
+  });
+
+  it('leaves unrelated fetches unchanged', async () => {
+    const request = new Request('https://example.test/resource');
+    const upstream = await invoke(request);
+    expect(upstream).toHaveBeenCalledWith(request);
+  });
+});
