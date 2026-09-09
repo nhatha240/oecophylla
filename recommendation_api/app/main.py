@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -34,6 +36,7 @@ from .schemas import (
     RecommendFeedResponse,
 )
 from .settings import settings as load_settings
+from .serving_context import load_author_context, load_nrms_records
 
 
 @asynccontextmanager
@@ -77,6 +80,7 @@ async def recommend_feed(
     redis: RedisCli = app.state.redis
     cfg = app.state.cfg
 
+    observed_at = utc_now()
     user_vec = await fetch_user_vector(db, redis, user_id, config=cfg)
     candidates = await gather_candidates(
         db,
@@ -95,7 +99,18 @@ async def recommend_feed(
         )
 
     declared_topics = await fetch_declared_topics(db, user_id)
-    observed_at = utc_now()
+    try:
+        author_context = await asyncio.wait_for(
+            load_author_context(
+                db, user_id, list({c.author_id for c in candidates}), observed_at
+            ),
+            timeout=getattr(cfg, "model_timeout_ms", 150) / 1000,
+        )
+    except Exception as error:
+        logging.getLogger(__name__).warning(
+            "author_context_unavailable", extra={"error_type": type(error).__name__}
+        )
+        author_context = {}
     scored = []
     for candidate in candidates:
         features = build_rank_feature_snapshot(
@@ -104,6 +119,10 @@ async def recommend_feed(
             half_life_hours=cfg.half_life_hours,
             declared_topics=declared_topics,
             observed_at=observed_at,
+        )
+        followed, affinity = author_context.get(candidate.author_id, (None, None))
+        features = features.model_copy(
+            update={"is_followed_author": followed, "author_affinity": affinity}
         )
         assert features.heuristic_score is not None
         scored.append(
@@ -118,7 +137,41 @@ async def recommend_feed(
     runtime: RankerRuntime = getattr(
         app.state, "ranker", RankerRuntime(mode="heuristic")
     )
-    decision = runtime.score(scored)
+    budget = getattr(cfg, "model_timeout_ms", 150) / 1000
+    started = time.monotonic()
+    records = None
+    context_failed = False
+    if runtime.mode != "heuristic" and getattr(
+        runtime.predictor, "requires_context", False
+    ):
+        try:
+            records = await asyncio.wait_for(
+                load_nrms_records(
+                    db=db,
+                    redis=redis,
+                    user_id=user_id,
+                    candidates=candidates,
+                    observed_at=observed_at,
+                    encoder_version=runtime.predictor.encoder_version,
+                    dimension=runtime.predictor.dimension,
+                    config=cfg,
+                ),
+                timeout=budget,
+            )
+        except Exception as error:
+            logging.getLogger(__name__).warning(
+                "nrms_context_unavailable", extra={"error_type": type(error).__name__}
+            )
+            context_failed = True
+    decision = (
+        runtime.fallback(scored, "context_error")
+        if context_failed
+        else await runtime.score_async(
+            scored,
+            records=records,
+            timeout_seconds=max(0.001, budget - (time.monotonic() - started)),
+        )
+    )
     primary = {str(c.id): c.primary_topic for c in candidates}
     author = {str(c.id): str(c.author_id) for c in candidates}
     top = diversity_rerank(
