@@ -77,7 +77,11 @@ async def load_nrms_records(
             raise ValueError("missing current candidate feature")
         records.append(
             dict(
-                article=dict(embedding=_embedding(feature["embedding"], dimension)),
+                article=dict(
+                    embedding=_embedding(feature["embedding"], dimension),
+                    content_hash=feature["content_hash"],
+                    encoder_version=encoder_version,
+                ),
                 history=history,
             )
         )
@@ -96,7 +100,7 @@ async def load_author_context(
             WHERE b.user_id = $1 AND b.event_type = 'click'
               AND b.occurred_at < $3 AND b.ingested_at <= $3
               AND b.occurred_at >= $3 - interval '30 days'
-              AND coalesce(b.event_version, b.metadata->>'event_version') = 'v2'
+              AND b.metadata->>'event_version' = 'v2'
             GROUP BY p.author_id
         )
         SELECT a.id AS author_id,

@@ -116,8 +116,16 @@ def _snapshot_declared_topics(snapshot: Mapping[str, Any]) -> tuple[str, ...]:
 
 
 def _validate_snapshot(snapshot: Mapping[str, Any]) -> bool:
+    if snapshot.get("schema_version") == "rank-features-v2" and not {
+        "candidate_published_at",
+        "content_language",
+        "language_detector_version",
+        "declared_topics",
+        "preference_observed_at",
+    }.issubset(snapshot):
+        return False
     return (
-        snapshot.get("schema_version") == FEATURE_SCHEMA_VERSION
+        snapshot.get("schema_version") in (FEATURE_SCHEMA_VERSION, "rank-features-v2")
         and REQUIRED_FEATURES.issubset(snapshot)
         and isinstance(snapshot.get("candidate_source"), str)
         and bool(str(snapshot.get("candidate_source", "")).strip())
@@ -665,10 +673,22 @@ def build_ranking_samples_v2(
                 "recommendation dataset v2 requires finalized utility labels"
             )
 
-        feature = _select_history_feature(
-            features_by_post.get(impression.post_id, ()), impression.served_at
-        )
         snapshot = impression.feature_snapshot
+        reference_at = (
+            _optional_snapshot_datetime(snapshot, "preference_observed_at")
+            or impression.served_at
+        )
+        if reference_at > impression.served_at:
+            raise ValueError("serving context must not be from the future")
+        candidate_features = features_by_post.get(impression.post_id, ())
+        if snapshot.get("candidate_content_hash") is not None:
+            candidate_features = [
+                f
+                for f in candidate_features
+                if f.content_hash == snapshot["candidate_content_hash"]
+                and f.encoder_version == snapshot.get("candidate_encoder_version")
+            ]
+        feature = _select_history_feature(candidate_features, reference_at)
         published_at = _optional_snapshot_datetime(snapshot, "candidate_published_at")
         language_value = snapshot.get("content_language")
         language = str(language_value).strip().lower() if language_value else None
@@ -699,7 +719,7 @@ def build_ranking_samples_v2(
         )
         history_snapshot = build_history_snapshot(
             impression.user_id,
-            impression.served_at,
+            reference_at,
             unique_events.values(),
             unique_features.values(),
             config,
@@ -1263,7 +1283,7 @@ async def fetch_telemetry(
             await connection.fetch(
                 """
                 SELECT id, impression_id, user_id, post_id, event_type,
-                       dwell_ms, metadata, occurred_at, ingested_at, event_version
+                       dwell_ms, metadata, occurred_at, ingested_at, metadata->>'event_version' AS event_version
                 FROM behavior_events
                 WHERE impression_id = ANY($1::uuid[])
                   AND occurred_at <= $2
@@ -1308,14 +1328,14 @@ async def fetch_dataset_v2_inputs(
             await connection.fetch(
                 """
                 SELECT id, impression_id, user_id, post_id, event_type,
-                       dwell_ms, metadata, occurred_at, ingested_at, event_version
+                       dwell_ms, metadata, occurred_at, ingested_at, metadata->>'event_version' AS event_version
                 FROM behavior_events
                 WHERE (
                     impression_id = ANY($1::uuid[])
                     OR (
                         user_id = ANY($2::uuid[])
                         AND event_type = 'click'
-                        AND event_version = 'v2'
+                        AND metadata->>'event_version' = 'v2'
                         AND occurred_at < $3
                     )
                 )

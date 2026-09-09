@@ -10,7 +10,7 @@ from ai_pipeline.schemas import HistoryEntry, HistorySnapshot
 class RecommendFeedRequest(BaseModel):
     limit: int = Field(default=50, ge=1, le=200)
     candidate_pool: int = Field(default=300, ge=1, le=1000)
-    exclude_post_ids: list[UUID] = Field(default_factory=list)
+    exclude_post_ids: list[UUID] = Field(default_factory=list, max_length=1000)
 
 
 class RankFeatureSnapshot(BaseModel):
@@ -23,6 +23,8 @@ class RankFeatureSnapshot(BaseModel):
     author_affinity: Optional[float]
     heuristic_score: Optional[float]
     ml_score: Optional[float]
+    candidate_content_hash: str | None = None
+    candidate_encoder_version: str | None = None
     retrieval_request_id: UUID | None = None
     candidate_published_at: datetime | None = None
     content_language: str | None = None

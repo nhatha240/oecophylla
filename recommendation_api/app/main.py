@@ -119,6 +119,7 @@ async def recommend_feed(
         )
 
     declared_topics = await fetch_declared_topics(db, user_id)
+    observed_at = utc_now()
     try:
         author_context = await asyncio.wait_for(
             load_author_context(
@@ -187,6 +188,22 @@ async def recommend_feed(
                 "nrms_context_unavailable", extra={"error_type": type(error).__name__}
             )
             context_failed = True
+    if records is not None:
+        scored = [
+            item.model_copy(
+                update={
+                    "features": item.features.model_copy(
+                        update={
+                            "candidate_content_hash": record["article"]["content_hash"],
+                            "candidate_encoder_version": record["article"][
+                                "encoder_version"
+                            ],
+                        }
+                    )
+                }
+            )
+            for item, record in zip(scored, records, strict=True)
+        ]
     decision = (
         runtime.fallback(scored, "context_error")
         if context_failed
