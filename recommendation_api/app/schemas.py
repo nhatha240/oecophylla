@@ -23,6 +23,7 @@ class RankFeatureSnapshot(BaseModel):
     author_affinity: Optional[float]
     heuristic_score: Optional[float]
     ml_score: Optional[float]
+    retrieval_request_id: UUID | None = None
     candidate_published_at: datetime | None = None
     content_language: str | None = None
     language_detector_version: str | None = None
@@ -52,6 +53,7 @@ class CandidatePost(BaseModel):
     created_at: datetime
     source: str
     content: str = ""
+    retrieval_score: float | None = None
 
     @property
     def primary_topic(self) -> Optional[str]:

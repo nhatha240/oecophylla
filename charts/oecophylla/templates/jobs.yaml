@@ -76,7 +76,8 @@ spec:
                 - >-
                   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c
                   "SELECT * FROM prune_recommendation_telemetry(
-                  INTERVAL '{{ .Values.telemetryRetention.days }} days');"
+                  INTERVAL '{{ .Values.telemetryRetention.days }} days');
+                  SELECT prune_recommendation_candidate_events({{ .Values.telemetryRetention.candidateDays }}, 10000);"
               envFrom:
                 - secretRef: { name: {{ include "oecophylla.secretName" . }} }
               securityContext:

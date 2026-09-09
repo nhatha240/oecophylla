@@ -156,6 +156,12 @@ components:
     env:
       - name: RANKER_MODE
         value: heuristic
+      - name: MODEL_TIMEOUT_MS
+        value: "150"
+      - name: CANDIDATE_TELEMETRY_SAMPLE_RATE
+        value: "0"
+      - name: SEMANTIC_RETRIEVAL_ENABLED
+        value: "false"
       - name: MODEL_ARTIFACT_PATH
         value: /models/current
   analytics-service:
@@ -267,6 +273,7 @@ telemetryRetention:
   enabled: false
   schedule: "17 3 * * *"
   days: 180
+  candidateDays: 7
   image: postgres:18-trixie
 
 nodeSelector: {}

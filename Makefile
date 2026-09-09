@@ -38,7 +38,7 @@ evaluate-ai:
 	uv run --with-requirements ai_pipeline/requirements.txt python -m ai_pipeline.evaluate --dataset "$(AI_DATASET)" --artifact "$(AI_ARTIFACT)" --output "$(AI_REPORT)"
 
 prune-ai-telemetry:
-	docker compose exec -T postgres psql -U "$${POSTGRES_USER:-oecophylla}" -d "$${POSTGRES_DB:-oecophylla}" -v ON_ERROR_STOP=1 -c "SELECT * FROM prune_recommendation_telemetry(INTERVAL '$${TELEMETRY_RETENTION_DAYS:-180} days');"
+	docker compose exec -T postgres psql -U "$${POSTGRES_USER:-oecophylla}" -d "$${POSTGRES_DB:-oecophylla}" -v ON_ERROR_STOP=1 -c "SELECT * FROM prune_recommendation_telemetry(INTERVAL '$${TELEMETRY_RETENTION_DAYS:-180} days'); SELECT prune_recommendation_candidate_events($${CANDIDATE_TELEMETRY_RETENTION_DAYS:-7}, 10000);"
 
 test-phase-2b:
 	cd backend && cargo test --workspace --no-fail-fast

@@ -40,3 +40,12 @@ groups:
         annotations:
           summary: Behavior event ingest lag is high
           description: The p95 event ingest lag has exceeded five minutes for 15 minutes.
+
+      - alert: RecommendationCandidateTelemetryFailures
+        expr: sum(rate(recommendation_candidate_telemetry_total{status="error"}[5m])) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Sampled candidate telemetry writes are failing
+          description: Retrieval evidence is incomplete; do not approve release until persistence recovers.

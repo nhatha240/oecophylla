@@ -37,6 +37,8 @@ pub struct RankFeatureSnapshot {
     #[serde(deserialize_with = "deserialize_required_nullable")]
     pub ml_score: Option<f64>,
     #[serde(default)]
+    pub retrieval_request_id: Option<Uuid>,
+    #[serde(default)]
     pub candidate_published_at: Option<chrono::DateTime<chrono::Utc>>,
     #[serde(default)]
     pub content_language: Option<String>,
@@ -60,6 +62,7 @@ impl RankFeatureSnapshot {
             author_affinity: None,
             heuristic_score: None,
             ml_score: None,
+            retrieval_request_id: None,
             candidate_published_at: None,
             content_language: None,
             language_detector_version: None,

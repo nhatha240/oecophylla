@@ -6,7 +6,7 @@ import logging
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import FastAPI, HTTPException
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
@@ -18,10 +18,12 @@ from .features import (
     aggregate_topic_weights,
     all_user_ids_with_interactions,
     gather_candidates,
+    candidates_semantic,
     upsert_user_vector,
     utc_now,
 )
 from .model_ranker import RankerRuntime
+from .retrieval_telemetry import record_pool, TELEMETRY_WRITES
 from .ranking import (
     HEURISTIC_MODEL_VERSION,
     build_rank_feature_snapshot,
@@ -82,12 +84,30 @@ async def recommend_feed(
 
     observed_at = utc_now()
     user_vec = await fetch_user_vector(db, redis, user_id, config=cfg)
+    retrieval_request_id = uuid4()
+    retrieval_options = {}
+    if body.exclude_post_ids:
+        retrieval_options["exclude_post_ids"] = body.exclude_post_ids
+    if getattr(cfg, "semantic_retrieval_enabled", False):
+        try:
+            retrieval_options["semantic_candidates"] = await asyncio.wait_for(
+                candidates_semantic(
+                    db, redis, user_id, config=cfg, observed_at=observed_at
+                ),
+                timeout=getattr(cfg, "model_timeout_ms", 150) / 1000,
+            )
+        except Exception as error:
+            logging.getLogger(__name__).warning(
+                "semantic_retrieval_unavailable",
+                extra={"error_type": type(error).__name__},
+            )
     candidates = await gather_candidates(
         db,
         user_id,
         user_vec,
         pool_size=body.candidate_pool or cfg.feed_candidate_pool,
         seen_cooldown_days=cfg.seen_cooldown_days,
+        **retrieval_options,
     )
     excluded = set(body.exclude_post_ids)
     candidates = [c for c in candidates if c.id not in excluded]
@@ -122,7 +142,11 @@ async def recommend_feed(
         )
         followed, affinity = author_context.get(candidate.author_id, (None, None))
         features = features.model_copy(
-            update={"is_followed_author": followed, "author_affinity": affinity}
+            update={
+                "is_followed_author": followed,
+                "author_affinity": affinity,
+                "retrieval_request_id": retrieval_request_id,
+            }
         )
         assert features.heuristic_score is not None
         scored.append(
@@ -172,6 +196,23 @@ async def recommend_feed(
             timeout_seconds=max(0.001, budget - (time.monotonic() - started)),
         )
     )
+    try:
+        await asyncio.wait_for(
+            record_pool(
+                db,
+                retrieval_request_id,
+                candidates,
+                model_version=decision.model_version,
+                sample_rate=getattr(cfg, "candidate_telemetry_sample_rate", 0),
+            ),
+            timeout=0.025,
+        )
+    except Exception as error:
+        TELEMETRY_WRITES.labels(status="error").inc()
+        logging.getLogger(__name__).warning(
+            "candidate_telemetry_unavailable",
+            extra={"error_type": type(error).__name__},
+        )
     primary = {str(c.id): c.primary_topic for c in candidates}
     author = {str(c.id): str(c.author_id) for c in candidates}
     top = diversity_rerank(

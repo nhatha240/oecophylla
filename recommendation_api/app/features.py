@@ -4,11 +4,25 @@ from datetime import datetime, timezone
 from typing import Iterable
 from uuid import UUID
 
-from prometheus_client import Counter
+from prometheus_client import Counter, Histogram
 
 from .db import DB
 from .schemas import CandidatePost
 
+
+POOL_SIZE = Histogram(
+    "recommendation_candidate_pool_size",
+    "Final eligible deduplicated pool size",
+    buckets=(0, 10, 50, 100, 200, 300, 600, 1000),
+)
+POOL_DEDUP = Counter(
+    "recommendation_candidate_deduplicated_total",
+    "Candidates removed by cross-source deduplication",
+)
+POOL_BACKFILL = Counter(
+    "recommendation_candidate_backfilled_total",
+    "Candidates added after source underfill",
+)
 
 CANDIDATE_SOURCE_REQUESTS = Counter(
     "recommendation_candidate_source_requests_total",
@@ -252,7 +266,12 @@ async def gather_candidates(
     pool_size: int,
     *,
     seen_cooldown_days: int,
+    exclude_post_ids: Iterable[UUID] = (),
+    semantic_candidates: Iterable[CandidatePost] = (),
 ) -> list[CandidatePost]:
+    excluded = set(exclude_post_ids)
+    if pool_size <= 0:
+        return []
     follow_n = max(1, pool_size // 3)
     topic_n = max(1, pool_size // 3)
     recent_n = max(1, pool_size - follow_n - topic_n)
@@ -261,6 +280,7 @@ async def gather_candidates(
 
     by_id: dict[UUID, CandidatePost] = {}
     for batch in (
+        list(semantic_candidates)[: pool_size // 4],
         await candidates_from_followed(
             db,
             user_id,
@@ -283,8 +303,29 @@ async def gather_candidates(
     ):
         for c in batch:
             # First seen wins so the higher-quality source ("follow" > "topic" > "recent") sticks.
+            if c.id in excluded:
+                continue
+            if c.id in by_id:
+                POOL_DEDUP.inc()
             by_id.setdefault(c.id, c)
-    return list(by_id.values())
+    # Over-fetch by the unique existing/excluded IDs so overlaps cannot underfill
+    # the requested size when that many eligible recent posts exist.
+    if len(by_id) < pool_size:
+        backfill = await candidates_recent(
+            db,
+            user_id,
+            pool_size + len(by_id) + len(excluded),
+            seen_cooldown_days=seen_cooldown_days,
+        )
+        for c in backfill:
+            if c.id not in excluded and c.id not in by_id:
+                by_id[c.id] = c
+                POOL_BACKFILL.inc()
+            if len(by_id) >= pool_size:
+                break
+    result = list(by_id.values())[:pool_size]
+    POOL_SIZE.observe(len(result))
+    return result
 
 
 async def upsert_user_vector(db: DB, user_id: UUID, weights: dict[str, float]) -> None:
@@ -302,9 +343,7 @@ async def upsert_user_vector(db: DB, user_id: UUID, weights: dict[str, float]) -
     )
 
 
-async def aggregate_topic_weights(
-    db: DB, user_id: UUID
-) -> dict[str, float]:
+async def aggregate_topic_weights(db: DB, user_id: UUID) -> dict[str, float]:
     """Sum interaction-weighted post topics → user vector."""
     rows = await db.pool.fetch(
         """
@@ -327,11 +366,77 @@ async def aggregate_topic_weights(
 
 
 async def all_user_ids_with_interactions(db: DB) -> list[UUID]:
-    rows = await db.pool.fetch(
-        "SELECT DISTINCT user_id FROM interactions"
-    )
+    rows = await db.pool.fetch("SELECT DISTINCT user_id FROM interactions")
     return [r["user_id"] for r in rows]
 
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+async def candidates_semantic(db, redis, user_id, *, config, observed_at):
+    """Exact cosine search over a bounded recent eligible window (no pgvector).
+
+    It is deliberately a supplemental source, not a full-catalog ANN claim.
+    Current content hashes and encoder version must match before scoring.
+    """
+    import math
+    import numpy as np
+    from workers.nlp_worker.app.content_features import ENCODER_VERSION, content_hash
+    from .db import fetch_user_history
+    from .serving_context import _embedding
+
+    snapshot = await fetch_user_history(
+        db, redis, user_id, at=observed_at, config=config
+    )
+    vectors = [
+        _embedding(e.embedding, 384)
+        for e in snapshot.entries
+        if e.encoder_version == ENCODER_VERSION
+    ]
+    if not vectors:
+        return []
+    query = np.mean(vectors, axis=0)
+    norm = float(np.linalg.norm(query))
+    if not math.isfinite(norm) or norm == 0:
+        return []
+    query /= norm
+    rows = await db.pool.fetch(
+        f"""
+        WITH eligible AS (
+            SELECT p.id, p.author_id, p.topics, p.safety_score, p.created_at, p.content
+            FROM posts p
+            JOIN users author ON author.id = p.author_id AND author.is_active = true
+            WHERE p.status = 'published' AND p.created_at <= $4
+              {_CANDIDATE_EXCLUSION_SQL}
+            ORDER BY p.created_at DESC, p.id LIMIT 2000
+        )
+        SELECT p.*, f.embedding, f.content_hash
+        FROM eligible p
+        JOIN LATERAL (
+            SELECT embedding, content_hash FROM post_content_features
+            WHERE post_id = p.id AND encoder_version = $3
+              AND source_updated_at <= $4 AND computed_at <= $4
+            ORDER BY source_updated_at DESC, computed_at DESC, id DESC LIMIT 1
+        ) f ON true
+        """,
+        user_id,
+        config.seen_cooldown_days,
+        ENCODER_VERSION,
+        observed_at,
+    )
+    candidates = []
+    for row in rows:
+        try:
+            if row["content_hash"] != content_hash(row["content"]):
+                continue
+            vector = _embedding(row["embedding"], 384)
+        except (ValueError, TypeError):
+            continue
+        candidate = _to_candidates([row], "semantic")[0]
+        candidate.retrieval_score = float(np.dot(query, vector))
+        candidates.append(candidate)
+    candidates.sort(key=lambda c: (-c.retrieval_score, str(c.id)))
+    result = candidates[: config.feed_candidate_pool // 4]
+    _record_source("semantic", result)
+    return result

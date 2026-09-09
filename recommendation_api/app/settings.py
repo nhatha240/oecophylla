@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     half_life_hours: float = 36.0
     seen_cooldown_days: int = Field(default=7, ge=0, le=3650)
     ranker_mode: Literal["heuristic", "ml", "shadow"] = "heuristic"
+    candidate_telemetry_sample_rate: float = Field(default=0, ge=0, le=1)
+    semantic_retrieval_enabled: bool = False
     model_timeout_ms: int = Field(default=150, ge=1, le=400)
     model_artifact_path: Path = Path("/models/current")
     recommendation_label_version: Literal["v1", "v2"] = "v1"
