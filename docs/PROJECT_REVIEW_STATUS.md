@@ -81,9 +81,9 @@ Source: [completion plan](../plans/oecophylla-mind-aligned-recommendation-comple
 | T4b embedding worker | Merged | Idempotency, fallback, rebuild code; actual model inference not rerun here |
 | T5 temporal histories | Merged; offline/API suites green | Prior-only history and versioned cache loaders |
 | T6 dataset v2/MIND adapter | Merged at `ea9c51b`; offline suite green | Local/MIND fixtures, identity and provenance validation, unsplit timestamp buckets |
-| T7 NRMS model | Open on this branch | Work exists on `codex/t7-nrms-hardening`, not merged here; its inspected head `a54d381` is a serving-snapshot RED checkpoint |
-| T8a NRMS shadow serving | Open | Current branch loads sklearn artifacts; generic LR shadow mode does not satisfy NRMS serving criteria |
-| T8b retrieval telemetry | Open | Candidate backfill, semantic retrieval, and candidate-stage traceability still need completion evidence |
+| T7 NRMS model | Integrated; acceptance open | MIND implementation is consolidated on `codex/integrated-review-mind`; the evaluated NRMS pilot regresses and is rejected |
+| T8a NRMS shadow serving | Integrated; acceptance open | NRMS loading, bounded shadow scoring and snapshot SQL are tested; full-stack latency and production observation remain open |
+| T8b retrieval telemetry | Integrated; acceptance open | Candidate backfill, bounded semantic retrieval and sampled candidate traces are implemented; deployment observation remains open |
 | T9 release gate | Open / INCONCLUSIVE | Requires production-domain Vietnamese holdout, live served→behavior→dataset→shadow trace, segments, shadow window/canary, rollback evidence |
 
 ## Earlier logging/ML plan

@@ -5,7 +5,7 @@
 Bring Oecophylla from its current heuristic/topic-based feed to a production-safe, MIND-aligned news recommendation system for Vietnamese content. “MIND-aligned” means preserving impression candidate groups, using leakage-safe click histories and temporal splits, evaluating with MIND ranking metrics, and adding a content/history model inspired by NRMS. It does not mean deploying a model trained only on the English MIND dataset.
 
 Current implementation and task status: [2026-09-08 review](../docs/PROJECT_REVIEW_STATUS.md).
-T6 is merged; T7–T9 must not be declared complete from generic ML/shadow code or unit tests alone.
+T6 is merged; T7–T9 implementation and review work are now consolidated locally on `codex/integrated-review-mind`. Their acceptance criteria remain open; the tested MIND pilot is rejected and production ML readiness remains INCONCLUSIVE. See `docs/MIND_COMPLETION_20260909.md` for current evidence.
 
 ## Original planning baseline (historical)
 
