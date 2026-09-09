@@ -1,10 +1,10 @@
 import asyncio
 import json
 import logging
-import time
 
 import asyncpg
 from aiokafka import AIOKafkaConsumer
+from oecophylla_worker_common.kafka import MicroBatchBuffer
 
 from .infer import infer_topics
 from .runtime import build_service
@@ -61,28 +61,23 @@ async def _run_once(cfg: Settings) -> None:
         await consumer.start()
         logger.info("nlp-worker consumer started")
         embedding_service, repository = build_service(conn, cfg)
-        batch = []
-        last_flush = time.monotonic()
-        timeout_ms = max(1, int(cfg.flush_interval_seconds * 1000))
+        batch = MicroBatchBuffer(
+            batch_size=cfg.flush_batch_size,
+            flush_interval_seconds=cfg.flush_interval_seconds,
+        )
         while True:
             messages = await consumer.getmany(
-                timeout_ms=timeout_ms,
+                timeout_ms=batch.timeout_ms,
                 max_records=cfg.flush_batch_size,
             )
-            for topic_partition_messages in messages.values():
-                batch.extend(topic_partition_messages)
-
-            elapsed = time.monotonic() - last_flush
-            if batch and (
-                len(batch) >= cfg.flush_batch_size
-                or elapsed >= cfg.flush_interval_seconds
-            ):
-                await _process_batch(conn, batch, embedding_service, repository)
+            batch.extend_records(messages)
+            if batch.ready():
+                await _process_batch(
+                    conn, batch.drain(), embedding_service, repository
+                )
                 # If commit fails, Kafka replays this idempotent batch after
                 # reconnect. Never process it again during resource cleanup.
-                batch.clear()
                 await consumer.commit()
-                last_flush = time.monotonic()
     finally:
         try:
             if consumer is not None:
@@ -101,7 +96,8 @@ async def _process_batch(
         # Let unexpected failures reach the reconnect loop. With manual Kafka
         # commits this replays the whole micro-batch; feature writes are
         # idempotent, so no event is acknowledged before processing succeeds.
-        await _process_one(conn, msg.value, embedding_service, repository)
+        envelope = getattr(msg, "value", msg)
+        await _process_one(conn, envelope, embedding_service, repository)
 
 
 async def _process_one(

@@ -189,6 +189,7 @@ async def test_recommend_endpoint_passes_configured_seen_cooldown(monkeypatch):
     config = SimpleNamespace(
         feed_candidate_pool=300,
         seen_cooldown_days=11,
+        declared_topic_weight=1.25,
     )
     recommendation_main.app.state.cfg = config
 

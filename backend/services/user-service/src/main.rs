@@ -1,4 +1,5 @@
 use axum::{
+    extract::DefaultBodyLimit,
     middleware::from_fn,
     routing::{get, post},
     Router,
@@ -43,10 +44,19 @@ async fn main() -> anyhow::Result<()> {
             get(handlers::get).put(handlers::update),
         )
         .route(
+            "/api/v1/users/{id}/avatar",
+            get(handlers::avatar)
+                .put(handlers::upload_avatar)
+                .layer(DefaultBodyLimit::max(5 * 1024 * 1024 + 64 * 1024)),
+        )
+        .route(
             "/api/v1/users/{id}/follow",
             post(handlers::follow).delete(handlers::unfollow),
         )
-        .route("/api/v1/users/{id}/preferences", get(handlers::get_preferences))
+        .route(
+            "/api/v1/users/{id}/preferences",
+            get(handlers::get_preferences),
+        )
         .route("/api/v1/users/{id}/followers", get(handlers::followers))
         .route("/api/v1/users/{id}/following", get(handlers::following))
         .layer(from_fn(common::middleware::metrics_layer::track_metrics))

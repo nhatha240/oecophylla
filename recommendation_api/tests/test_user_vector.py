@@ -128,7 +128,7 @@ async def test_v2_database_payload_is_decayed_and_blended_with_declared_topics()
 
 
 @pytest.mark.asyncio
-async def test_v1_mode_uses_versioned_cache_without_querying_database():
+async def test_v1_mode_uses_versioned_cache_before_behavior_database():
     redis_client = FakeRedisClient({f"pref:v1:{USER_ID}": json.dumps({"legacy": 0.75})})
 
     result = await fetch_user_vector(
@@ -140,6 +140,41 @@ async def test_v1_mode_uses_versioned_cache_without_querying_database():
 
     assert result == {"legacy": 0.75}
     assert redis_client.reads == [f"pref:v1:{USER_ID}"]
+
+
+@pytest.mark.asyncio
+async def test_v1_cache_keeps_declared_topic_augmentation_from_legacy_rollout():
+    redis_client = FakeRedisClient(
+        {f"pref:v1:{USER_ID}": json.dumps({"legacy": 0.75})}
+    )
+    pool = FakePool([{"topic_prefs": ["sports", "sports"]}])
+
+    result = await fetch_user_vector(
+        SimpleNamespace(pool=pool),
+        SimpleNamespace(cli=redis_client),
+        USER_ID,
+        config=_cfg(preference_schema_version="v1", declared_topic_weight=1.25),
+    )
+
+    assert result == {"legacy": 0.75, "sports": 1.25}
+
+
+@pytest.mark.asyncio
+async def test_v2_to_v1_fallback_keeps_declared_topics_without_mixing_v2_channels():
+    redis_client = FakeRedisClient(
+        {f"pref:v1:{USER_ID}": json.dumps({"legacy": 0.5})}
+    )
+    pool = FakePool([{"topic_prefs": ["science"]}])
+
+    result = await fetch_user_vector(
+        SimpleNamespace(pool=pool),
+        SimpleNamespace(cli=redis_client),
+        USER_ID,
+        config=_cfg(declared_topic_weight=2.0),
+    )
+
+    assert result == {"legacy": 0.5, "science": 2.0}
+    assert redis_client.reads == [f"pref:v2:{USER_ID}", f"pref:v1:{USER_ID}"]
 
 
 @pytest.mark.asyncio

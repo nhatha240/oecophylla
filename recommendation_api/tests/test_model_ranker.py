@@ -191,6 +191,7 @@ async def test_recommend_endpoint_wires_ml_scores_before_diversity(monkeypatch):
         feed_candidate_pool=100,
         seen_cooldown_days=7,
         half_life_hours=36.0,
+        declared_topic_weight=1.0,
     )
     main.app.state.ranker = RankerRuntime(
         mode="ml", predictor=StubPredictor([0.1, 0.9])

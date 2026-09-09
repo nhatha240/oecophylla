@@ -68,6 +68,7 @@ async def fetch_user_vector(
     """Load the active preference schema with immediate, non-mixed v1 fallback."""
 
     cfg = config or load_settings()
+    declared_topic_weight = float(getattr(cfg, "declared_topic_weight", 1.0))
     if cfg.preference_schema_version == "v2":
         raw_v2 = await redis.cli.get(f"pref:v2:{user_id}")
         payload = _decode_v2_payload(raw_v2)
@@ -79,7 +80,9 @@ async def fetch_user_vector(
             raw_v1 = await redis.cli.get(key)
             decoded_v1 = _decode_v1(raw_v1)
             if decoded_v1 is not None:
-                return decoded_v1
+                return await _merge_v1_with_declared(
+                    db, user_id, decoded_v1, declared_topic_weight
+                )
 
         row_v2 = await db.pool.fetchrow(
             """
@@ -99,7 +102,9 @@ async def fetch_user_vector(
             raw_v1 = await redis.cli.get(key)
             decoded_v1 = _decode_v1(raw_v1)
             if decoded_v1 is not None:
-                return decoded_v1
+                return await _merge_v1_with_declared(
+                    db, user_id, decoded_v1, declared_topic_weight
+                )
 
     row = await db.pool.fetchrow(
         "SELECT topic_weights FROM user_preference_vectors WHERE user_id=$1",
@@ -108,13 +113,28 @@ async def fetch_user_vector(
     if row and row["topic_weights"]:
         decoded = _decode_v1(row["topic_weights"])
         if decoded is not None:
-            return decoded
-    declared = await db.pool.fetchrow(
-        "SELECT topic_prefs FROM users WHERE id=$1", user_id
-    )
-    if declared and declared["topic_prefs"]:
-        return {t: 1.0 for t in declared["topic_prefs"]}
-    return {}
+            return await _merge_v1_with_declared(
+                db, user_id, decoded, declared_topic_weight
+            )
+    declared = await _fetch_declared_topics(db, user_id)
+    if declared_topic_weight <= 0:
+        return {}
+    return {topic: declared_topic_weight for topic in sorted(set(declared))}
+
+
+async def _merge_v1_with_declared(
+    db: DB,
+    user_id: UUID,
+    behavior: dict[str, float],
+    declared_topic_weight: float,
+) -> dict[str, float]:
+    """Preserve legacy declared-topic augmentation only on v1 reads."""
+    merged = dict(behavior)
+    if declared_topic_weight <= 0:
+        return merged
+    for topic in set(await _fetch_declared_topics(db, user_id)):
+        merged[topic] = merged.get(topic, 0.0) + declared_topic_weight
+    return merged
 
 
 async def fetch_user_history(

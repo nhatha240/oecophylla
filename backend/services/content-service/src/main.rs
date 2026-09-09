@@ -41,7 +41,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/posts", post(handlers::create).get(handlers::list))
         .route(
             "/api/v1/posts/{id}",
-            get(handlers::get_one).delete(handlers::delete_post),
+            get(handlers::get_one)
+                .put(handlers::update_post)
+                .patch(handlers::update_post)
+                .delete(handlers::delete_post),
         )
         .route("/api/v1/posts/{id}/view", post(handlers::view))
         .route("/api/v1/search", get(handlers::search))

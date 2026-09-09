@@ -1,4 +1,4 @@
-import type { AdminAuditLog, AdminReport, ApiError, BatchMeResponse, CursorPage, DashboardMetrics, FeedResponse, ModerationAction, PostListResponse, ResolveResponse, SavedPostResponse, SearchPostResponse, SearchUserResponse, UserPreferences } from './types';
+import type { AdminAuditLog, AdminReport, ApiError, BatchMeResponse, CursorPage, DashboardMetrics, FeedResponse, ModerationAction, Post, PostListResponse, ResolveResponse, SavedPostResponse, SearchPostResponse, SearchUserResponse, UserPreferences } from './types';
 
 export class ApiException extends Error {
   constructor(public status: number, public code: string, public details?: unknown) {
@@ -23,15 +23,48 @@ function withDefaultHeaders(init: ApiFetchInit): RequestInit {
   // Pull `headers` and the non-standard `quiet` flag out before spreading so
   // `...rest` can't clobber the merged headers and `quiet` never leaks to fetch.
   const { headers, quiet: _quiet, ...rest } = init;
+  const defaultHeaders: Record<string, string> = {
+    'x-requested-with': 'oec-web'
+  };
+  if (!(rest.body instanceof FormData)) {
+    defaultHeaders['content-type'] = 'application/json';
+  }
   return {
     credentials: 'include',
     ...rest,
-    headers: {
-      'content-type': 'application/json',
-      'x-requested-with': 'oec-web',
-      ...(headers || {}),
-    },
+    headers: { ...defaultHeaders, ...(headers || {}) },
   };
+}
+
+export interface UpdatePostBody {
+  content?: string;
+  media_urls?: string[];
+  tags?: string[];
+  topics?: string[];
+}
+
+export async function updatePost(
+  fetcher: Fetch,
+  postId: string,
+  body: UpdatePostBody
+): Promise<Post> {
+  return apiFetch<Post>(fetcher, `/posts/${postId}`, {
+    method: 'PUT',
+    body: JSON.stringify(body)
+  });
+}
+
+export async function uploadAvatar(
+  fetcher: Fetch,
+  userId: string,
+  file: File
+): Promise<{ avatar_url: string }> {
+  const form = new FormData();
+  form.set('avatar', file, file.name);
+  return apiFetch(fetcher, `/users/${userId}/avatar`, {
+    method: 'PUT',
+    body: form
+  });
 }
 
 function canRefresh(path: string): boolean {

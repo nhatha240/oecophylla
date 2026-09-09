@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { invalidateAll } from '$app/navigation';
   import Icon from '$lib/apple-glass/components/Icon.svelte';
   import PostCard from '$lib/components/PostCard.svelte';
   import { user } from '$lib/stores/auth';
@@ -97,6 +98,7 @@
         }),
       });
       data.profile = { ...data.profile, ...updated };
+      await invalidateAll();
       editing = false;
       showToast('Đã cập nhật hồ sơ.');
     } catch {

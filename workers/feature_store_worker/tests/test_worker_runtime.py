@@ -30,7 +30,7 @@ async def test_worker_starts_and_stops_all_runtime_resources(monkeypatch):
 
     monkeypatch.setattr(main.asyncpg, "create_pool", AsyncMock(return_value=pool))
     monkeypatch.setattr(main.redis_async, "from_url", Mock(return_value=redis))
-    monkeypatch.setattr(main, "AIOKafkaConsumer", Mock(return_value=consumer))
+    monkeypatch.setattr(main, "build_json_consumer", Mock(return_value=consumer))
     monkeypatch.setattr(
         main, "start_http_server", Mock(return_value=(metrics_server, Mock()))
     )
@@ -45,8 +45,12 @@ async def test_worker_starts_and_stops_all_runtime_resources(monkeypatch):
     pool.close.assert_awaited_once()
     metrics_server.shutdown.assert_called_once()
     metrics_server.server_close.assert_called_once()
-    deserialize = main.AIOKafkaConsumer.call_args.kwargs["value_deserializer"]
-    assert deserialize(b'{"event_type":"liked"}') == {"event_type": "liked"}
+    main.build_json_consumer.assert_called_once_with(
+        topic=worker.cfg.interactions_topic,
+        brokers=worker.cfg.kafka_brokers,
+        group_id=worker.cfg.consumer_group,
+        enable_auto_commit=False,
+    )
 
 
 async def test_startup_backfill_finishes_before_kafka_consumer_joins(monkeypatch):
@@ -59,7 +63,7 @@ async def test_startup_backfill_finishes_before_kafka_consumer_joins(monkeypatch
 
     monkeypatch.setattr(main.asyncpg, "create_pool", AsyncMock(return_value=pool))
     monkeypatch.setattr(main.redis_async, "from_url", Mock(return_value=redis))
-    monkeypatch.setattr(main, "AIOKafkaConsumer", Mock(return_value=consumer))
+    monkeypatch.setattr(main, "build_json_consumer", Mock(return_value=consumer))
     monkeypatch.setattr(
         main, "start_http_server", Mock(return_value=(metrics_server, Mock()))
     )

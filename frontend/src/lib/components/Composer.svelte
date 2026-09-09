@@ -4,10 +4,14 @@
   export let error: string | null = null;
   // When true, render the dedicated compose surface with a prominent writing well.
   export let prominent = false;
+  export let initialContent = '';
+  export let initialTags: string[] = [];
+  export let initialMediaUrls: string[] = [];
+  export let submitLabel = 'Đăng';
 
-  let content = '';
-  let tagsRaw = '';
-  let mediaUrls: string[] = [];
+  let content = initialContent;
+  let tagsRaw = initialTags.join(', ');
+  let mediaUrls: string[] = [...initialMediaUrls];
   let showPreview = false;
   let showImageInput = false;
   let imageUrl = '';
@@ -243,7 +247,7 @@
       <span class="text-xs {charsClass} tabular-nums">{charsLeft}</span>
       <span class="t-meta" style="margin-left:auto;">Hiển thị công khai · có kiểm duyệt</span>
       <button class="btn emerald sm" type="submit" data-testid="composer-submit">
-        Đăng <Icon name="Send" size={12} />
+        {submitLabel} <Icon name="Send" size={12} />
       </button>
     </div>
   </div>

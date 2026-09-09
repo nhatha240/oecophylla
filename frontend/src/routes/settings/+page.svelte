@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { goto } from '$app/navigation';
+  import { goto, invalidateAll } from '$app/navigation';
   import Icon from '$lib/apple-glass/components/Icon.svelte';
   import { user } from '$lib/stores/auth';
-  import { apiFetch, ApiException, changePassword, deleteAccount } from '$lib/api';
+  import { apiFetch, ApiException, changePassword, deleteAccount, uploadAvatar } from '$lib/api';
   import { showToast } from '$lib/stores/toast';
   import type { Profile } from '$lib/types';
 
@@ -12,6 +12,8 @@
   let displayName = data.profile.display_name ?? '';
   let bio = data.profile.bio ?? '';
   let avatarUrl = data.profile.avatar_url ?? '';
+  let avatarFile: File | null = null;
+  let uploadingAvatar = false;
   let topicPrefs = new Set(data.profile.topic_prefs ?? []);
 
   let savingProfile = false;
@@ -80,6 +82,49 @@
     }
   }
 
+  function selectAvatar(event: Event) {
+    const file = (event.currentTarget as HTMLInputElement).files?.[0] ?? null;
+    if (!file) {
+      avatarFile = null;
+      return;
+    }
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      showToast('Chỉ hỗ trợ ảnh JPEG, PNG hoặc WebP.');
+      avatarFile = null;
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      showToast('Avatar không được vượt quá 5 MiB.');
+      avatarFile = null;
+      return;
+    }
+    avatarFile = file;
+  }
+
+  async function handleAvatarUpload() {
+    if (!$user || !avatarFile) return;
+    uploadingAvatar = true;
+    try {
+      const result = await uploadAvatar(fetch, $user.id, avatarFile);
+      avatarUrl = result.avatar_url;
+      data.profile = { ...data.profile, avatar_url: avatarUrl };
+      $user = { ...$user, avatar_url: avatarUrl };
+      avatarFile = null;
+      await invalidateAll();
+      showToast('Đã tải avatar lên.');
+    } catch (cause) {
+      if (cause instanceof ApiException && cause.status === 413) {
+        showToast('Avatar không được vượt quá 5 MiB.');
+      } else if (cause instanceof ApiException && cause.status === 400) {
+        showToast('Tệp avatar không hợp lệ.');
+      } else {
+        showToast('Không tải được avatar.');
+      }
+    } finally {
+      uploadingAvatar = false;
+    }
+  }
+
   async function saveTopics() {
     if (!$user) return;
     savingTopics = true;
@@ -88,6 +133,7 @@
         method: 'PUT',
         body: JSON.stringify({ topic_prefs: [...topicPrefs] })
       });
+      await invalidateAll();
       showToast('Đã lưu sở thích chủ đề.');
     } catch (e) {
       const msg = e instanceof ApiException ? e.code : 'Không lưu được sở thích.';
@@ -171,6 +217,28 @@
             {(data.profile.username ?? '?').slice(0, 1).toUpperCase()}
           </div>
         {/if}
+      </div>
+    </div>
+
+    <div class="flex flex-col gap-2">
+      <label for="avatar-file" class="text-sm font-medium text-slate-600">Tải ảnh từ thiết bị</label>
+      <input
+        id="avatar-file"
+        type="file"
+        accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+        on:change={selectAvatar}
+        class="text-sm text-slate-600"
+      />
+      <div class="flex items-center justify-between gap-3">
+        <span class="text-xs text-slate-400">JPEG, PNG hoặc WebP · tối đa 5 MiB</span>
+        <button
+          type="button"
+          class="btn ghost px-4 py-2 text-sm rounded-xl disabled:opacity-50"
+          on:click={handleAvatarUpload}
+          disabled={!avatarFile || uploadingAvatar}
+        >
+          {uploadingAvatar ? 'Đang tải…' : 'Tải avatar lên'}
+        </button>
       </div>
     </div>
 

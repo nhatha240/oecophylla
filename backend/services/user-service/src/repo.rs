@@ -14,6 +14,54 @@ pub struct ProfileRow {
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
+#[derive(sqlx::FromRow)]
+pub struct AvatarRow {
+    pub content_type: String,
+    pub image_data: Vec<u8>,
+}
+
+pub async fn upsert_avatar(
+    db: &PgPool,
+    user_id: Uuid,
+    content_type: &str,
+    image_data: &[u8],
+) -> Result<String, AppError> {
+    let version = Uuid::now_v7();
+    let avatar_url = format!("/api/v1/users/{user_id}/avatar?v={version}");
+    let mut tx = db.begin().await?;
+    sqlx::query(
+        "INSERT INTO user_avatars (user_id, content_type, image_data, version)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (user_id) DO UPDATE SET
+           content_type = EXCLUDED.content_type,
+           image_data = EXCLUDED.image_data,
+           version = EXCLUDED.version,
+           updated_at = NOW()",
+    )
+    .bind(user_id)
+    .bind(content_type)
+    .bind(image_data)
+    .bind(version)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query("UPDATE users SET avatar_url = $2 WHERE id = $1 AND is_active = true")
+        .bind(user_id)
+        .bind(&avatar_url)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(avatar_url)
+}
+
+pub async fn get_avatar(db: &PgPool, user_id: Uuid) -> Result<Option<AvatarRow>, AppError> {
+    Ok(sqlx::query_as::<_, AvatarRow>(
+        "SELECT content_type, image_data FROM user_avatars WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .fetch_optional(db)
+    .await?)
+}
+
 pub async fn get_profile(db: &PgPool, id: Uuid) -> Result<Option<ProfileRow>, AppError> {
     Ok(sqlx::query_as::<_, ProfileRow>(
         "SELECT id, username, display_name, bio, avatar_url, role::text AS role, topic_prefs, created_at

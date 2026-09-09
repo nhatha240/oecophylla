@@ -1,6 +1,7 @@
 use axum::{
-    extract::{Path, Query, State},
-    http::StatusCode,
+    body::Body,
+    extract::{Multipart, Path, Query, State},
+    http::{header, HeaderValue, Response, StatusCode},
     response::IntoResponse,
     Json,
 };
@@ -11,9 +12,14 @@ use common::{
 };
 use deadpool_redis::redis::AsyncCommands;
 use serde::Deserialize;
+use std::collections::HashSet;
 use uuid::Uuid;
 
-use crate::{repo, state::AppState};
+use crate::{
+    avatar::{validate_avatar_upload, validate_avatar_url, MAX_AVATAR_BYTES},
+    repo,
+    state::AppState,
+};
 
 #[derive(Deserialize)]
 pub struct UpdateProfileReq {
@@ -43,6 +49,11 @@ pub struct SuggestionsQ {
 }
 
 #[derive(serde::Serialize)]
+pub struct AvatarUploadResponse {
+    pub avatar_url: String,
+}
+
+#[derive(serde::Serialize)]
 pub struct UserSearchResponse {
     pub items: Vec<repo::ProfileRow>,
     pub total: Option<i64>,
@@ -59,6 +70,35 @@ fn current_user(s: &AppState, h: &axum::http::HeaderMap) -> Option<common::model
         id: c.sub,
         role: c.role,
     })
+}
+
+fn topic_preferences_changed(before: &[String], after: &[String]) -> bool {
+    let before: HashSet<&str> = before.iter().map(String::as_str).collect();
+    let after: HashSet<&str> = after.iter().map(String::as_str).collect();
+    before != after
+}
+
+async fn invalidate_topic_preference_caches(s: &AppState, user_id: Uuid) {
+    let result = async {
+        let mut conn = s.redis.get().await.map_err(|err| err.to_string())?;
+        let keys = preference_cache_keys(user_id);
+        let deleted: usize = conn.del(&keys).await.map_err(|err| err.to_string())?;
+        Ok::<usize, String>(deleted)
+    }
+    .await;
+
+    match result {
+        Ok(deleted) => {
+            metrics::counter!("user_topic_cache_invalidation_total", "result" => "success")
+                .increment(1);
+            tracing::info!(deleted, "invalidated topic preference caches");
+        }
+        Err(error) => {
+            metrics::counter!("user_topic_cache_invalidation_total", "result" => "error")
+                .increment(1);
+            tracing::warn!(%error, "failed to invalidate topic preference caches");
+        }
+    }
 }
 
 pub async fn get(
@@ -98,8 +138,25 @@ pub async fn update(
     if me.id != id {
         return Err(AppError::Forbidden);
     }
-    let declared_topics_changed = body.topic_prefs.is_some();
+    let previous_profile = if body.avatar_url.is_some() || body.topic_prefs.is_some() {
+        repo::get_profile(&s.db, id).await?
+    } else {
+        None
+    };
+    if let Some(avatar_url) = body.avatar_url.as_deref() {
+        // Settings sends the current avatar with every profile save. Preserve
+        // this user's stored upload URL without accepting arbitrary local URLs.
+        let is_stored_upload = avatar_url.starts_with(&format!("/api/v1/users/{id}/avatar?v="))
+            && previous_profile
+                .as_ref()
+                .and_then(|profile| profile.avatar_url.as_deref())
+                == Some(avatar_url);
+        if !is_stored_upload {
+            validate_avatar_url(avatar_url)?;
+        }
+    }
     let prefs_ref: Option<&[String]> = body.topic_prefs.as_deref();
+    let previous_topic_prefs = previous_profile.map(|profile| profile.topic_prefs);
     let row = repo::update_profile(
         &s.db,
         id,
@@ -109,8 +166,13 @@ pub async fn update(
         prefs_ref,
     )
     .await?;
-    if declared_topics_changed {
-        invalidate_preference_caches(&s, id).await;
+    if previous_topic_prefs
+        .as_deref()
+        .is_some_and(|before| topic_preferences_changed(before, &row.topic_prefs))
+    {
+        // The profile update remains successful if Redis is temporarily down.
+        // The short-lived stale cache is observable and will expire normally.
+        invalidate_topic_preference_caches(&s, id).await;
     }
     Ok(Json(row))
 }
@@ -131,16 +193,75 @@ fn preference_cache_keys(user_id: Uuid) -> Vec<String> {
     .collect()
 }
 
-async fn invalidate_preference_caches(state: &AppState, user_id: Uuid) {
-    let keys = preference_cache_keys(user_id);
-    match state.redis.get().await {
-        Ok(mut connection) => {
-            if let Err(error) = connection.del::<_, i64>(&keys).await {
-                tracing::warn!(%error, "failed to invalidate recommendation caches");
-            }
-        }
-        Err(error) => tracing::warn!(%error, "failed to acquire redis for cache invalidation"),
+pub async fn upload_avatar(
+    State(s): State<AppState>,
+    Path(id): Path<Uuid>,
+    h: axum::http::HeaderMap,
+    mut multipart: Multipart,
+) -> AppResult<Json<AvatarUploadResponse>> {
+    let me = current_user(&s, &h).ok_or(AppError::Unauthorized)?;
+    if me.id != id {
+        return Err(AppError::Forbidden);
     }
+
+    let mut avatar = None;
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|_| AppError::Validation {
+            field: "avatar".into(),
+            message: "invalid multipart upload".into(),
+        })?
+    {
+        if field.name() != Some("avatar") {
+            continue;
+        }
+        if avatar.is_some() {
+            return Err(AppError::Validation {
+                field: "avatar".into(),
+                message: "upload exactly one avatar file".into(),
+            });
+        }
+        let filename = field.file_name().unwrap_or_default().to_owned();
+        let declared_content_type = field.content_type().unwrap_or_default().to_owned();
+        let bytes = field.bytes().await.map_err(|_| AppError::Validation {
+            field: "avatar".into(),
+            message: "could not read avatar upload".into(),
+        })?;
+        let format = validate_avatar_upload(&declared_content_type, &filename, &bytes)?;
+        avatar = Some((format, bytes));
+    }
+
+    let (format, bytes) = avatar.ok_or(AppError::Validation {
+        field: "avatar".into(),
+        message: "avatar file is required".into(),
+    })?;
+    debug_assert!(bytes.len() <= MAX_AVATAR_BYTES);
+    let avatar_url = repo::upsert_avatar(&s.db, id, format.content_type(), &bytes).await?;
+    Ok(Json(AvatarUploadResponse { avatar_url }))
+}
+
+pub async fn avatar(State(s): State<AppState>, Path(id): Path<Uuid>) -> AppResult<Response<Body>> {
+    let avatar = repo::get_avatar(&s.db, id)
+        .await?
+        .ok_or(AppError::NotFound {
+            kind: "avatar".into(),
+        })?;
+    let content_type = HeaderValue::from_str(&avatar.content_type)
+        .map_err(|error| AppError::Other(error.into()))?;
+    let mut response = Response::new(Body::from(avatar.image_data));
+    response
+        .headers_mut()
+        .insert(header::CONTENT_TYPE, content_type);
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("public, max-age=31536000, immutable"),
+    );
+    response.headers_mut().insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff"),
+    );
+    Ok(response)
 }
 
 pub async fn follow(
@@ -252,7 +373,8 @@ pub async fn suggestions(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{preference_cache_keys, topic_preferences_changed};
+    use uuid::Uuid;
 
     #[test]
     fn declared_topic_change_invalidates_all_preference_history_and_feed_versions() {
@@ -269,5 +391,21 @@ mod tests {
                 "feed:v2:00000000-0000-0000-0000-000000000000",
             ]
         );
+    }
+
+    #[test]
+    fn topic_change_comparison_ignores_order_and_duplicates() {
+        assert!(!topic_preferences_changed(
+            &["tech".into(), "sports".into()],
+            &["sports".into(), "tech".into(), "tech".into()],
+        ));
+    }
+
+    #[test]
+    fn topic_change_comparison_detects_semantic_changes() {
+        assert!(topic_preferences_changed(
+            &["tech".into()],
+            &["science".into()],
+        ));
     }
 }

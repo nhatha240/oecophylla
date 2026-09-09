@@ -4,7 +4,6 @@ import asyncio
 import contextlib
 import json
 import logging
-import time
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -13,8 +12,8 @@ from uuid import UUID
 
 import asyncpg
 import redis.asyncio as redis_async
-from aiokafka import AIOKafkaConsumer
 from prometheus_client import Counter, start_http_server
+from oecophylla_worker_common.kafka import MicroBatchBuffer, build_json_consumer
 
 from .features import (
     PREFERENCE_SCHEMA_V2,
@@ -65,10 +64,20 @@ class Worker:
         self.cfg = load_settings()
         self.pool: asyncpg.Pool | None = None
         self.redis: redis_async.Redis | None = None
-        self.consumer: AIOKafkaConsumer | None = None
-        self._buffer: list[dict[str, Any]] = []
-        self._last_flush = time.monotonic()
+        self.consumer: Any | None = None
+        self._batch = MicroBatchBuffer(
+            batch_size=self.cfg.flush_batch_size,
+            flush_interval_seconds=self.cfg.flush_interval_seconds,
+        )
         self._metrics_server: Any | None = None
+
+    @property
+    def _buffer(self) -> list[dict[str, Any]]:
+        return self._batch.values
+
+    @_buffer.setter
+    def _buffer(self, values: list[dict[str, Any]]) -> None:
+        self._batch.replace(values)
 
     async def start(self) -> None:
         self.pool = await asyncpg.create_pool(
@@ -77,13 +86,11 @@ class Worker:
         self.redis = redis_async.from_url(self.cfg.redis_url, decode_responses=True)
         if self.cfg.preference_backfill_on_start:
             await self._backfill_v2()
-        self.consumer = AIOKafkaConsumer(
-            self.cfg.interactions_topic,
-            bootstrap_servers=self.cfg.kafka_brokers,
+        self.consumer = build_json_consumer(
+            topic=self.cfg.interactions_topic,
+            brokers=self.cfg.kafka_brokers,
             group_id=self.cfg.consumer_group,
             enable_auto_commit=False,
-            auto_offset_reset="earliest",
-            value_deserializer=lambda v: json.loads(v.decode("utf-8")),
         )
         await self.consumer.start()
         self._metrics_server, _thread = start_http_server(self.cfg.metrics_port)
@@ -107,14 +114,11 @@ class Worker:
                 # Wait up to flush_interval for new messages, then flush even
                 # if we didn't hit batch size — keeps preference vectors warm
                 # under low traffic.
-                msgs = await self.consumer.getmany(
-                    timeout_ms=int(self.cfg.flush_interval_seconds * 1000),
+                records = await self.consumer.getmany(
+                    timeout_ms=self._batch.timeout_ms,
                     max_records=self.cfg.flush_batch_size,
                 )
-                for batch in msgs.values():
-                    for record in batch:
-                        if record.value:
-                            self._buffer.append(record.value)
+                self._batch.extend_records(records)
                 if self._should_flush():
                     ok = await self._flush()
                     # Only advance the committed offset when every user's
@@ -131,21 +135,16 @@ class Worker:
             raise
 
     def _should_flush(self) -> bool:
-        return (
-            len(self._buffer) >= self.cfg.flush_batch_size
-            or (time.monotonic() - self._last_flush) >= self.cfg.flush_interval_seconds
-        )
+        return self._batch.ready()
 
     async def _flush(self) -> bool:
         """Apply buffered events. Returns True if every user's features were
         applied; on partial failure the failed users' events are re-queued and
         False is returned so the caller leaves the Kafka offset uncommitted."""
         if not self._buffer:
-            self._last_flush = time.monotonic()
+            self._batch.touch()
             return True
-        events = self._buffer
-        self._buffer = []
-        self._last_flush = time.monotonic()
+        events = self._batch.drain()
 
         per_user = defaultdict(list)
         for env in events:
@@ -197,7 +196,7 @@ class Worker:
         if failed_events:
             # Re-queue for the next flush so the events are retried rather than
             # silently dropped along with the committed offset.
-            self._buffer = failed_events + self._buffer
+            self._batch.prepend(failed_events)
             return False
         return True
 

@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM node:24-trixie-slim AS builder
+FROM node:24-trixie AS builder
 WORKDIR /app
 RUN corepack enable
 COPY pnpm-lock.yaml package.json .npmrc pnpm-workspace.yaml ./
@@ -10,7 +10,7 @@ COPY . .
 ENV CI=true
 RUN pnpm build
 
-FROM node:24-trixie-slim AS runtime
+FROM node:24-trixie AS runtime
 WORKDIR /app
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=3000
 # package.json contains only devDependencies and the generated adapter-node

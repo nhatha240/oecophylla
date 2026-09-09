@@ -14,7 +14,11 @@ use serde::Deserialize;
 use std::future::Future;
 use uuid::Uuid;
 
-use crate::{cursor, repo, state::AppState};
+use crate::{
+    cursor, repo,
+    state::AppState,
+    update::{validate_update_post, UpdatePostInput},
+};
 
 #[derive(Deserialize)]
 pub struct CreatePostReq {
@@ -115,10 +119,62 @@ pub async fn create(
 pub async fn get_one(
     State(s): State<AppState>,
     Path(id): Path<Uuid>,
+    h: axum::http::HeaderMap,
 ) -> AppResult<Json<repo::PostRow>> {
     let row = repo::by_id(&s.db, id).await?.ok_or(AppError::NotFound {
         kind: "post".into(),
     })?;
+    // A direct URL must enforce the same publication boundary as public lists.
+    // Authors and administrators can still inspect content awaiting moderation.
+    if row.status != PostStatus::Published
+        && !current(&s, &h)
+            .is_some_and(|viewer| viewer.id == row.author_id || viewer.role == UserRole::Admin)
+    {
+        return Err(AppError::NotFound {
+            kind: "post".into(),
+        });
+    }
+    Ok(Json(row))
+}
+
+pub async fn update_post(
+    State(s): State<AppState>,
+    Path(id): Path<Uuid>,
+    h: axum::http::HeaderMap,
+    Json(body): Json<UpdatePostInput>,
+) -> AppResult<Json<repo::PostRow>> {
+    let me = current(&s, &h).ok_or(AppError::Unauthorized)?;
+    let existing = repo::by_id(&s.db, id).await?.ok_or(AppError::NotFound {
+        kind: "post".into(),
+    })?;
+    if existing.author_id != me.id && me.role != UserRole::Admin {
+        return Err(AppError::Forbidden);
+    }
+    let body = validate_update_post(body)?;
+    let row = repo::update(
+        &s.db,
+        id,
+        body.content.as_deref(),
+        body.media_urls.as_deref(),
+        body.tags.as_deref(),
+        body.topics.as_deref(),
+    )
+    .await?;
+
+    let env = Envelope::new(
+        "content.updated",
+        "content-service",
+        ContentCreated {
+            post_id: row.id,
+            author_id: row.author_id,
+            content: row.content.clone(),
+            tags: row.tags.clone(),
+            created_at: row.updated_at,
+        },
+    );
+    s.kafka
+        .produce_json(TOPIC_CONTENT_CREATED, row.id.to_string().as_str(), &env)
+        .await;
     Ok(Json(row))
 }
 

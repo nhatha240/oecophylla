@@ -1,6 +1,7 @@
 <script lang="ts">
   import { apiFetch, ApiException } from '$lib/api';
   import Icon from '$lib/apple-glass/components/Icon.svelte';
+  import ShareButton from '$lib/components/ShareButton.svelte';
   import { showToast } from '$lib/stores/toast';
   import type { Post, MyInteractions } from '$lib/types';
   export let post: Post;
@@ -44,5 +45,5 @@
     <Icon name={saved ? 'BookmarkFill' : 'Bookmark'} size={16} /> {saveCount}
   </button>
   <a class="post-action" href={`/post/${post.id}`}><Icon name="Comment" size={16} /> {post.comment_count}</a>
-  <span class="post-action"><Icon name="Share" size={16} /> {post.share_count}</span>
+  <ShareButton {post} {me} />
 </div>

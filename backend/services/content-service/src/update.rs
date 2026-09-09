@@ -1,3 +1,54 @@
+use common::error::AppError;
+use serde::Deserialize;
+
+#[derive(Debug, Deserialize)]
+pub struct UpdatePostInput {
+    pub content: Option<String>,
+    pub media_urls: Option<Vec<String>>,
+    pub tags: Option<Vec<String>>,
+    pub topics: Option<Vec<String>>,
+}
+
+pub fn validate_update_post(mut input: UpdatePostInput) -> Result<UpdatePostInput, AppError> {
+    if input.content.is_none()
+        && input.media_urls.is_none()
+        && input.tags.is_none()
+        && input.topics.is_none()
+    {
+        return Err(invalid("body", "at least one editable field is required"));
+    }
+    if let Some(content) = input.content.as_mut() {
+        *content = content.trim().to_owned();
+        if content.is_empty() || content.chars().count() > 4000 {
+            return Err(invalid("content", "1..=4000 chars"));
+        }
+        if input.topics.is_none() {
+            input.topics = Some(Vec::new());
+        }
+    }
+    if input
+        .media_urls
+        .as_ref()
+        .is_some_and(|urls| urls.len() > 6 || urls.iter().any(|url| !url.starts_with("https://")))
+    {
+        return Err(invalid("media_urls", "<=6 https urls"));
+    }
+    if input.tags.as_ref().is_some_and(|tags| tags.len() > 8) {
+        return Err(invalid("tags", "<=8 tags"));
+    }
+    if input.topics.as_ref().is_some_and(|topics| topics.len() > 8) {
+        return Err(invalid("topics", "<=8 topics"));
+    }
+    Ok(input)
+}
+
+fn invalid(field: &str, message: &str) -> AppError {
+    AppError::Validation {
+        field: field.into(),
+        message: message.into(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::update::{validate_update_post, UpdatePostInput};

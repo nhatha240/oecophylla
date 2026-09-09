@@ -21,7 +21,7 @@ authors = ["Oecophylla Team"]
 [workspace.dependencies]
 # Async runtime + HTTP
 tokio        = { version = "1.41", features = ["full"] }
-axum         = { version = "0.8.9", features = ["macros", "http2", "tracing"] }
+axum         = { version = "0.8.9", features = ["macros", "http2", "multipart", "tracing"] }
 tower        = { version = "0.5", features = ["full"] }
 tower-http   = { version = "0.6", features = ["trace", "cors", "request-id", "util", "fs"] }
 hyper        = { version = "1", features = ["full"] }

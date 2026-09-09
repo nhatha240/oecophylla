@@ -154,6 +154,8 @@ components:
     port: 8090
     probePath: /health
     env:
+      - name: DECLARED_TOPIC_WEIGHT
+        value: "1.0"
       - name: RANKER_MODE
         value: heuristic
       - name: MODEL_ARTIFACT_PATH

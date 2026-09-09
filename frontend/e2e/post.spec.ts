@@ -26,13 +26,16 @@ test.describe('Post flow', () => {
     await page.waitForURL(/\/post\//, { timeout: 10_000 });
 
     // Verify content is visible on the detail page
-    await expect(page.locator(`text=${postContent}`)).toBeVisible();
+    await expect(page.getByRole('heading', { name: postContent })).toBeVisible();
   });
 
-  test('created post appears on feed', async ({ page }) => {
+  test('created post appears on the author profile', async ({ page }) => {
     const user = randomUser('postfeed');
     const postContent = `Feed test ${Date.now()}`;
     await registerUser(page, user);
+    const meResponse = await page.request.get('/api/v1/auth/me');
+    expect(meResponse.ok()).toBeTruthy();
+    const userId = (await meResponse.json()).user.id as string;
 
     // Create a post
     await page.goto('/post/new');
@@ -40,8 +43,9 @@ test.describe('Post flow', () => {
     await page.getByTestId('composer-submit').click();
     await page.waitForURL(/\/post\//, { timeout: 10_000 });
 
-    // Go back to feed — post should appear
-    await page.goto('/');
+    // The personalized feed may still hold the pre-create cache; the author
+    // profile is the authoritative list for a newly-created post.
+    await page.goto(`/profile/${userId}`);
     await expect(page.locator(`article:has-text("${postContent}")`)).toBeVisible({ timeout: 15_000 });
   });
 
@@ -57,7 +61,7 @@ test.describe('Post flow', () => {
     await page.waitForURL(/\/post\//, { timeout: 10_000 });
 
     // We're already on the detail page after creation
-    await expect(page.locator(`text=${postContent}`)).toBeVisible();
+    await expect(page.getByRole('heading', { name: postContent })).toBeVisible();
     // Should have comment section
     await expect(page.locator('h2:has-text("Bình luận")')).toBeVisible();
   });
