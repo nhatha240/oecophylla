@@ -16,7 +16,7 @@ export const handleFetch: HandleFetch = async ({ event, request, fetch }) => {
     const ct = request.headers.get('content-type');
     if (ct) headers.set('content-type', ct);
     const body = request.method !== 'GET' && request.method !== 'HEAD'
-      ? await request.clone().text()
+      ? await request.clone().arrayBuffer()
       : undefined;
     return fetch(target.toString(), { method: request.method, headers, body });
   }

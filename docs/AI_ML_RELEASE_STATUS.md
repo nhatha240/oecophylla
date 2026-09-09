@@ -20,7 +20,7 @@ Oecophylla currently runs a heuristic recommendation system with an ML experimen
 
 ## Operations and privacy
 
-Raw `recommendation_impressions` and `behavior_events` are retained for 180 days. The scheduled Helm retention job calls `prune_recommendation_telemetry`; longer-lived aggregate reports are intentionally separate. Account deletion continues to remove user-linked raw rows through database foreign-key cascades.
+Raw `recommendation_impressions` and `behavior_events` are retained for 180 days. The scheduled Helm retention job calls `prune_recommendation_telemetry`; longer-lived aggregate reports are intentionally separate. Account deletion currently deactivates the user (`is_active=false`) and does not delete the user row, so it does not trigger foreign-key erasure cascades. Raw rows remain subject to retention; account erasure is an outstanding privacy acceptance item.
 
 Prometheus alerts cover impression persistence failures, model fallbacks, event rejection ratio, and event ingest lag. The AI telemetry dashboard also exposes accepted/duplicate/rejected events, candidate exclusions, feed source, and model lifecycle outcomes. Dataset generation emits row counts, split counts, and class balance in its metadata.
 
@@ -37,3 +37,5 @@ make evaluate-ai AI_DATASET=artifacts/datasets/dataset.parquet AI_ARTIFACT=artif
 Before release, run `make smoke-ai-telemetry` without `SKIP_DATABASE_TRACE` against the deployment and attach both its trace and the comparison report to the release record.
 
 Rollback is configuration-only: set `RANKER_MODE=heuristic` and restart the recommendation API. Heuristic mode never loads the model artifact. Keep both `LEGACY_VIEW_COUNTER_ENABLED` and `BEHAVIOR_VIEW_COUNTER_ENABLED` false unless executing an explicitly monitored cutover; they must never both be true.
+
+Current phase/task verification and limitations: [project review status](PROJECT_REVIEW_STATUS.md).

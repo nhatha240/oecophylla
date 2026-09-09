@@ -46,7 +46,7 @@ pub async fn find_by_email_or_username(
 ) -> Result<Option<UserRow>, AppError> {
     Ok(sqlx::query_as::<_, UserRow>(
         "SELECT id, username, email, password_hash, role, display_name, avatar_url, topic_prefs
-         FROM users WHERE email = $1 OR username = $1",
+         FROM users WHERE (email = $1 OR username = $1) AND is_active = true",
     )
     .bind(key)
     .fetch_optional(db)
@@ -56,7 +56,7 @@ pub async fn find_by_email_or_username(
 pub async fn find_by_id(db: &PgPool, id: Uuid) -> Result<Option<UserRow>, AppError> {
     Ok(sqlx::query_as::<_, UserRow>(
         "SELECT id, username, email, password_hash, role, display_name, avatar_url, topic_prefs
-         FROM users WHERE id = $1",
+         FROM users WHERE id = $1 AND is_active = true",
     )
     .bind(id)
     .fetch_optional(db)
