@@ -184,6 +184,7 @@ async def test_recommend_endpoint_wires_ml_scores_before_diversity(monkeypatch):
         for index in (1, 2)
     ]
     monkeypatch.setattr(main, "fetch_user_vector", AsyncMock(return_value={"x": 1.0}))
+    monkeypatch.setattr(main, "fetch_declared_topics", AsyncMock(return_value=[]))
     monkeypatch.setattr(main, "gather_candidates", AsyncMock(return_value=candidates))
     main.app.state.db = object()
     main.app.state.redis = object()

@@ -67,6 +67,7 @@ def _to_candidates(rows: Iterable[object], source: str) -> list[CandidatePost]:
             safety_score=float(r["safety_score"]),
             created_at=r["created_at"],
             source=source,
+            content=r.get("content", ""),
         )
         for r in rows
     ]
@@ -86,7 +87,7 @@ async def candidates_from_followed(
 ) -> list[CandidatePost]:
     rows = await db.pool.fetch(
         f"""
-        SELECT p.id, p.author_id, p.topics, p.safety_score, p.created_at
+        SELECT p.id, p.author_id, p.topics, p.safety_score, p.created_at, p.content
         FROM posts p
         JOIN follows f ON f.followee_id = p.author_id
         JOIN users author ON author.id = p.author_id AND author.is_active = true
@@ -118,7 +119,7 @@ async def candidates_from_topics(
         return []
     rows = await db.pool.fetch(
         f"""
-        SELECT p.id, p.author_id, p.topics, p.safety_score, p.created_at
+        SELECT p.id, p.author_id, p.topics, p.safety_score, p.created_at, p.content
         FROM posts p
         JOIN users author ON author.id = p.author_id AND author.is_active = true
         WHERE p.status = 'published'
@@ -146,7 +147,7 @@ async def candidates_recent(
 ) -> list[CandidatePost]:
     rows = await db.pool.fetch(
         f"""
-        SELECT p.id, p.author_id, p.topics, p.safety_score, p.created_at
+        SELECT p.id, p.author_id, p.topics, p.safety_score, p.created_at, p.content
         FROM posts p
         JOIN users author ON author.id = p.author_id AND author.is_active = true
         WHERE p.status = 'published'
@@ -175,7 +176,7 @@ async def candidates_for_ids(
         return []
     rows = await db.pool.fetch(
         f"""
-        SELECT p.id, p.author_id, p.topics, p.safety_score, p.created_at
+        SELECT p.id, p.author_id, p.topics, p.safety_score, p.created_at, p.content
         FROM posts p
         JOIN users author ON author.id = p.author_id AND author.is_active = true
         WHERE p.id = ANY($3::uuid[])

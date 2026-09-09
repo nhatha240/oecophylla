@@ -3,16 +3,29 @@ from __future__ import annotations
 from collections.abc import Iterable
 from datetime import datetime, timezone
 from math import exp
+import re
+import unicodedata
 
 from .schemas import CandidatePost, RankFeatureSnapshot, RecommendationItem
 
-RANK_FEATURE_SCHEMA_VERSION = "rank-features-v1"
+RANK_FEATURE_SCHEMA_VERSION = "rank-features-v2"
+LANGUAGE_DETECTOR_VERSION = "unicode-script-heuristic-v1"
 HEURISTIC_MODEL_VERSION = "heuristic-v1"
 
 
-def freshness_decay(created_at: datetime, half_life_hours: float = 36.0) -> float:
+def detect_content_language(content: str) -> str:
+    normalized = unicodedata.normalize("NFC", content).lower()
+    if any(char in "ăâđêôơưàáảãạằắẳẵặầấẩẫậèéẻẽẹềếểễệìíỉĩịòóỏõọồốổỗộờớởỡợùúủũụừứửữựỳýỷỹỵ" for char in normalized):
+        return "vi"
+    words = set(re.findall(r"[a-z]+", normalized))
+    if len(words & {"the", "and", "is", "are", "of", "to", "in", "for", "with", "from"}) >= 2:
+        return "en"
+    return "und"
+
+
+def freshness_decay(created_at: datetime, half_life_hours: float = 36.0, *, observed_at: datetime | None = None) -> float:
     age_hours = max(
-        0.0, (datetime.now(timezone.utc) - created_at).total_seconds() / 3600.0
+        0.0, ((observed_at or datetime.now(timezone.utc)) - created_at).total_seconds() / 3600.0
     )
     return exp(-age_hours / half_life_hours)
 
@@ -43,10 +56,13 @@ def build_rank_feature_snapshot(
     weights: tuple[float, float, float, float] = (0.5, 0.2, 0.1, 0.2),
     diversity_boost: float = 1.0,
     half_life_hours: float = 36.0,
+    declared_topics: Iterable[str] = (),
+    observed_at: datetime | None = None,
 ) -> RankFeatureSnapshot:
     """Compute the heuristic components once and preserve the exact inputs used."""
+    observed_at = observed_at or datetime.now(timezone.utc)
     topic_relevance = relevance(user_vec, post.topics)
-    freshness = freshness_decay(post.created_at, half_life_hours)
+    freshness = freshness_decay(post.created_at, half_life_hours, observed_at=observed_at)
     safety_score = float(post.safety_score)
     w1, w2, w3, w4 = weights
     heuristic_score = (
@@ -65,6 +81,11 @@ def build_rank_feature_snapshot(
         author_affinity=None,
         heuristic_score=heuristic_score,
         ml_score=None,
+        candidate_published_at=post.created_at,
+        content_language=detect_content_language(post.content),
+        language_detector_version=LANGUAGE_DETECTOR_VERSION,
+        declared_topics=sorted(set(declared_topics)),
+        preference_observed_at=observed_at,
     )
 
 

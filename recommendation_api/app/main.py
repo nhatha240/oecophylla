@@ -10,7 +10,7 @@ from fastapi import FastAPI, HTTPException
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from starlette.responses import Response
 
-from .db import DB, RedisCli, fetch_user_vector
+from .db import DB, RedisCli, fetch_declared_topics, fetch_user_vector
 from .evaluate import evaluate
 from .features import (
     aggregate_topic_weights,
@@ -94,12 +94,16 @@ async def recommend_feed(
             generated_at=utc_now(),
         )
 
+    declared_topics = await fetch_declared_topics(db, user_id)
+    observed_at = utc_now()
     scored = []
     for candidate in candidates:
         features = build_rank_feature_snapshot(
             user_vec,
             candidate,
             half_life_hours=cfg.half_life_hours,
+            declared_topics=declared_topics,
+            observed_at=observed_at,
         )
         assert features.heuristic_score is not None
         scored.append(

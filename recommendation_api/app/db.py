@@ -468,3 +468,8 @@ async def lifespan(db: DB, redis: RedisCli) -> AsyncIterator[None]:
     finally:
         await redis.stop()
         await db.stop()
+
+
+async def fetch_declared_topics(db: DB, user_id: UUID) -> list[str]:
+    """Read declared preferences once per serving request."""
+    return await _fetch_declared_topics(db, user_id)

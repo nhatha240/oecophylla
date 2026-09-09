@@ -14,6 +14,8 @@ pub struct RecommendFeedRequest {
 pub enum RankFeatureSchemaVersion {
     #[serde(rename = "rank-features-v1")]
     V1,
+    #[serde(rename = "rank-features-v2")]
+    V2,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -34,6 +36,16 @@ pub struct RankFeatureSnapshot {
     pub heuristic_score: Option<f64>,
     #[serde(deserialize_with = "deserialize_required_nullable")]
     pub ml_score: Option<f64>,
+    #[serde(default)]
+    pub candidate_published_at: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(default)]
+    pub content_language: Option<String>,
+    #[serde(default)]
+    pub language_detector_version: Option<String>,
+    #[serde(default)]
+    pub declared_topics: Vec<String>,
+    #[serde(default)]
+    pub preference_observed_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 impl RankFeatureSnapshot {
@@ -48,6 +60,11 @@ impl RankFeatureSnapshot {
             author_affinity: None,
             heuristic_score: None,
             ml_score: None,
+            candidate_published_at: None,
+            content_language: None,
+            language_detector_version: None,
+            declared_topics: Vec::new(),
+            preference_observed_at: None,
         }
     }
 }

@@ -14,7 +14,7 @@ class RecommendFeedRequest(BaseModel):
 
 
 class RankFeatureSnapshot(BaseModel):
-    schema_version: Literal["rank-features-v1"]
+    schema_version: Literal["rank-features-v1", "rank-features-v2"]
     topic_relevance: Optional[float]
     freshness: Optional[float]
     safety_score: Optional[float]
@@ -23,6 +23,11 @@ class RankFeatureSnapshot(BaseModel):
     author_affinity: Optional[float]
     heuristic_score: Optional[float]
     ml_score: Optional[float]
+    candidate_published_at: datetime | None = None
+    content_language: str | None = None
+    language_detector_version: str | None = None
+    declared_topics: list[str] = Field(default_factory=list)
+    preference_observed_at: datetime | None = None
 
 
 class RecommendationItem(BaseModel):
@@ -46,6 +51,7 @@ class CandidatePost(BaseModel):
     safety_score: float
     created_at: datetime
     source: str
+    content: str = ""
 
     @property
     def primary_topic(self) -> Optional[str]:
