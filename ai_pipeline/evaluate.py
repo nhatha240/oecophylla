@@ -604,6 +604,7 @@ def _segment_bucket_keys(rows: Sequence[Mapping[str, Any]]) -> dict[str, str]:
 def _segment_report(
     rows_by_request: Mapping[str, Sequence[Mapping[str, Any]]],
     scores_by_id: Mapping[str, float],
+    baselines: Mapping[str, Mapping[str, float]] | None = None,
 ) -> dict[str, dict[str, Any]]:
     bucket_requests: dict[str, dict[str, list[str]]] = {
         name: defaultdict(list) for name in NRMS_SEGMENT_NAMES
@@ -622,6 +623,13 @@ def _segment_report(
             )
             for bucket, requests in buckets.items()
         }
+    for name, buckets in bucket_requests.items():
+        for bucket, requests in buckets.items():
+            selected = {request: rows_by_request[request] for request in requests}
+            segments[name][bucket]["comparisons"] = {
+                label: _paired_ranking_comparison(selected, scores_by_id, baseline)
+                for label, baseline in (baselines or {}).items()
+            }
     return segments
 
 
@@ -690,13 +698,23 @@ def compare_nrms_holdout(
             test_by_request, post_policy_scores, k=k
         ),
     }
-    segments = _segment_report(test_by_request, pure_scores)
+    segments = _segment_report(
+        test_by_request,
+        pure_scores,
+        {
+            "logged_position": heuristic_scores,
+            "logistic": logistic_scores,
+        },
+    )
     comparisons = {
         "pure_vs_logged_position": _paired_ranking_comparison(
             test_by_request,
             pure_scores,
             heuristic_scores,
-        )
+        ),
+        "pure_vs_logistic": _paired_ranking_comparison(
+            test_by_request, pure_scores, logistic_scores
+        ),
     }
 
     request_count = len(test_by_request)
@@ -897,6 +915,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             minimum_requests=args.minimum_requests,
             minimum_auc_requests=args.minimum_auc_requests,
         )
+        from .artifact import sha256_file
+
+        report["data_provenance"] = {
+            "source_formats": sorted(
+                {str(row.get("source_format", "unknown")) for row in rows}
+            ),
+            "dataset_sha256": sha256_file(args.dataset),
+            "model_sha256": sha256_file(args.artifact / "model.joblib"),
+            "artifact_dataset_sha256": artifact.manifest.get("dataset", {}).get(
+                "parquet_sha256"
+            ),
+            "post_policy_definition": "confidence-threshold-fallback-only; serving diversity parity requires separate evidence",
+        }
         json_path, markdown_path = write_nrms_comparison_report(report, args.output)
         conclusion = (
             report["promotion"].get("conclusion", "eligible")
