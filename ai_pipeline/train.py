@@ -207,7 +207,7 @@ def _write_artifact(
 def _validate_v2_metadata(metadata: Mapping[str, Any]) -> None:
     if metadata.get("dataset_schema_version") != DATASET_SCHEMA_VERSION_V2:
         raise DatasetValidationError("dataset schema version is not supported")
-    if metadata.get("history_schema_version") != HISTORY_SCHEMA_VERSION:
+    if metadata.get("history_schema_version") not in (HISTORY_SCHEMA_VERSION, "mind-pre-impression-history-v1"):
         raise DatasetValidationError("history schema version is not supported")
     if not metadata.get("feature_schema_version"):
         raise DatasetValidationError("feature schema version is missing")
@@ -236,7 +236,7 @@ def _read_v2_rows(dataset: Path, metadata: Mapping[str, Any]) -> list[dict[str, 
     return rows
 
 
-def _validate_v2_contract(rows: Sequence[Mapping[str, Any]]) -> None:
+def _validate_v2_contract(rows: Sequence[Mapping[str, Any]], *, history_schema_version: str = HISTORY_SCHEMA_VERSION) -> None:
     splits_by_request: dict[str, set[str]] = defaultdict(set)
     for row in rows:
         request_group = row.get("request_group")
@@ -256,6 +256,14 @@ def _validate_v2_contract(rows: Sequence[Mapping[str, Any]]) -> None:
             entry_article = entry.get("article") or {}
             if not entry_article.get("embedding"):
                 raise DatasetValidationError("history entry is missing an embedding")
+            if history_schema_version == "mind-pre-impression-history-v1":
+                if (row.get("source_format") != "official-mind-tsv-v1"
+                        or entry.get("provenance") != "mind-pre-impression-snapshot"
+                        or entry.get("engaged_at") is not None):
+                    raise DatasetValidationError("invalid timestamp-free MIND history provenance")
+                continue
+            if entry.get("engaged_at") is None:
+                raise DatasetValidationError("local history requires an observed event timestamp")
             engaged_at = parse_datetime(entry["engaged_at"])
             if engaged_at >= served_at:
                 raise DatasetValidationError(
@@ -475,7 +483,7 @@ def _train_nrms_from_dataset(
         raise DatasetValidationError("epochs must be positive")
     _validate_v2_metadata(metadata)
     rows = _read_v2_rows(dataset, metadata)
-    _validate_v2_contract(rows)
+    _validate_v2_contract(rows, history_schema_version=metadata["history_schema_version"])
     rows_by_split = _split_v2_rows(rows)
 
     embedding_dimension = int(metadata["encoder_dimension"])
