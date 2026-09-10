@@ -61,8 +61,8 @@ data:
                           "@type": type.googleapis.com/envoy.extensions.filters.http.local_ratelimit.v3.LocalRateLimit
                           stat_prefix: ingress_http_rl
                           token_bucket:
-                            max_tokens: 60
-                            tokens_per_fill: 60
+                            max_tokens: 600
+                            tokens_per_fill: 600
                             fill_interval: 60s
                           filter_enabled:
                             default_value: { numerator: 100, denominator: HUNDRED }
@@ -94,4 +94,3 @@ data:
               healthy_threshold: 1
               http_health_check: { path: "/health" }
         {{- end }}
-

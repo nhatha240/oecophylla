@@ -58,6 +58,34 @@ pub async fn by_id(db: &PgPool, id: Uuid) -> Result<Option<PostRow>, AppError> {
     .await?)
 }
 
+pub async fn update(
+    db: &PgPool,
+    id: Uuid,
+    content: Option<&str>,
+    media_urls: Option<&[String]>,
+    tags: Option<&[String]>,
+    topics: Option<&[String]>,
+) -> Result<PostRow, AppError> {
+    Ok(sqlx::query_as::<_, PostRow>(
+        "UPDATE posts SET
+           content = COALESCE($2, content),
+           media_urls = COALESCE($3, media_urls),
+           tags = COALESCE($4, tags),
+           topics = COALESCE($5, topics)
+         WHERE id = $1
+         RETURNING id, author_id, content, media_urls, tags, topics, safety_score, status,
+                   view_count, like_count, comment_count, save_count, share_count,
+                   created_at, updated_at",
+    )
+    .bind(id)
+    .bind(content)
+    .bind(media_urls)
+    .bind(tags)
+    .bind(topics)
+    .fetch_one(db)
+    .await?)
+}
+
 pub async fn list_by_author(
     db: &PgPool,
     author: Uuid,

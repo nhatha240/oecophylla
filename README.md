@@ -1,8 +1,8 @@
 # Oecophylla
 
 Social network with intelligent news feed recommendation and multi-layer content moderation.
-Phases 0–4 shipped — see `CLAUDE.md` "Current State" for what is live and what is still open.
-Original foundation spec: `docs/superpowers/specs/2026-05-25-foundation-identity-content-design.md`.
+Phase/task evidence and remaining release gates: [project review status](docs/PROJECT_REVIEW_STATUS.md).
+Current product reference: [specification](docs/SPEC.md).
 
 Current AI status: Oecophylla runs a heuristic recommendation system with an ML experimentation pipeline. ML serving is opt-in and remains gated until a temporal holdout comparison, privacy checks, and an end-to-end telemetry trace provide enough release evidence.
 
@@ -11,7 +11,6 @@ Current AI status: Oecophylla runs a heuristic recommendation system with an ML 
 ```bash
 cp .env.example .env
 make up
-make seed   # optional — 50 users / 100 posts / 200 follows
 ```
 
 Browse:
@@ -102,13 +101,6 @@ docker compose -f compose.yaml -f compose.dev.yaml up -d postgres redis kafka mi
 cd backend && cargo run -p auth-service & cargo run -p user-service & cargo run -p content-service &
 sleep 5
 make test
-```
-
-Full Phase 3 integration smoke (requires the whole stack up):
-
-```bash
-docker compose -f compose.yaml -f compose.dev.yaml up -d --build
-bash scripts/smoke_phase3.sh
 ```
 
 ## Layout

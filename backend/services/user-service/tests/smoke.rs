@@ -27,6 +27,8 @@ fn cli() -> Client {
 }
 const AUTH: &str = "http://127.0.0.1:8001";
 const USER: &str = "http://127.0.0.1:8002";
+const REDIS_CONTAINER: &str = "oecophylla-redis-1";
+const REDIS_PASSWORD: &str = "CHANGE_ME__use_openssl_rand_base64_24";
 
 async fn register(c: &Client) -> serde_json::Value {
     let u = uuid::Uuid::now_v7().simple().to_string();
@@ -44,6 +46,23 @@ async fn register(c: &Client) -> serde_json::Value {
         .unwrap();
     assert_eq!(r.status(), 200);
     r.json::<serde_json::Value>().await.unwrap()
+}
+
+fn redis_command(args: &[&str]) -> String {
+    let output = std::process::Command::new("docker")
+        .args([
+            "exec",
+            REDIS_CONTAINER,
+            "redis-cli",
+            "-a",
+            REDIS_PASSWORD,
+            "--raw",
+        ])
+        .args(args)
+        .output()
+        .expect("docker exec redis-cli failed");
+    assert!(output.status.success(), "redis-cli command failed");
+    String::from_utf8_lossy(&output.stdout).trim().to_owned()
 }
 
 /// Get the current latest offset for the user.followed topic (partition 0).
@@ -153,4 +172,38 @@ async fn put_profile_non_owner_forbidden() {
         .await
         .unwrap();
     assert_eq!(r.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn topic_update_invalidates_preference_and_feed_caches_only_when_changed() {
+    let client = cli();
+    let registered = register(&client).await;
+    let user_id = registered["user"]["id"].as_str().unwrap();
+    let pref_key = format!("pref:{user_id}");
+    let feed_key = format!("feed:{user_id}");
+
+    assert_eq!(redis_command(&["SET", &pref_key, r#"{"tech":2}"#]), "OK");
+    assert_eq!(redis_command(&["SET", &feed_key, "cached-feed"]), "OK");
+
+    let response = client
+        .put(format!("{USER}/api/v1/users/{user_id}"))
+        .json(&json!({ "topic_prefs": ["tech"] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(redis_command(&["EXISTS", &pref_key, &feed_key]), "0");
+
+    assert_eq!(redis_command(&["SET", &pref_key, "still-present"]), "OK");
+    assert_eq!(redis_command(&["SET", &feed_key, "still-present"]), "OK");
+    let profile_only = client
+        .put(format!("{USER}/api/v1/users/{user_id}"))
+        .json(&json!({ "display_name": "Profile only" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(profile_only.status(), StatusCode::OK);
+    assert_eq!(redis_command(&["EXISTS", &pref_key, &feed_key]), "2");
+
+    redis_command(&["DEL", &pref_key, &feed_key]);
 }

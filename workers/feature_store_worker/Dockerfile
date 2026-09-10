@@ -16,5 +16,6 @@ RUN groupadd --gid 10001 app \
     && useradd --uid 10001 --gid app --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin app
 COPY --from=builder --chown=10001:10001 /opt/venv /opt/venv
 COPY --chown=10001:10001 workers/feature_store_worker/app ./app
+COPY --chown=10001:10001 workers/common/oecophylla_worker_common ./oecophylla_worker_common
 USER 10001:10001
 CMD ["python", "-m", "app.main"]

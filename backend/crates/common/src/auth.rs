@@ -68,11 +68,8 @@ pub fn sha256_hex(s: &str) -> String {
 pub fn hash_password(plain: &str, m_cost: u32, t_cost: u32, p_cost: u32) -> anyhow::Result<String> {
     let mut salt_bytes = [0u8; 16];
     rand::rng().fill(&mut salt_bytes);
-    use base64::Engine;
-    let mut b64 = base64::engine::general_purpose::STANDARD_NO_PAD.encode(salt_bytes);
-    b64 = b64.replace('+', ".").replace('/', "/");
-    let salt = SaltString::from_b64(&b64)
-        .map_err(|e| anyhow::anyhow!("salt encoding: {e}"))?;
+    let salt =
+        SaltString::encode_b64(&salt_bytes).map_err(|e| anyhow::anyhow!("salt encoding: {e}"))?;
     let params = argon2::Params::new(m_cost, t_cost, p_cost, None)
         .map_err(|e| anyhow::anyhow!("argon2 params: {e}"))?;
     let argon = Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params);
@@ -112,4 +109,18 @@ pub fn cookie_header(opts: CookieOpts) -> HeaderValue {
 pub fn clear_cookie_header(name: &'static str, path: &'static str) -> HeaderValue {
     let v = format!("{}=; Path={}; Max-Age=0; HttpOnly", name, path);
     HeaderValue::from_str(&v).unwrap()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{hash_password, verify_password};
+
+    #[test]
+    fn password_hashing_accepts_every_random_salt() {
+        for _ in 0..256 {
+            let hash = hash_password("Password!123", 8, 1, 1)
+                .expect("random salt must always be valid for Argon2");
+            assert!(verify_password("Password!123", &hash));
+        }
+    }
 }

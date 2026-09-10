@@ -1,4 +1,4 @@
-.PHONY: up down logs ps test test-python test-phase-2b test-phase-3 test-ai-pipeline smoke-ai-telemetry evaluate-ai train-ai prune-ai-telemetry fmt lint deny audit sqlx-prepare seed clean
+.PHONY: up down logs ps test test-python test-phase-2b test-ai-pipeline smoke-ai-telemetry evaluate-ai train-ai prune-ai-telemetry sync-agent-md check-agent-md fmt lint deny audit sqlx-prepare clean
 
 AI_DATASET ?= artifacts/datasets/dataset.parquet
 AI_ARTIFACT ?= artifacts/models/current
@@ -45,12 +45,6 @@ test-phase-2b:
 	cd frontend && pnpm run check && pnpm run build
 	$(MAKE) test-python
 
-test-phase-3:
-	cd backend && cargo test --workspace --no-fail-fast
-	cd frontend && pnpm run check && pnpm run build
-	$(MAKE) test-python
-	bash scripts/smoke_phase3.sh
-
 fmt:
 	cd backend && cargo fmt
 	cd frontend && pnpm prettier --write .
@@ -68,8 +62,16 @@ audit:
 sqlx-prepare:
 	cd backend && cargo sqlx prepare --workspace -- --all-targets
 
-seed:
-	docker compose --profile tools run --rm scripts seed_phase1.py
-
 clean:
 	docker compose down -v
+
+sync-agent-md:
+	cp CLAUDE.md agent.md
+	@echo "agent.md synced from CLAUDE.md"
+
+check-agent-md:
+	@cmp -s CLAUDE.md agent.md || { \
+		echo "ERROR: agent.md is out of sync with CLAUDE.md. Run 'make sync-agent-md'."; \
+		exit 1; \
+	}
+	@echo "agent.md is in sync"

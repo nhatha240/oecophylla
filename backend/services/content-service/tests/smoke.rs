@@ -178,3 +178,47 @@ async fn delete_non_owner_forbidden() {
         .unwrap();
     assert_eq!(r.status(), StatusCode::FORBIDDEN);
 }
+
+#[tokio::test]
+async fn owner_can_update_post_but_other_user_cannot() {
+    let owner = cli();
+    let other = cli();
+    let _ = register(&owner).await;
+    let _ = register(&other).await;
+    let created = owner
+        .post(format!("{CONTENT}/api/v1/posts"))
+        .json(&json!({ "content": "before update", "tags": ["old"] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(created.status(), StatusCode::OK);
+    let post: serde_json::Value = created.json().await.unwrap();
+    let post_id = post["id"].as_str().unwrap();
+
+    let forbidden = other
+        .put(format!("{CONTENT}/api/v1/posts/{post_id}"))
+        .json(&json!({ "content": "hijacked" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(forbidden.status(), StatusCode::FORBIDDEN);
+
+    let updated = owner
+        .put(format!("{CONTENT}/api/v1/posts/{post_id}"))
+        .json(&json!({ "content": "  after update  ", "tags": ["new"] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(updated.status(), StatusCode::OK);
+    let updated: serde_json::Value = updated.json().await.unwrap();
+    assert_eq!(updated["content"], "after update");
+    assert_eq!(updated["tags"], json!(["new"]));
+
+    let empty = owner
+        .put(format!("{CONTENT}/api/v1/posts/{post_id}"))
+        .json(&json!({}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(empty.status(), StatusCode::BAD_REQUEST);
+}

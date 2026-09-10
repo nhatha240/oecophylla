@@ -2,6 +2,7 @@
   import type { Post, MyInteractions } from '$lib/types';
   import PostActionBar from './PostActionBar.svelte';
   import Icon from '$lib/apple-glass/components/Icon.svelte';
+  import { user } from '$lib/stores/auth';
 
   export let post: Post;
   export let me: MyInteractions | null = null;
@@ -90,6 +91,11 @@
           <Icon name="Shield" size={11} />
           Nguồn đáng tin cậy
         </span>
+      {/if}
+      {#if $user?.id === post.author_id}
+        <a href="/post/{post.id}/edit" class="icon-btn" title="Sửa bài viết" aria-label="Sửa bài viết">
+          <Icon name="Edit" size={16} />
+        </a>
       {/if}
       <a href="/post/{post.id}" class="icon-btn" title="Xem chi tiết" style="opacity:0.5;" on:click={() => onOpen?.()}>
         <Icon name="More" size={16} />

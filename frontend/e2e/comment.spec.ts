@@ -17,7 +17,7 @@ test.describe('Comment flow', () => {
     // Create a post first
     await page.goto('/post/new');
     await page.locator('textarea[name="content"]').fill(postContent);
-    await page.locator('button[type="submit"]:has-text("Đăng")').click();
+    await page.getByTestId('composer-submit').click();
     await page.waitForURL(/\/post\//, { timeout: 10_000 });
 
     // We're now on the post detail page — fill in comment

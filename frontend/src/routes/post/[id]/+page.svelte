@@ -5,6 +5,7 @@
   import CommentItem from '$lib/components/CommentItem.svelte';
   import CommentForm from '$lib/components/CommentForm.svelte';
   import ReportDialog from '$lib/components/ReportDialog.svelte';
+  import ShareButton from '$lib/components/ShareButton.svelte';
   import { user } from '$lib/stores/auth';
   import type { Comment } from '$lib/types';
   import { trackRecommendationDetailView } from '$lib/telemetry/recommendationTelemetry';
@@ -99,7 +100,7 @@
   <div class="reader-actions">
     <a class="post-action" href="#comments"><Icon name="Comment" size={16} /> {data.post.comment_count} bình luận</a>
     <span class="post-action"><Icon name="Eye" size={16} /> {data.post.view_count} lượt xem</span>
-    <span class="post-action"><Icon name="Share" size={16} /> {data.post.share_count} chia sẻ</span>
+    <ShareButton post={data.post} me={data.me} expanded />
     {#if $user}
       <button class="post-action" on:click={() => (showReport = true)}><Icon name="Flag" size={16} /> Báo cáo</button>
     {/if}
