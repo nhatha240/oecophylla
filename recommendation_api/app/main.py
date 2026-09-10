@@ -1,25 +1,29 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import FastAPI, HTTPException
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from starlette.responses import Response
 
-from .db import DB, RedisCli, fetch_user_vector
+from .db import DB, RedisCli, fetch_declared_topics, fetch_user_vector
 from .evaluate import evaluate
 from .features import (
     aggregate_topic_weights,
     all_user_ids_with_interactions,
     gather_candidates,
+    candidates_semantic,
     upsert_user_vector,
     utc_now,
 )
 from .model_ranker import RankerRuntime
+from .retrieval_telemetry import record_pool, TELEMETRY_WRITES
 from .ranking import (
     HEURISTIC_MODEL_VERSION,
     build_rank_feature_snapshot,
@@ -34,6 +38,7 @@ from .schemas import (
     RecommendFeedResponse,
 )
 from .settings import settings as load_settings
+from .serving_context import load_author_context, load_nrms_records
 
 
 @asynccontextmanager
@@ -77,13 +82,32 @@ async def recommend_feed(
     redis: RedisCli = app.state.redis
     cfg = app.state.cfg
 
+    observed_at = utc_now()
     user_vec = await fetch_user_vector(db, redis, user_id, config=cfg)
+    retrieval_request_id = uuid4()
+    retrieval_options = {}
+    if body.exclude_post_ids:
+        retrieval_options["exclude_post_ids"] = body.exclude_post_ids
+    if getattr(cfg, "semantic_retrieval_enabled", False):
+        try:
+            retrieval_options["semantic_candidates"] = await asyncio.wait_for(
+                candidates_semantic(
+                    db, redis, user_id, config=cfg, observed_at=observed_at
+                ),
+                timeout=getattr(cfg, "model_timeout_ms", 150) / 1000,
+            )
+        except Exception as error:
+            logging.getLogger(__name__).warning(
+                "semantic_retrieval_unavailable",
+                extra={"error_type": type(error).__name__},
+            )
     candidates = await gather_candidates(
         db,
         user_id,
         user_vec,
         pool_size=body.candidate_pool or cfg.feed_candidate_pool,
         seen_cooldown_days=cfg.seen_cooldown_days,
+        **retrieval_options,
     )
     excluded = set(body.exclude_post_ids)
     candidates = [c for c in candidates if c.id not in excluded]
@@ -94,12 +118,36 @@ async def recommend_feed(
             generated_at=utc_now(),
         )
 
+    declared_topics = await fetch_declared_topics(db, user_id)
+    observed_at = utc_now()
+    try:
+        author_context = await asyncio.wait_for(
+            load_author_context(
+                db, user_id, list({c.author_id for c in candidates}), observed_at
+            ),
+            timeout=getattr(cfg, "model_timeout_ms", 150) / 1000,
+        )
+    except Exception as error:
+        logging.getLogger(__name__).warning(
+            "author_context_unavailable", extra={"error_type": type(error).__name__}
+        )
+        author_context = {}
     scored = []
     for candidate in candidates:
         features = build_rank_feature_snapshot(
             user_vec,
             candidate,
             half_life_hours=cfg.half_life_hours,
+            declared_topics=declared_topics,
+            observed_at=observed_at,
+        )
+        followed, affinity = author_context.get(candidate.author_id, (None, None))
+        features = features.model_copy(
+            update={
+                "is_followed_author": followed,
+                "author_affinity": affinity,
+                "retrieval_request_id": retrieval_request_id,
+            }
         )
         assert features.heuristic_score is not None
         scored.append(
@@ -114,7 +162,74 @@ async def recommend_feed(
     runtime: RankerRuntime = getattr(
         app.state, "ranker", RankerRuntime(mode="heuristic")
     )
-    decision = runtime.score(scored)
+    budget = getattr(cfg, "model_timeout_ms", 150) / 1000
+    started = time.monotonic()
+    records = None
+    context_failed = False
+    if runtime.mode != "heuristic" and getattr(
+        runtime.predictor, "requires_context", False
+    ):
+        try:
+            records = await asyncio.wait_for(
+                load_nrms_records(
+                    db=db,
+                    redis=redis,
+                    user_id=user_id,
+                    candidates=candidates,
+                    observed_at=observed_at,
+                    encoder_version=runtime.predictor.encoder_version,
+                    dimension=runtime.predictor.dimension,
+                    config=cfg,
+                ),
+                timeout=budget,
+            )
+        except Exception as error:
+            logging.getLogger(__name__).warning(
+                "nrms_context_unavailable", extra={"error_type": type(error).__name__}
+            )
+            context_failed = True
+    if records is not None:
+        scored = [
+            item.model_copy(
+                update={
+                    "features": item.features.model_copy(
+                        update={
+                            "candidate_content_hash": record["article"]["content_hash"],
+                            "candidate_encoder_version": record["article"][
+                                "encoder_version"
+                            ],
+                        }
+                    )
+                }
+            )
+            for item, record in zip(scored, records, strict=True)
+        ]
+    decision = (
+        runtime.fallback(scored, "context_error")
+        if context_failed
+        else await runtime.score_async(
+            scored,
+            records=records,
+            timeout_seconds=max(0.001, budget - (time.monotonic() - started)),
+        )
+    )
+    try:
+        await asyncio.wait_for(
+            record_pool(
+                db,
+                retrieval_request_id,
+                candidates,
+                model_version=decision.model_version,
+                sample_rate=getattr(cfg, "candidate_telemetry_sample_rate", 0),
+            ),
+            timeout=0.025,
+        )
+    except Exception as error:
+        TELEMETRY_WRITES.labels(status="error").inc()
+        logging.getLogger(__name__).warning(
+            "candidate_telemetry_unavailable",
+            extra={"error_type": type(error).__name__},
+        )
     primary = {str(c.id): c.primary_topic for c in candidates}
     author = {str(c.id): str(c.author_id) for c in candidates}
     top = diversity_rerank(

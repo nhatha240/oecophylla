@@ -4,6 +4,23 @@ Release decision: INCONCLUSIVE
 
 Oecophylla currently runs a heuristic recommendation system with an ML experimentation pipeline. The ML and shadow serving paths are implemented, but ML is not approved as the production default because this checkout does not contain enough real temporal holdout evidence or a live end-to-end telemetry trace.
 
+## MIND pilot and completion work (2026-09-09)
+
+See [MIND completion evidence](MIND_COMPLETION_20260909.md) for the isolated
+implementation branch, reproducible commands, actual reports and remaining task
+exit criteria. The requested MIND-small pilot was run: 700 sampled requests,
+26,958 candidate rows and 200 untouched official dev requests as test. NRMS AUC
+was 0.421920 versus 0.513642 for logged order and 0.618350 for the logistic
+baseline. The pilot artifact is rejected. Production readiness remains
+INCONCLUSIVE, and T7–T9 remain open; no default ranker change is authorized by
+these results.
+
+The PostgreSQL integration check now exercises the real history/context/retrieval
+queries and a served/visible/click/dwell-to-dataset/history trace in an isolated,
+rolled-back test transaction. This exposed and fixed nonexistent `event_version`
+column references and JSONB text decoding in dataset extraction. This controlled
+integration test does not replace a production browser trace or observation window.
+
 ## Gate evidence required
 
 | Gate | Requirement | Current status |
@@ -20,7 +37,7 @@ Oecophylla currently runs a heuristic recommendation system with an ML experimen
 
 ## Operations and privacy
 
-Raw `recommendation_impressions` and `behavior_events` are retained for 180 days. The scheduled Helm retention job calls `prune_recommendation_telemetry`; longer-lived aggregate reports are intentionally separate. Account deletion currently deactivates the user (`is_active=false`) and does not delete the user row, so it does not trigger foreign-key erasure cascades. Raw rows remain subject to retention; account erasure is an outstanding privacy acceptance item.
+Raw `recommendation_impressions` and `behavior_events` are retained for 180 days. The scheduled Helm retention job calls `prune_recommendation_telemetry`; longer-lived aggregate reports are intentionally separate. Physical user deletion cascades through user-linked raw rows. The current account deletion API only deactivates the account (`is_active=false`), so it does not trigger these erasure cascades. Raw rows remain subject to retention; account erasure is an outstanding privacy acceptance item.
 
 Prometheus alerts cover impression persistence failures, model fallbacks, event rejection ratio, and event ingest lag. The AI telemetry dashboard also exposes accepted/duplicate/rejected events, candidate exclusions, feed source, and model lifecycle outcomes. Dataset generation emits row counts, split counts, and class balance in its metadata.
 

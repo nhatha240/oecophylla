@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, Mapping, Protocol, Sequence
 
@@ -113,23 +114,80 @@ class ModelArtifactPredictor:
 
 
 @dataclass(frozen=True)
+class NRMSArtifactPredictor:
+    artifact: Any
+    model_version: str
+    encoder_version: str
+    dimension: int
+    requires_context: bool = True
+
+    @classmethod
+    def load(cls, directory: Path) -> NRMSArtifactPredictor:
+        from ai_pipeline.artifact import LoadedNRMSArtifact, load_artifact
+        from workers.nlp_worker.app.content_features import (
+            ENCODER_VERSION,
+            EMBEDDING_DIMENSION,
+        )
+
+        artifact = load_artifact(directory)
+        if not isinstance(artifact, LoadedNRMSArtifact):
+            raise ValueError("artifact is not NRMS")
+        manifest = artifact.manifest
+        embedding = manifest["embedding"]
+        if (
+            embedding["version"] != ENCODER_VERSION
+            or embedding["dimension"] != EMBEDDING_DIMENSION
+        ):
+            raise ValueError("NRMS encoder is incompatible with serving features")
+        version = str(manifest.get("model_version", "")).strip()
+        if (
+            not version
+            or manifest.get("dataset_schema_version") != "recommendation-dataset-v2"
+        ):
+            raise ValueError("NRMS model version or dataset contract is missing")
+        return cls(artifact, version, embedding["version"], embedding["dimension"])
+
+    def predict_scores(self, records: Sequence[Mapping[str, Any]]) -> list[float]:
+        # The request has one history. Encode it once for the entire candidate batch.
+        if not records:
+            return []
+        first = records[0]
+        history = sorted(first["history"], key=lambda entry: entry["ordinal"])
+        ranker = self.artifact.ranker
+        context = ranker.prepare_user_context(
+            history_embeddings=[entry["article"]["embedding"] for entry in history],
+            declared_topic_embedding=first.get("declared_topic_embedding"),
+        )
+        return [
+            ranker.score(context.vector, record["article"]["embedding"])
+            for record in records
+        ]
+
+
+@dataclass(frozen=True)
 class RankingDecision:
     items: list[RecommendationItem]
     model_version: str
     fallback_used: bool
 
 
-@dataclass(frozen=True)
+@dataclass
 class RankerRuntime:
     mode: RankerMode
     predictor: Predictor | None = None
+    _inflight: asyncio.Task | None = field(default=None, init=False, repr=False)
 
     @classmethod
     def initialize(cls, mode: RankerMode, artifact_path: Path) -> RankerRuntime:
         if mode == "heuristic":
             return cls(mode=mode)
         try:
-            predictor = ModelArtifactPredictor.load(artifact_path)
+            manifest = json.loads((artifact_path / "manifest.json").read_text())
+            predictor = (
+                NRMSArtifactPredictor.load(artifact_path)
+                if manifest.get("model_type") == "nrms-like-impression-ranker"
+                else ModelArtifactPredictor.load(artifact_path)
+            )
         except Exception as error:
             MODEL_LOADS.labels(mode=mode, status="error").inc()
             MODEL_FALLBACKS.labels(mode=mode, reason="load_error").inc()
@@ -145,23 +203,55 @@ class RankerRuntime:
         MODEL_LOADS.labels(mode=mode, status="success").inc()
         return cls(mode=mode, predictor=predictor)
 
+    def fallback(self, items: list[RecommendationItem], reason: str) -> RankingDecision:
+        MODEL_FALLBACKS.labels(mode=self.mode, reason=reason).inc()
+        return RankingDecision(items, HEURISTIC_MODEL_VERSION, True)
+
+    async def score_async(
+        self,
+        items: list[RecommendationItem],
+        *,
+        timeout_seconds: float = 0.15,
+        records: Sequence[Mapping[str, Any]] | None = None,
+    ) -> RankingDecision:
+        if self.mode == "heuristic" or self.predictor is None:
+            return self.score(items)
+        if self._inflight is not None and not self._inflight.done():
+            return self.fallback(items, "busy")
+        # Shield the worker: a timed-out thread still occupies the single slot
+        # until completion. Subsequent requests fall back instead of queuing.
+        task = asyncio.create_task(
+            asyncio.to_thread(self.score, items, records=records)
+        )
+        self._inflight = task
+        try:
+            return await asyncio.wait_for(asyncio.shield(task), timeout_seconds)
+        except TimeoutError:
+            return self.fallback(items, "timeout")
+
     def score(
         self,
         items: list[RecommendationItem],
         *,
         feed_source: str = "personalized",
+        records: Sequence[Mapping[str, Any]] | None = None,
     ) -> RankingDecision:
         if self.mode == "heuristic":
             return RankingDecision(items, HEURISTIC_MODEL_VERSION, False)
         if self.predictor is None:
             return RankingDecision(items, HEURISTIC_MODEL_VERSION, True)
 
-        records = []
-        for item in items:
-            snapshot = item.features.model_dump()
-            snapshot["feed_source"] = feed_source
-            records.append({name: snapshot[name] for name in FEATURE_COLUMNS})
+        if getattr(self.predictor, "requires_context", False) and records is None:
+            return self.fallback(items, "missing_context")
+        if records is None:
+            records = []
+            for item in items:
+                snapshot = item.features.model_dump()
+                snapshot["feed_source"] = feed_source
+                records.append({name: snapshot[name] for name in FEATURE_COLUMNS})
         try:
+            if len(records) != len(items):
+                raise ValueError("model context count does not match candidates")
             scores = self.predictor.predict_scores(records)
             if len(scores) != len(items) or any(
                 not math.isfinite(score) or not 0.0 <= score <= 1.0 for score in scores

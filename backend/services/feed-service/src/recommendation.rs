@@ -14,6 +14,8 @@ pub struct RecommendFeedRequest {
 pub enum RankFeatureSchemaVersion {
     #[serde(rename = "rank-features-v1")]
     V1,
+    #[serde(rename = "rank-features-v2")]
+    V2,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -34,6 +36,22 @@ pub struct RankFeatureSnapshot {
     pub heuristic_score: Option<f64>,
     #[serde(deserialize_with = "deserialize_required_nullable")]
     pub ml_score: Option<f64>,
+    #[serde(default)]
+    pub candidate_content_hash: Option<String>,
+    #[serde(default)]
+    pub candidate_encoder_version: Option<String>,
+    #[serde(default)]
+    pub retrieval_request_id: Option<Uuid>,
+    #[serde(default)]
+    pub candidate_published_at: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(default)]
+    pub content_language: Option<String>,
+    #[serde(default)]
+    pub language_detector_version: Option<String>,
+    #[serde(default)]
+    pub declared_topics: Vec<String>,
+    #[serde(default)]
+    pub preference_observed_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 impl RankFeatureSnapshot {
@@ -48,6 +66,14 @@ impl RankFeatureSnapshot {
             author_affinity: None,
             heuristic_score: None,
             ml_score: None,
+            candidate_content_hash: None,
+            candidate_encoder_version: None,
+            retrieval_request_id: None,
+            candidate_published_at: None,
+            content_language: None,
+            language_detector_version: None,
+            declared_topics: Vec::new(),
+            preference_observed_at: None,
         }
     }
 }
@@ -125,6 +151,33 @@ mod recommendation_contract_tests {
         "generated_at": "2026-08-27T00:00:00Z"
     }"#;
 
+    const V2_RESPONSE: &str = r#"{
+        "items": [{
+            "post_id": "00000000-0000-0000-0000-000000000001",
+            "score": 0.79,
+            "source": "topic",
+            "reason": "heuristic-rank",
+            "features": {
+                "schema_version": "rank-features-v2",
+                "topic_relevance": 0.8,
+                "freshness": 0.7,
+                "safety_score": 0.9,
+                "candidate_source": "topic",
+                "is_followed_author": null,
+                "author_affinity": null,
+                "heuristic_score": 0.79,
+                "ml_score": null,
+                "candidate_published_at": "2026-08-26T23:00:00Z",
+                "content_language": "vi",
+                "language_detector_version": "unicode-script-heuristic-v1",
+                "declared_topics": ["ai", "tech"],
+                "preference_observed_at": "2026-08-27T00:00:00Z"
+            }
+        }],
+        "model_version": "heuristic-v1",
+        "generated_at": "2026-08-27T00:00:00Z"
+    }"#;
+
     #[test]
     fn recommendation_contract_decodes_versioned_feature_snapshot() {
         let response: RecommendFeedResponse = serde_json::from_str(VALID_RESPONSE).unwrap();
@@ -159,10 +212,28 @@ mod recommendation_contract_tests {
     }
 
     #[test]
-    fn recommendation_contract_rejects_unsupported_feature_schema_version() {
-        let payload = VALID_RESPONSE.replace("rank-features-v1", "rank-features-v2");
+    fn recommendation_contract_decodes_v2_temporal_context() {
+        let response: RecommendFeedResponse = serde_json::from_str(V2_RESPONSE).unwrap();
+        let features = &response.items[0].features;
 
-        assert!(serde_json::from_str::<RecommendFeedResponse>(&payload).is_err());
+        assert!(matches!(
+            features.schema_version,
+            RankFeatureSchemaVersion::V2
+        ));
+        assert_eq!(
+            features.candidate_published_at.unwrap().to_rfc3339(),
+            "2026-08-26T23:00:00+00:00"
+        );
+        assert_eq!(features.content_language.as_deref(), Some("vi"));
+        assert_eq!(
+            features.language_detector_version.as_deref(),
+            Some("unicode-script-heuristic-v1")
+        );
+        assert_eq!(features.declared_topics, ["ai", "tech"]);
+        assert_eq!(
+            features.preference_observed_at.unwrap().to_rfc3339(),
+            "2026-08-27T00:00:00+00:00"
+        );
     }
 
     #[test]

@@ -17,7 +17,8 @@ RUN groupadd --gid 10001 app \
 COPY --from=builder --chown=10001:10001 /opt/venv /opt/venv
 COPY --chown=10001:10001 recommendation_api/app ./app
 COPY --chown=10001:10001 recommendation_label ./recommendation_label
-COPY --chown=10001:10001 ai_pipeline/__init__.py ai_pipeline/build_dataset.py ai_pipeline/config.py ai_pipeline/schemas.py ./ai_pipeline/
+COPY --chown=10001:10001 ai_pipeline ./ai_pipeline
+COPY --chown=10001:10001 workers/nlp_worker/app/content_features.py ./workers/nlp_worker/app/content_features.py
 USER 10001:10001
 EXPOSE 8090
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8090"]

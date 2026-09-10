@@ -168,13 +168,13 @@ async def fetch_user_history(
     event_rows = await db.pool.fetch(
         """
         SELECT id, impression_id, user_id, post_id, event_type, dwell_ms,
-               occurred_at, ingested_at, event_version, metadata
+               occurred_at, ingested_at, metadata->>'event_version' AS event_version, metadata
         FROM behavior_events
         WHERE user_id = $1
           AND event_type = 'click'
           AND occurred_at < $2
           AND ingested_at <= $2
-          AND coalesce(event_version, metadata->>'event_version') = 'v2'
+          AND metadata->>'event_version' = 'v2'
         ORDER BY occurred_at DESC, id DESC
         LIMIT $3
         """,
@@ -488,3 +488,8 @@ async def lifespan(db: DB, redis: RedisCli) -> AsyncIterator[None]:
     finally:
         await redis.stop()
         await db.stop()
+
+
+async def fetch_declared_topics(db: DB, user_id: UUID) -> list[str]:
+    """Read declared preferences once per serving request."""
+    return await _fetch_declared_topics(db, user_id)

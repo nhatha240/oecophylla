@@ -16,7 +16,7 @@ Detail lives elsewhere and is read only when a task needs it:
 
 ---
 
-## Current state — 2026-09-08
+## Current state — 2026-09-10
 
 ### What is running
 
@@ -55,12 +55,15 @@ T3 (time-aware preference vector v2) · T4a (content feature contract) ·
 T4b (multilingual embedding worker) · T5 (leakage-safe history snapshots) ·
 T6 (dataset v2 + MIND adapter, merged at `ea9c51b`).
 
-**Open:** T7 (NRMS-like model, work remains on a separate branch) · T8a (NRMS shadow serving) ·
+**Integrated, acceptance open:** T7 (NRMS-like model) · T8a (NRMS shadow serving) ·
 T8b (hybrid retrieval telemetry) · T9 (E2E live evidence + release gates).
 
 ML release decision is **INCONCLUSIVE**. Production default is `RANKER_MODE=heuristic`.
 “Done” above means merged implementation, not full live release acceptance.
-Current review evidence and remaining exit criteria: `docs/PROJECT_REVIEW_STATUS.md`.
+The source from `codex/integrated-review-mind` is merged locally into `main`.
+The tested MIND pilot regresses and is rejected. No push or deployment has occurred.
+Current evidence and remaining exit criteria: `docs/PROJECT_REVIEW_STATUS.md` and
+`docs/MIND_COMPLETION_20260909.md`.
 
 ---
 

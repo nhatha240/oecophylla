@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
@@ -36,6 +37,14 @@ def parse_datetime(value: Any) -> datetime:
     return parsed
 
 
+def _json_object(value: Any) -> dict[str, Any]:
+    # asyncpg returns JSON/JSONB as text unless a custom codec is installed.
+    decoded = json.loads(value) if isinstance(value, str) else value
+    if not isinstance(decoded, Mapping):
+        raise ValueError("expected a JSON object")
+    return dict(decoded)
+
+
 @dataclass(frozen=True)
 class Impression:
     id: UUID
@@ -58,7 +67,7 @@ class Impression:
             position=int(row["position"]),
             feed_source=str(row["feed_source"]),
             model_version=str(row["model_version"]),
-            feature_snapshot=dict(row["feature_snapshot"]),
+            feature_snapshot=_json_object(row["feature_snapshot"]),
             served_at=parse_datetime(row["served_at"]),
         )
 
@@ -81,9 +90,7 @@ class BehaviorEvent:
         impression_id = row.get("impression_id")
         dwell_ms = row.get("dwell_ms")
         metadata = (
-            dict(row["metadata"])
-            if isinstance(row.get("metadata"), Mapping)
-            else None
+            _json_object(row["metadata"]) if row.get("metadata") is not None else None
         )
         persisted_version = row.get("event_version")
         if persisted_version is None and metadata is not None:
@@ -102,9 +109,7 @@ class BehaviorEvent:
                 else None
             ),
             event_version=(
-                str(persisted_version)
-                if persisted_version is not None
-                else None
+                str(persisted_version) if persisted_version is not None else None
             ),
             metadata=metadata,
         )
@@ -273,6 +278,9 @@ class ArticleRepresentation:
     subcategory: str | None = None
     title: str | None = None
     abstract: str | None = None
+    published_at: datetime | None = None
+    language: str | None = None
+    language_detector_version: str | None = None
 
     def to_record(self) -> dict[str, Any]:
         return {
@@ -287,6 +295,9 @@ class ArticleRepresentation:
             "subcategory": self.subcategory,
             "title": self.title,
             "abstract": self.abstract,
+            "published_at": self.published_at,
+            "language": self.language,
+            "language_detector_version": self.language_detector_version,
         }
 
 
@@ -327,6 +338,8 @@ class RankingDatasetRow:
     source_format: str
     dataset_scope: Literal["served-impression-reranking"] = DATASET_V2_SCOPE
     audit_request_identity: str = ""
+    declared_topics: tuple[str, ...] = ()
+    declared_topics_observed_at: datetime | None = None
 
     def to_record(self) -> dict[str, Any]:
         return {
@@ -348,6 +361,8 @@ class RankingDatasetRow:
             "model_version": self.model_version,
             "source_format": self.source_format,
             "dataset_scope": self.dataset_scope,
+            "declared_topics": list(self.declared_topics),
+            "declared_topics_observed_at": self.declared_topics_observed_at,
         }
 
 
