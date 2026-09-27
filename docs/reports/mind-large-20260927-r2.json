@@ -1,0 +1,496 @@
+{
+  "schema": "mind-large-finetuning-report-v1",
+  "dataset": {
+    "format": "mind-compact-v1",
+    "sampling": "lowest-sha256-canonical-request-v1",
+    "seed": 20260928,
+    "source_files": {
+      "MINDlarge_train/behaviors.tsv": {
+        "requests": 2232748,
+        "selected": 50000,
+        "sha256": "886505b6e8b753fe6bc2d8988d959c2cb5865d85832829d0ad91fdfb54e17548",
+        "excluded_requests": 0
+      },
+      "MINDlarge_dev/behaviors.tsv": {
+        "requests": 376471,
+        "selected": 10000,
+        "sha256": "7031ced7b8de5183c1bf2c4a303018df8a49d858714597421d9489e571d87b45",
+        "excluded_requests": 2000
+      },
+      "MINDlarge_train/news.tsv": {
+        "sha256": "8d16f3e4df6ac8d8943c5f29e9155d0daf73047f1e41d37133013fe0e19953e9"
+      },
+      "MINDlarge_dev/news.tsv": {
+        "sha256": "03ba5f02160672500bf5f1af6dd18e8f99830a845b08ca9fd9fbbc9bdd72baff"
+      }
+    },
+    "history_limit": 20,
+    "validation_cutoff": "2019-11-14T07:20:59+00:00",
+    "official_dev_is_test": true,
+    "official_test_used": false,
+    "all_selected_candidates_retained": true,
+    "raw_identifiers_exported": false,
+    "history_provenance": "mind-pre-impression-snapshot",
+    "history_timestamps_available": false,
+    "publication_timestamps_available": false,
+    "social_graph_available": false,
+    "language": "en",
+    "scope": "sampled-MINDlarge-news-benchmark",
+    "excluded_test_requests": 2000,
+    "excluded_test_groups_sha256": "041ae6a7bf3905725aa69a01996896f1a8bc9d96d6f453f42c67b6a15514fbd0",
+    "split_counts": {
+      "train": 42401,
+      "validation": 7599,
+      "test": 10000
+    },
+    "excluded_dataset_sha256": [
+      "27083d88215e5aed3f359a5ef2d07de508712ec7db2adc237be7ccb4fe35dd7a"
+    ],
+    "embedding_sha256": "5883b1e3882a2dc28589ba488b62ede16dd5b4d5683d3983d07f23fd5332dcf8"
+  },
+  "training": {
+    "selection_split": "validation",
+    "selection_metric": "ndcg_at_10",
+    "selected": {
+      "learning_rate": 0.001,
+      "epoch": 1,
+      "validation_ndcg_at_10": 0.3422153163332417,
+      "attention_finetuned": true
+    },
+    "trials": [
+      {
+        "learning_rate": 0.001,
+        "epoch": 1,
+        "loss": 1.5762694432666209,
+        "validation": {
+          "mrr": 0.26827289436098445,
+          "first_click_mrr": 0.30861698584259517,
+          "ndcg_at_5": 0.2823584612324175,
+          "ndcg_at_10": 0.3422153163332417,
+          "impression_auc": 0.5866874126814642,
+          "requests": 7599,
+          "candidates": 298907,
+          "auc_eligible_requests": 7599,
+          "coverage_at_5": 0.3247295968534907
+        }
+      },
+      {
+        "learning_rate": 0.001,
+        "epoch": 2,
+        "loss": 1.5724708247828303,
+        "validation": {
+          "mrr": 0.2677527174273097,
+          "first_click_mrr": 0.3077180244111462,
+          "ndcg_at_5": 0.2814915870419095,
+          "ndcg_at_10": 0.3413319009119542,
+          "impression_auc": 0.586316796153153,
+          "requests": 7599,
+          "candidates": 298907,
+          "auc_eligible_requests": 7599,
+          "coverage_at_5": 0.32940019665683384
+        }
+      },
+      {
+        "learning_rate": 0.001,
+        "epoch": 3,
+        "loss": 1.5714535002850565,
+        "validation": {
+          "mrr": 0.2667168826239875,
+          "first_click_mrr": 0.306019518982999,
+          "ndcg_at_5": 0.2795081824909355,
+          "ndcg_at_10": 0.34019012013593974,
+          "impression_auc": 0.585281753886406,
+          "requests": 7599,
+          "candidates": 298907,
+          "auc_eligible_requests": 7599,
+          "coverage_at_5": 0.32940019665683384
+        }
+      },
+      {
+        "learning_rate": 0.001,
+        "epoch": 4,
+        "loss": 1.570836537448863,
+        "validation": {
+          "mrr": 0.2684901062656845,
+          "first_click_mrr": 0.30778623329128857,
+          "ndcg_at_5": 0.28196114577847914,
+          "ndcg_at_10": 0.34186572477890853,
+          "impression_auc": 0.5859630474345565,
+          "requests": 7599,
+          "candidates": 298907,
+          "auc_eligible_requests": 7599,
+          "coverage_at_5": 0.33456243854473944
+        }
+      },
+      {
+        "learning_rate": 0.01,
+        "epoch": 1,
+        "loss": 1.5747842440233673,
+        "validation": {
+          "mrr": 0.26693909362672863,
+          "first_click_mrr": 0.30748744675908324,
+          "ndcg_at_5": 0.2817051772818402,
+          "ndcg_at_10": 0.3407965719031623,
+          "impression_auc": 0.5851118435664392,
+          "requests": 7599,
+          "candidates": 298907,
+          "auc_eligible_requests": 7599,
+          "coverage_at_5": 0.3355457227138643
+        }
+      },
+      {
+        "learning_rate": 0.01,
+        "epoch": 2,
+        "loss": 1.572858934819096,
+        "validation": {
+          "mrr": 0.26401318896728276,
+          "first_click_mrr": 0.30327582490769156,
+          "ndcg_at_5": 0.2783373051490268,
+          "ndcg_at_10": 0.33683543975549646,
+          "impression_auc": 0.5819434073208912,
+          "requests": 7599,
+          "candidates": 298907,
+          "auc_eligible_requests": 7599,
+          "coverage_at_5": 0.32669616519174044
+        }
+      },
+      {
+        "learning_rate": 0.01,
+        "epoch": 3,
+        "loss": 1.5722177423631136,
+        "validation": {
+          "mrr": 0.26559812603756416,
+          "first_click_mrr": 0.3049630916508644,
+          "ndcg_at_5": 0.27966913240181585,
+          "ndcg_at_10": 0.3396589730049748,
+          "impression_auc": 0.5831975057826594,
+          "requests": 7599,
+          "candidates": 298907,
+          "auc_eligible_requests": 7599,
+          "coverage_at_5": 0.33505408062930186
+        }
+      },
+      {
+        "learning_rate": 0.01,
+        "epoch": 4,
+        "loss": 1.5716879983776073,
+        "validation": {
+          "mrr": 0.26626338086660506,
+          "first_click_mrr": 0.3059924538378594,
+          "ndcg_at_5": 0.2798045315180393,
+          "ndcg_at_10": 0.3396597696109441,
+          "impression_auc": 0.5798696140282974,
+          "requests": 7599,
+          "candidates": 298907,
+          "auc_eligible_requests": 7599,
+          "coverage_at_5": 0.3392330383480826
+        }
+      }
+    ],
+    "optimizer": "AdamW",
+    "optimizer_steps": 3912,
+    "training_examples": 62536,
+    "negatives_per_positive": 4,
+    "train_requests": 42401,
+    "validation_requests": 7599,
+    "encoder_frozen": true,
+    "calibration": "positive-temperature-sigmoid",
+    "seed": 20260928,
+    "batch_size": 128,
+    "semantic_baseline_validation": {
+      "mrr": 0.2635161746765254,
+      "first_click_mrr": 0.30133972914310586,
+      "ndcg_at_5": 0.27556431328071396,
+      "ndcg_at_10": 0.3373152081099321,
+      "impression_auc": 0.5823061526167497,
+      "requests": 7599,
+      "candidates": 298907,
+      "auc_eligible_requests": 7599,
+      "coverage_at_5": 0.29891838741396265
+    },
+    "constraints": {
+      "value_projection_frozen": true,
+      "semantic_residual": 0.5,
+      "position_scale": 0.0
+    }
+  },
+  "holdout": {
+    "logged_order": {
+      "mrr": 0.22410718265186005,
+      "first_click_mrr": 0.2510631099292687,
+      "ndcg_at_5": 0.2273348578363003,
+      "ndcg_at_10": 0.29290122835063875,
+      "impression_auc": 0.5059627968649908,
+      "requests": 10000,
+      "candidates": 374285,
+      "auc_eligible_requests": 10000,
+      "coverage_at_5": 0.4414715719063545,
+      "segments": {
+        "cold": {
+          "mrr": 0.25775117307735973,
+          "first_click_mrr": 0.2883905790702845,
+          "ndcg_at_5": 0.2655904091275715,
+          "ndcg_at_10": 0.32862856805153345,
+          "impression_auc": 0.5146834301882266,
+          "requests": 289,
+          "candidates": 10421,
+          "auc_eligible_requests": 289,
+          "coverage_at_5": 0.3041191936897458
+        },
+        "history_1_2": {
+          "mrr": 0.27383620634185646,
+          "first_click_mrr": 0.28626693905867145,
+          "ndcg_at_5": 0.2887135397124867,
+          "ndcg_at_10": 0.34569034007628624,
+          "impression_auc": 0.5030451609343655,
+          "requests": 406,
+          "candidates": 12214,
+          "auc_eligible_requests": 406,
+          "coverage_at_5": 0.3122866894197952
+        },
+        "history_3_plus": {
+          "mrr": 0.22089244897629773,
+          "first_click_mrr": 0.24836774257749106,
+          "ndcg_at_5": 0.2234685924773633,
+          "ndcg_at_10": 0.28948826966883634,
+          "impression_auc": 0.5058192500791143,
+          "requests": 9305,
+          "candidates": 351650,
+          "auc_eligible_requests": 9305,
+          "coverage_at_5": 0.4441565918249856
+        }
+      }
+    },
+    "mean_pool_semantic": {
+      "mrr": 0.27695641315722896,
+      "first_click_mrr": 0.3161590834286346,
+      "ndcg_at_5": 0.29582451015984423,
+      "ndcg_at_10": 0.35662181080889704,
+      "impression_auc": 0.59395179301481,
+      "requests": 10000,
+      "candidates": 374285,
+      "auc_eligible_requests": 10000,
+      "coverage_at_5": 0.3372352285395764,
+      "segments": {
+        "cold": {
+          "mrr": 0.26903976218335923,
+          "first_click_mrr": 0.3038164160132166,
+          "ndcg_at_5": 0.29177773715641975,
+          "ndcg_at_10": 0.34669946943631524,
+          "impression_auc": 0.5244126998755525,
+          "requests": 289,
+          "candidates": 10421,
+          "auc_eligible_requests": 289,
+          "coverage_at_5": 0.17440841367221735
+        },
+        "history_1_2": {
+          "mrr": 0.3225920452978465,
+          "first_click_mrr": 0.3498668800660087,
+          "ndcg_at_5": 0.34210327925345385,
+          "ndcg_at_10": 0.40520071484420533,
+          "impression_auc": 0.5755312765244185,
+          "requests": 406,
+          "candidates": 12214,
+          "auc_eligible_requests": 406,
+          "coverage_at_5": 0.3191126279863481
+        },
+        "history_3_plus": {
+          "mrr": 0.27521109832459684,
+          "first_click_mrr": 0.31507167509422107,
+          "ndcg_at_5": 0.29393094080422727,
+          "ndcg_at_10": 0.35481036767277035,
+          "impression_auc": 0.59691531022194,
+          "requests": 9305,
+          "candidates": 351650,
+          "auc_eligible_requests": 9305,
+          "coverage_at_5": 0.3347725964306275
+        }
+      }
+    },
+    "finetuned_nrms": {
+      "mrr": 0.2871420012608033,
+      "first_click_mrr": 0.3312057547287468,
+      "ndcg_at_5": 0.313775009392826,
+      "ndcg_at_10": 0.37210156966139946,
+      "impression_auc": 0.6018712165010484,
+      "requests": 10000,
+      "candidates": 374285,
+      "auc_eligible_requests": 10000,
+      "coverage_at_5": 0.36399108138238573,
+      "segments": {
+        "cold": {
+          "mrr": 0.26903976218335923,
+          "first_click_mrr": 0.3038164160132166,
+          "ndcg_at_5": 0.29177773715641975,
+          "ndcg_at_10": 0.34669946943631524,
+          "impression_auc": 0.5244126998755525,
+          "requests": 289,
+          "candidates": 10421,
+          "auc_eligible_requests": 289,
+          "coverage_at_5": 0.17440841367221735
+        },
+        "history_1_2": {
+          "mrr": 0.325499411673244,
+          "first_click_mrr": 0.35625513156016697,
+          "ndcg_at_5": 0.3460229564781284,
+          "ndcg_at_10": 0.40932270737647736,
+          "impression_auc": 0.5725937930764728,
+          "requests": 406,
+          "candidates": 12214,
+          "auc_eligible_requests": 406,
+          "coverage_at_5": 0.3199658703071672
+        },
+        "history_3_plus": {
+          "mrr": 0.28603060292291294,
+          "first_click_mrr": 0.3309634626164665,
+          "ndcg_at_5": 0.31305115610531264,
+          "ndcg_at_10": 0.3712664729448737,
+          "impression_auc": 0.6055544131926278,
+          "requests": 9305,
+          "candidates": 351650,
+          "auc_eligible_requests": 9305,
+          "coverage_at_5": 0.36125503742084053
+        }
+      }
+    }
+  },
+  "paired_ndcg_at_10_vs_mean_pool": {
+    "delta": 0.015479758852502409,
+    "ci95": [
+      0.011951714194232235,
+      0.019107625091841392
+    ]
+  },
+  "model_sha256": "e771b05f65e5eff69607d73c74921485f047606127e9f940310522766f5f5123",
+  "release": {
+    "eligible": false,
+    "status": "offline-benchmark-only",
+    "reason": "requires Oecophylla social/Vietnamese holdout and operational gates"
+  },
+  "limitations": [
+    "Sampled requests, not a full MINDlarge benchmark",
+    "English news clicks, no friend graph or Vietnamese interactions",
+    "Official unlabeled test not evaluated",
+    "MRR averages reciprocal ranks of all clicked candidates; first_click_mrr is reported separately",
+    "No publication timestamps or serving-policy validation"
+  ],
+  "protocol": {
+    "scope": "Round 2, declared before final holdout scoring",
+    "code_version": "422ba292137d7301e59c4df51a0be692559eae42",
+    "training_requests_sampled": 50000,
+    "new_holdout_requests": 10000,
+    "seed": 20260928,
+    "excluded_previous_holdout_requests": 2000,
+    "learning_rates": [
+      0.001,
+      0.01
+    ],
+    "max_epochs_per_rate": 12,
+    "patience": 3,
+    "batch_size": 128,
+    "selection": "chronological validation nDCG@10 only, includes untrained semantic baseline",
+    "constraints": {
+      "value_projection": "identity, frozen",
+      "position_scale": 0.0,
+      "semantic_residual": 0.5
+    },
+    "evaluation": "all original candidates; paired request bootstrap; MIND MRR; cold and short-history segments",
+    "production_promotion": false
+  },
+  "local_serving_check": {
+    "model_version": "mind-large-20260927-r2-nrms",
+    "candidates": 300,
+    "history": 20,
+    "offline_serving_max_absolute_error": 0.0,
+    "shadow_preserves_display_scores": true,
+    "prediction_ms_p50": 2.611416501167696,
+    "prediction_ms_p95": 2.641812653746456,
+    "scope": "local predictor only; excludes database, network, embedding generation and full API latency"
+  },
+  "synthetic_multilingual_smoke": {
+    "purpose": "Synthetic relevance smoke checks, not training data or a quality benchmark",
+    "passed": 7,
+    "total": 7,
+    "cases": [
+      {
+        "name": "vi-programming",
+        "passed": true,
+        "order": [
+          "friend-python",
+          "news-ai",
+          "friend-food",
+          "news-football"
+        ]
+      },
+      {
+        "name": "vi-football",
+        "passed": true,
+        "order": [
+          "news-football",
+          "friend-food",
+          "friend-python",
+          "news-ai"
+        ]
+      },
+      {
+        "name": "vi-cooking",
+        "passed": true,
+        "order": [
+          "friend-food",
+          "friend-python",
+          "news-ai",
+          "news-football"
+        ]
+      },
+      {
+        "name": "vi-cold-interests",
+        "passed": true,
+        "order": [
+          "news-ai",
+          "friend-python",
+          "friend-food",
+          "news-football"
+        ]
+      },
+      {
+        "name": "en-programming",
+        "passed": true,
+        "order": [
+          "news-ai",
+          "friend-python",
+          "friend-food",
+          "news-football"
+        ]
+      },
+      {
+        "name": "en-football",
+        "passed": true,
+        "order": [
+          "news-football",
+          "friend-python",
+          "friend-food",
+          "news-ai"
+        ]
+      },
+      {
+        "name": "en-cooking",
+        "passed": true,
+        "order": [
+          "friend-food",
+          "friend-python",
+          "news-football",
+          "news-ai"
+        ]
+      }
+    ]
+  },
+  "artifact": "artifacts/models/mind-large-20260927-r2/model",
+  "benchmark_decision": "improved over semantic baseline on a fresh holdout; production gates remain open",
+  "verification": {
+    "api_tests_passed": 87,
+    "api_tests_skipped": 1,
+    "training_data_module_coverage_percent": 92.29,
+    "original_checkout_changes": "preserved; work performed in isolated worktree",
+    "ai_tests_passed": 151
+  }
+}

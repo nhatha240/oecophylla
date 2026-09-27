@@ -6,7 +6,14 @@ Oecophylla currently runs a heuristic recommendation system with an ML experimen
 
 ## MINDlarge run (2026-09-27)
 
-The supplied local MINDlarge files were sampled into 8,497 training, 1,503 validation,
+Round 2 improves over the semantic baseline on 10,000 fresh requests: AUC 0.601871
+versus 0.593952 and nDCG@10 0.372102 versus 0.356622, with a positive paired 95%
+interval. The constrained model also passes seven synthetic English/Vietnamese
+relevance examples and the local API shadow loader. See [round 2 evidence and
+usage](MIND_LARGE_R2_20260927.md). This is offline progress; production readiness
+remains INCONCLUSIVE pending real social/Vietnamese data and operational gates.
+
+The first run sampled the supplied local MINDlarge files into 8,497 training, 1,503 validation,
 and 2,000 held-out requests. A multilingual embedding/attention-head experiment
 completed, but the fine-tuned candidate did not beat the semantic mean-pool baseline
 and failed the synthetic Vietnamese relevance smoke check. Both artifacts and a

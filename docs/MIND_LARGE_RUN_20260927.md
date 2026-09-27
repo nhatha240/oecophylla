@@ -1,5 +1,8 @@
 # MINDlarge training and recommendation check — 2026-09-27
 
+This records the initial run. See [round 2](MIND_LARGE_R2_20260927.md) for the later
+constrained model that improves on a fresh holdout and passes the relevance examples.
+
 The supplied `data _train ` directory was used to run real article encoding,
 attention-head fine-tuning, held-out evaluation, artifact loading, and a Vietnamese
 text recommendation example. **The fine-tuned candidate is not approved for
