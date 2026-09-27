@@ -135,6 +135,7 @@ class NRMSArchitecture:
     attention_heads: int
     history_length: int
     seed: int
+    position_scale: float = 1.0
 
     def __post_init__(self) -> None:
         if self.embedding_dimension <= 0:
@@ -145,6 +146,8 @@ class NRMSArchitecture:
             raise ValueError("embedding_dimension must be divisible by attention_heads")
         if self.history_length < 0:
             raise ValueError("history_length must not be negative")
+        if not np.isfinite(self.position_scale) or self.position_scale < 0:
+            raise ValueError("position_scale must be finite and non-negative")
 
     @property
     def head_dimension(self) -> int:
@@ -218,7 +221,7 @@ class NRMSLikeRanker:
     ) -> tuple[np.ndarray, dict[str, Any]]:
         matrix = np.asarray(embeddings, dtype=float)
         length = matrix.shape[0]
-        positioned = matrix + _sinusoidal_positions(
+        positioned = matrix + self.architecture.position_scale * _sinusoidal_positions(
             length, self.architecture.embedding_dimension
         )
         head_dimension = self.architecture.head_dimension
