@@ -1,0 +1,13 @@
+{
+  "history": [
+    "Tôi đang học lập trình Python và xây dựng mô hình học máy để gợi ý nội dung.",
+    "Các kỹ thuật xử lý ngôn ngữ tự nhiên và trí tuệ nhân tạo cho ứng dụng tiếng Việt."
+  ],
+  "interests": ["lập trình", "trí tuệ nhân tạo"],
+  "candidates": [
+    {"id": "friend-python", "source": "following", "text": "Mình vừa hoàn thành dự án Python đầu tiên: xây dựng hệ thống gợi ý bài viết bằng học máy."},
+    {"id": "news-ai", "source": "news", "text": "Nghiên cứu mới về mô hình ngôn ngữ đa ngôn ngữ giúp cải thiện khả năng hiểu tiếng Việt của trí tuệ nhân tạo."},
+    {"id": "friend-food", "source": "following", "text": "Cuối tuần mình thử làm bánh mì tại nhà. Đây là công thức và những bức ảnh món ăn."},
+    {"id": "news-football", "source": "news", "text": "Kết quả bóng đá: đội tuyển giành chiến thắng trong trận chung kết sau loạt sút luân lưu."}
+  ]
+}
