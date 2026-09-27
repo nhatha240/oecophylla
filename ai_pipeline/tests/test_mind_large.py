@@ -42,6 +42,29 @@ def test_streamed_sampling_is_deterministic_and_preserves_candidates(tmp_path):
     assert all(row[4] == "N2-1 N3-0" for row in first)
 
 
+def test_new_holdout_excludes_all_previously_evaluated_requests(tmp_path):
+    write_source(tmp_path, "MINDlarge_train", 10)
+    write_source(tmp_path, "MINDlarge_dev", 15)
+    previous = mind_large.prepare_dataset(tmp_path, train_requests=12, test_requests=4, seed=7, salt="secret")
+    excluded = {r["request_group"] for r in previous["requests"] if r["split"] == "test"}
+    current = mind_large.prepare_dataset(tmp_path, train_requests=12, test_requests=4, seed=7, salt="secret", exclude_test_requests=excluded)
+    actual = {r["request_group"] for r in current["requests"] if r["split"] == "test"}
+    assert len(actual) == 4 and actual.isdisjoint(excluded)
+    assert current["metadata"]["excluded_test_requests"] == 4
+    assert current["metadata"]["source_files"]["MINDlarge_dev/behaviors.tsv"]["excluded_requests"] == 4
+    with pytest.raises(ValueError, match="exclusion"):
+        mind_large.prepare_dataset(tmp_path, train_requests=12, test_requests=4, seed=7, salt="different-salt", exclude_test_requests=excluded)
+
+
+def test_exclusion_cannot_return_a_short_holdout(tmp_path):
+    write_source(tmp_path, "MINDlarge_train", 10)
+    write_source(tmp_path, "MINDlarge_dev", 15)
+    previous = mind_large.prepare_dataset(tmp_path, train_requests=12, test_requests=12, seed=7, salt="secret")
+    excluded = {r["request_group"] for r in previous["requests"] if r["split"] == "test"}
+    with pytest.raises(ValueError, match="available"):
+        mind_large.prepare_dataset(tmp_path, train_requests=12, test_requests=1, seed=7, salt="secret", exclude_test_requests=excluded)
+
+
 def test_compact_dataset_is_private_and_temporal_without_test_labels(tmp_path):
     write_source(tmp_path, "MINDlarge_train", 10)
     write_source(tmp_path, "MINDlarge_dev", 15)
