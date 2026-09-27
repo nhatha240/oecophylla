@@ -92,3 +92,12 @@ def test_embedding_cache_is_bound_to_text_and_encoder(tmp_path):
 def test_invalid_embeddings_are_rejected(tmp_path):
     with pytest.raises(ValueError, match="embedding"):
         mind_large.cached_embeddings([{"text": "hello"}], tmp_path / "bad.npz", encode=lambda _: [[float("nan"), 0]], encoder_version="v1", dimension=2)
+
+
+def test_prepare_cli_creates_private_salt_and_resumable_dataset(tmp_path):
+    write_source(tmp_path, "MINDlarge_train", 10)
+    write_source(tmp_path, "MINDlarge_dev", 15)
+    output = tmp_path / "output"
+    assert mind_large.main(["--stage", "prepare", "--data-dir", str(tmp_path), "--output", str(output), "--train-requests", "12", "--test-requests", "6"]) == 0
+    assert (output / "identity-salt").stat().st_mode & 0o777 == 0o600
+    assert json.loads((output / "dataset.json").read_text())["metadata"]["split_counts"]["test"] == 6
