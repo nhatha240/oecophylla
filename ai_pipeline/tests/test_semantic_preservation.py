@@ -1,4 +1,3 @@
-from dataclasses import replace
 import json
 
 import numpy as np
@@ -7,12 +6,20 @@ import pytest
 torch = pytest.importorskip("torch")
 
 from ai_pipeline.artifact import ArtifactIntegrityError, load_artifact
-from ai_pipeline.finetune import TorchNRMS, export_artifact, fit, history_batch, initialize_ranker
+from ai_pipeline.finetune import (
+    TorchNRMS,
+    export_artifact,
+    fit,
+    history_batch,
+    initialize_ranker,
+)
 from ai_pipeline.model import NRMSArchitecture, NRMSLikeRanker
 
 
 def test_residual_encoder_and_backward_match_torch_serving_contract():
-    architecture = NRMSArchitecture(8, 2, 4, 7, position_scale=0.02, semantic_residual=0.5)
+    architecture = NRMSArchitecture(
+        8, 2, 4, 7, position_scale=0.02, semantic_residual=0.5
+    )
     ranker = NRMSLikeRanker.initialize(architecture)
     history = np.eye(8)[:3]
     batch, mask = history_batch([history], dimension=8, device="cpu")
@@ -22,7 +29,11 @@ def test_residual_encoder_and_backward_match_torch_serving_contract():
     (output * torch.tensor(gradient, dtype=torch.float32)).sum().backward()
     expected, cache = ranker._forward_history(history)
     np.testing.assert_allclose(output.detach().numpy()[0], expected, atol=1e-6)
-    for actual, wanted in zip(ranker._backward_history(cache, gradient), [model.query.grad, model.key.grad, model.value.grad], strict=True):
+    for actual, wanted in zip(
+        ranker._backward_history(cache, gradient),
+        [model.query.grad, model.key.grad, model.value.grad],
+        strict=True,
+    ):
         np.testing.assert_allclose(actual, wanted.numpy(), atol=1e-6)
 
 
@@ -50,18 +61,54 @@ def test_frozen_values_do_not_receive_updates_and_single_history_keeps_meaning()
     optimizer.step()
     exported = model.export()
     np.testing.assert_array_equal(exported.value_projection, ranker.value_projection)
-    np.testing.assert_allclose(exported.encode_history(np.eye(8)[2:3]), np.eye(8)[2], atol=1e-7)
+    np.testing.assert_allclose(
+        exported.encode_history(np.eye(8)[2:3]), np.eye(8)[2], atol=1e-7
+    )
 
 
 def test_semantic_tuning_considers_untrained_baseline_and_records_constraints(tmp_path):
-    rows = lambda split: [dict(split=split, request_group=f"{split}-{i}", served_at="2019-11-10T00:00:00+00:00" if split == "train" else "2019-11-11T00:00:00+00:00", history=[0, 1], candidates=[0, 2], labels=[1, 0]) for i in range(8)]
-    ranker, report = fit(rows("train"), rows("validation"), np.eye(8, dtype=np.float32), epochs=1, learning_rates=[0.01], freeze_values=True, semantic_residual=0.5, position_scale=0)
+    rows = lambda split: [
+        {
+            "split": split,
+            "request_group": f"{split}-{i}",
+            "served_at": "2019-11-10T00:00:00+00:00"
+            if split == "train"
+            else "2019-11-11T00:00:00+00:00",
+            "history": [0, 1],
+            "candidates": [0, 2],
+            "labels": [1, 0],
+        }
+        for i in range(8)
+    ]
+    ranker, report = fit(
+        rows("train"),
+        rows("validation"),
+        np.eye(8, dtype=np.float32),
+        epochs=1,
+        learning_rates=[0.01],
+        freeze_values=True,
+        semantic_residual=0.5,
+        position_scale=0,
+    )
     assert report["constraints"]["value_projection_frozen"] is True
-    assert report["selected"]["validation_ndcg_at_10"] >= report["semantic_baseline_validation"]["ndcg_at_10"]
-    export_artifact(ranker, tmp_path / "model", training_report=report, dataset_metadata={}, dataset_sha256="a" * 64, encoder_version="fixture")
+    assert (
+        report["selected"]["validation_ndcg_at_10"]
+        >= report["semantic_baseline_validation"]["ndcg_at_10"]
+    )
+    export_artifact(
+        ranker,
+        tmp_path / "model",
+        training_report=report,
+        dataset_metadata={},
+        dataset_sha256="a" * 64,
+        encoder_version="fixture",
+    )
     manifest_path = tmp_path / "model" / "manifest.json"
     loaded = load_artifact(tmp_path / "model")
-    assert loaded.ranker.architecture.semantic_residual == ranker.architecture.semantic_residual
+    assert (
+        loaded.ranker.architecture.semantic_residual
+        == ranker.architecture.semantic_residual
+    )
     manifest = json.loads(manifest_path.read_text())
     manifest["architecture"]["semantic_residual"] = 0.9
     manifest_path.write_text(json.dumps(manifest))
@@ -71,4 +118,10 @@ def test_semantic_tuning_considers_untrained_baseline_and_records_constraints(tm
 
 def test_semantic_constraints_reject_position_noise():
     with pytest.raises(ValueError, match="position_scale"):
-        fit([dict(split="train", request_group="a")], [dict(split="validation", request_group="b")], np.eye(8), freeze_values=True, position_scale=1)
+        fit(
+            [{"split": "train", "request_group": "a"}],
+            [{"split": "validation", "request_group": "b"}],
+            np.eye(8),
+            freeze_values=True,
+            position_scale=1,
+        )

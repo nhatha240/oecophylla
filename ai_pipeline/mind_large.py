@@ -22,19 +22,23 @@ from .artifact import sha256_file
 from .mind_adapter import _parse_timestamp, _private_id
 
 
-def sample_behaviors(path: Path, *, limit: int, seed: int):
+def sample_behaviors(path: Path, *, limit: int, seed: int, exclude=None):
     """Keep the lowest request hashes in O(limit) memory; never sample by label."""
     if limit < 1:
         raise ValueError("request limit must be positive")
     digest = hashlib.sha256()
     heap = []
     count = 0
+    excluded = 0
     with path.open("rb") as handle:
         for count, line in enumerate(handle, 1):
             digest.update(line)
             fields = line.rstrip(b"\r\n").split(b"\t")
             if len(fields) != 5:
                 raise ValueError(f"malformed behavior at line {count}")
+            if exclude is not None and exclude(fields):
+                excluded += 1
+                continue
             priority = int.from_bytes(
                 hashlib.sha256(
                     str(seed).encode() + b":" + fields[1] + b":" + fields[0]
@@ -45,8 +49,10 @@ def sample_behaviors(path: Path, *, limit: int, seed: int):
                 heapq.heappush(heap, item)
             elif item > heap[0]:
                 heapq.heapreplace(heap, item)
-    if count < limit:
-        raise ValueError(f"requested {limit} requests, but only {count} are available")
+    if count - excluded < limit:
+        raise ValueError(
+            f"requested {limit} requests, but only {count - excluded} are available"
+        )
     rows = [
         line.decode("utf-8").rstrip("\r\n").split("\t")
         for _, line in sorted(heap, reverse=True)
@@ -55,6 +61,7 @@ def sample_behaviors(path: Path, *, limit: int, seed: int):
         "requests": count,
         "selected": len(rows),
         "sha256": digest.hexdigest(),
+        "excluded_requests": excluded,
     }
 
 
@@ -66,6 +73,7 @@ def prepare_dataset(
     seed: int,
     salt: str,
     history_limit: int = 20,
+    exclude_test_requests: set[str] | None = None,
 ):
     if not salt or history_limit < 1:
         raise ValueError("salt and a positive history limit are required")
@@ -73,14 +81,29 @@ def prepare_dataset(
     audit = {}
     needed = set()
     seen = set()
+    excluded = exclude_test_requests or set()
     for source, limit in (
         ("MINDlarge_train", train_requests),
         ("MINDlarge_dev", test_requests),
     ):
         path = data_dir / source / "behaviors.tsv"
+
+        def exclude(fields, source=source):
+            identity = f"{source}:{fields[1].decode()}:{fields[0].decode()}"
+            return _private_id(salt, "mind-request", identity) in excluded
+
         selected, audit[f"{source}/behaviors.tsv"] = sample_behaviors(
-            path, limit=limit, seed=seed
+            path,
+            limit=limit,
+            seed=seed,
+            exclude=exclude if source == "MINDlarge_dev" and excluded else None,
         )
+        if source == "MINDlarge_dev" and audit[f"{source}/behaviors.tsv"][
+            "excluded_requests"
+        ] != len(excluded):
+            raise ValueError(
+                "holdout exclusion mismatch: verify source data and identity salt"
+            )
         parsed = []
         for impression, user, when, history, candidates in selected:
             identity = f"{source}:{user}:{impression}"
@@ -180,6 +203,10 @@ def prepare_dataset(
             "social_graph_available": False,
             "language": "en",
             "scope": "sampled-MINDlarge-news-benchmark",
+            "excluded_test_requests": len(excluded),
+            "excluded_test_groups_sha256": hashlib.sha256(
+                "\n".join(sorted(excluded)).encode()
+            ).hexdigest(),
             "split_counts": {
                 s: sum(r["split"] == s for r in requests)
                 for s in ("train", "validation", "test")
@@ -233,6 +260,18 @@ def main(argv=None):
     parser.add_argument("--seed", type=int, default=20260927)
     parser.add_argument("--history-limit", type=int, default=20)
     parser.add_argument(
+        "--exclude-holdout",
+        type=Path,
+        action="append",
+        default=[],
+        help="Prior dataset.json whose test requests must be excluded; adjacent identity-salt must be present and shared across prior runs.",
+    )
+    parser.add_argument(
+        "--preserve-semantics",
+        action="store_true",
+        help="Freeze identity value projections, remove position noise, and retain half the mean-pool semantic vector.",
+    )
+    parser.add_argument(
         "--device",
         choices=("cpu", "mps", "cuda"),
         default="cpu",
@@ -256,11 +295,36 @@ def main(argv=None):
         if dataset_path.exists():
             parser.error("dataset already exists; resume with --stage encode or train")
         salt_path = args.output / "identity-salt"
+        excluded = set()
+        source_salt = None
+        exclusions = []
+        for previous_path in args.exclude_holdout:
+            previous = json.loads(previous_path.read_text())
+            if not previous["metadata"].get("official_dev_is_test"):
+                parser.error("excluded datasets must use official dev as holdout")
+            prior_salt = (previous_path.parent / "identity-salt").read_text().strip()
+            if not prior_salt or (
+                source_salt is not None and prior_salt != source_salt
+            ):
+                parser.error(
+                    "excluded datasets must share the same nonempty identity salt"
+                )
+            source_salt = prior_salt
+            excluded.update(
+                r["request_group"] for r in previous["requests"] if r["split"] == "test"
+            )
+            exclusions.append(sha256_file(previous_path))
+        if (
+            source_salt
+            and salt_path.exists()
+            and salt_path.read_text().strip() != source_salt
+        ):
+            parser.error("output salt does not match excluded datasets")
         if not salt_path.exists():
             with open(
                 salt_path, "x", opener=lambda p, flags: os.open(p, flags, 0o600)
             ) as handle:
-                handle.write(secrets.token_hex(32))
+                handle.write(source_salt or secrets.token_hex(32))
         data = prepare_dataset(
             args.data_dir,
             train_requests=args.train_requests,
@@ -268,7 +332,9 @@ def main(argv=None):
             seed=args.seed,
             salt=salt_path.read_text().strip(),
             history_limit=args.history_limit,
+            exclude_test_requests=excluded,
         )
+        data["metadata"]["excluded_dataset_sha256"] = exclusions
         dataset_path.write_text(json.dumps(data, ensure_ascii=False))
         print(
             json.dumps(
@@ -340,6 +406,11 @@ def main(argv=None):
         learning_rates=args.learning_rates,
         batch_size=args.batch_size,
         seed=args.seed,
+        **(
+            {"freeze_values": True, "position_scale": 0.0, "semantic_residual": 0.5}
+            if args.preserve_semantics
+            else {}
+        ),
     )
     return 0
 

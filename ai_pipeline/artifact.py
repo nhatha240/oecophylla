@@ -97,6 +97,8 @@ def load_artifact(directory: Path) -> LoadedArtifact | LoadedNRMSArtifact:
         # Old artifacts use the original unit-scale positions implicitly.
         if architecture.position_scale != 1.0 or "position_scale" in manifest.get("architecture", {}):
             expected_architecture["position_scale"] = architecture.position_scale
+        if architecture.semantic_residual != 0.0 or "semantic_residual" in manifest.get("architecture", {}):
+            expected_architecture["semantic_residual"] = architecture.semantic_residual
         if manifest.get("architecture") != expected_architecture:
             raise ArtifactIntegrityError(
                 "NRMS manifest architecture does not match model payload"

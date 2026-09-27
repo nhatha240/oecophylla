@@ -136,6 +136,7 @@ class NRMSArchitecture:
     history_length: int
     seed: int
     position_scale: float = 1.0
+    semantic_residual: float = 0.0
 
     def __post_init__(self) -> None:
         if self.embedding_dimension <= 0:
@@ -148,6 +149,8 @@ class NRMSArchitecture:
             raise ValueError("history_length must not be negative")
         if not np.isfinite(self.position_scale) or self.position_scale < 0:
             raise ValueError("position_scale must be finite and non-negative")
+        if not np.isfinite(self.semantic_residual) or not 0 <= self.semantic_residual <= 1:
+            raise ValueError("semantic_residual must be finite and between zero and one")
 
     @property
     def head_dimension(self) -> int:
@@ -241,7 +244,8 @@ class NRMSLikeRanker:
                 {"query": query, "key": key, "value": value, "attention": attention}
             )
         concatenated = np.concatenate(head_outputs, axis=-1)
-        user_vector = concatenated.mean(axis=0)
+        residual = self.architecture.semantic_residual
+        user_vector = (1 - residual) * concatenated.mean(axis=0) + residual * matrix.mean(axis=0)
         cache = {"positioned": positioned, "heads": head_cache, "length": length}
         return user_vector, cache
 
@@ -254,7 +258,7 @@ class NRMSLikeRanker:
         grad_query = np.zeros_like(self.query_projection)
         grad_key = np.zeros_like(self.key_projection)
         grad_value = np.zeros_like(self.value_projection)
-        grad_concatenated = np.tile(grad_user / length, (length, 1))
+        grad_concatenated = np.tile((1 - self.architecture.semantic_residual) * grad_user / length, (length, 1))
         for head, head_cache in enumerate(cache["heads"]):
             grad_context = grad_concatenated[
                 :, head * head_dimension : (head + 1) * head_dimension

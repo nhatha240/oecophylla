@@ -48,7 +48,7 @@ def history_batch(histories, *, dimension, device):
 
 
 class TorchNRMS(nn.Module):
-    def __init__(self, ranker):
+    def __init__(self, ranker, *, freeze_values=False):
         super().__init__()
         self.original = ranker
         self.query = nn.Parameter(
@@ -58,7 +58,8 @@ class TorchNRMS(nn.Module):
             torch.tensor(ranker.key_projection, dtype=torch.float32)
         )
         self.value = nn.Parameter(
-            torch.tensor(ranker.value_projection, dtype=torch.float32)
+            torch.tensor(ranker.value_projection, dtype=torch.float32),
+            requires_grad=not freeze_values,
         )
         popular = ranker.popular_embedding
         if popular is None:
@@ -82,6 +83,11 @@ class TorchNRMS(nn.Module):
         pooled = (context * mask[:, :, None]).sum(dim=1) / mask.sum(
             dim=1, keepdim=True
         ).clamp(min=1)
+        semantic = (history * mask[:, :, None]).sum(dim=1) / mask.sum(
+            dim=1, keepdim=True
+        ).clamp(min=1)
+        residual = self.original.architecture.semantic_residual
+        pooled = (1 - residual) * pooled + residual * semantic
         return torch.where(mask.any(dim=1, keepdim=True), pooled, self.popular[None, :])
 
     def export(self):
@@ -198,8 +204,12 @@ def fit(
     history_limit=20,
     position_scale=0.02,
     patience=3,
+    freeze_values=False,
+    semantic_residual=0.0,
 ):
     _validate_splits(train, validation)
+    if freeze_values and position_scale != 0:
+        raise ValueError("frozen semantic values require position_scale=0")
     if (
         epochs < 1
         or batch_size < 1
@@ -230,19 +240,36 @@ def fit(
     popular = vectors[positive_ids].mean(axis=0)
     dimension = vectors.shape[1]
     architecture = NRMSArchitecture(
-        dimension, 2 if dimension % 2 == 0 else 1, history_limit, seed, position_scale
+        dimension,
+        2 if dimension % 2 == 0 else 1,
+        history_limit,
+        seed,
+        position_scale,
+        semantic_residual,
     )
     initial = initialize_ranker(architecture, popular)
     best = initial
     best_score = metrics(
         validation, score_requests(initial, validation, vectors), segments=False
     )["ndcg_at_10"]
-    selected = {"learning_rate": None, "epoch": 0, "validation_ndcg_at_10": best_score}
+    semantic_baseline = metrics(
+        validation, mean_pool_scores(validation, vectors, popular), segments=False
+    )
+    if freeze_values:
+        # The untrained semantic baseline is a first-class validation candidate.
+        best = initialize_ranker(replace(architecture, position_scale=0.0), popular)
+        best_score = semantic_baseline["ndcg_at_10"]
+    selected = {
+        "learning_rate": None,
+        "epoch": 0,
+        "validation_ndcg_at_10": best_score,
+        "attention_finetuned": False,
+    }
     trials = []
     steps = 0
     for rate in learning_rates:
         rng = np.random.default_rng(seed)
-        model = TorchNRMS(initial)
+        model = TorchNRMS(initial, freeze_values=freeze_values)
         optimizer = torch.optim.AdamW(model.parameters(), lr=rate, weight_decay=0.01)
         trial_best = -float("inf")
         stale = 0
@@ -309,6 +336,7 @@ def fit(
                     "learning_rate": rate,
                     "epoch": epoch,
                     "validation_ndcg_at_10": score,
+                    "attention_finetuned": True,
                 }
             if score > trial_best:
                 trial_best, stale = score, 0
@@ -350,6 +378,12 @@ def fit(
         "calibration": "positive-temperature-sigmoid",
         "seed": seed,
         "batch_size": batch_size,
+        "semantic_baseline_validation": semantic_baseline,
+        "constraints": {
+            "value_projection_frozen": freeze_values,
+            "semantic_residual": semantic_residual,
+            "position_scale": position_scale,
+        },
     }
 
 
@@ -378,6 +412,7 @@ def export_artifact(
             "attention_heads": architecture.attention_heads,
             "history_length": architecture.history_length,
             "position_scale": architecture.position_scale,
+            "semantic_residual": architecture.semantic_residual,
         },
         "embedding": {
             "version": encoder_version,
