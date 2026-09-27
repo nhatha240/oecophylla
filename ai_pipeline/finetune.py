@@ -368,7 +368,9 @@ def export_artifact(
     manifest = {
         "artifact_schema_version": ARTIFACT_SCHEMA_VERSION,
         "model_type": NRMS_MODEL_TYPE,
-        "model_version": output.name,
+        "model_version": (
+            f"{output.parent.name}-nrms" if output.name == "model" else output.name
+        ),
         "dataset_schema_version": "recommendation-dataset-v2",
         "seed": architecture.seed,
         "architecture": {
