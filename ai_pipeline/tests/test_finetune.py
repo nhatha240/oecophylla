@@ -120,3 +120,38 @@ def test_metrics_include_mind_mrr_and_cold_start_segments():
     assert report["first_click_mrr"] == 1
     assert report["impression_auc"] == 0.5
     assert report["segments"]["cold"]["requests"] == 1
+
+
+def test_experiment_writes_bound_report_and_prevents_overwrite(tmp_path):
+    data = {
+        "requests": toy_requests("train")
+        + toy_requests("validation")
+        + toy_requests("test"),
+        "metadata": {"history_limit": 4},
+    }
+    kwargs = {
+        "dataset_sha256": "a" * 64,
+        "embedding_sha256": "b" * 64,
+        "epochs": 1,
+        "learning_rates": [0.01],
+        "batch_size": 4,
+        "seed": 7,
+    }
+    report = finetune.run_experiment(
+        data, np.eye(8, dtype=np.float32), tmp_path, **kwargs
+    )
+    artifact = load_artifact(tmp_path / "model")
+    assert artifact.manifest["model_version"] == f"{tmp_path.name}-nrms"
+    assert (
+        report["model_sha256"] == artifact.manifest["files"]["model.joblib"]["sha256"]
+    )
+    assert report["release"]["eligible"] is False
+    assert report["holdout"]["finetuned_nrms"]["requests"] == 8
+    assert (
+        json.loads((tmp_path / "report.json").read_text())["training"][
+            "selection_split"
+        ]
+        == "validation"
+    )
+    with pytest.raises(FileExistsError):
+        finetune.run_experiment(data, np.eye(8, dtype=np.float32), tmp_path, **kwargs)

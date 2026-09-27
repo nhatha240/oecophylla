@@ -69,3 +69,53 @@ def test_candidate_validation_and_encoder_contract():
             {"candidates": [{"id": "1", "text": "x"}]},
             encode=lambda _: np.ones((1, 8)),
         )
+
+
+def test_cli_checks_artifact_encoder_and_writes_recommendations(tmp_path, monkeypatch):
+    import json
+    from types import SimpleNamespace
+
+    from ai_pipeline.artifact import LoadedNRMSArtifact
+    from workers.nlp_worker.app import model
+    from workers.nlp_worker.app.content_features import ENCODER_VERSION
+
+    ranker = NRMSLikeRanker.initialize(
+        NRMSArchitecture(384, 2, 4, 7), popular_embedding=np.eye(384)[0]
+    )
+    manifest = {
+        "model_version": "test",
+        "embedding": {"version": ENCODER_VERSION, "dimension": 384},
+    }
+    monkeypatch.setattr(
+        recommend, "load_artifact", lambda _: LoadedNRMSArtifact(ranker, manifest)
+    )
+
+    def encode(texts, **kwargs):
+        assert all(text.startswith("passage: ") for text in texts)
+        return np.array([np.eye(384)[0] for _ in texts])
+
+    monkeypatch.setattr(
+        model,
+        "PinnedSentenceEncoder",
+        lambda *args, **kwargs: SimpleNamespace(
+            _load=lambda: SimpleNamespace(encode=encode)
+        ),
+    )
+    source = tmp_path / "input.json"
+    source.write_text(json.dumps({"candidates": [{"id": "1", "text": "example"}]}))
+    output = tmp_path / "out.json"
+    args = [
+        "--artifact",
+        str(tmp_path),
+        "--model-dir",
+        str(tmp_path),
+        "--input",
+        str(source),
+        "--output",
+        str(output),
+    ]
+    assert recommend.main(args) == 0
+    assert json.loads(output.read_text())["based_on"] == "popular_articles"
+    manifest["embedding"]["version"] = "wrong"
+    with pytest.raises(SystemExit):
+        recommend.main(args)
