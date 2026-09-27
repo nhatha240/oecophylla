@@ -4,6 +4,15 @@ Release decision: INCONCLUSIVE
 
 Oecophylla currently runs a heuristic recommendation system with an ML experimentation pipeline. The ML and shadow serving paths are implemented, but ML is not approved as the production default because this checkout does not contain enough real temporal holdout evidence or a live end-to-end telemetry trace.
 
+## MINDlarge run (2026-09-27)
+
+The supplied local MINDlarge files were sampled into 8,497 training, 1,503 validation,
+and 2,000 held-out requests. A multilingual embedding/attention-head experiment
+completed, but the fine-tuned candidate did not beat the semantic mean-pool baseline
+and failed the synthetic Vietnamese relevance smoke check. Both artifacts and a
+local text recommendation interface are available. Neither is approved for production;
+the heuristic default is unchanged. See [the run report and commands](MIND_LARGE_RUN_20260927.md).
+
 ## MIND pilot and completion work (2026-09-09)
 
 See [MIND completion evidence](MIND_COMPLETION_20260909.md) for the isolated
