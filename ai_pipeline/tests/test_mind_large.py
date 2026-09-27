@@ -229,3 +229,80 @@ def test_prepare_cli_creates_private_salt_and_resumable_dataset(tmp_path):
         ]
         == 6
     )
+
+
+def test_prepare_cli_copies_private_identity_salt_and_records_exclusion(tmp_path):
+    write_source(tmp_path, "MINDlarge_train", 10)
+    write_source(tmp_path, "MINDlarge_dev", 15)
+    previous, current = tmp_path / "previous", tmp_path / "current"
+    args = [
+        "--stage",
+        "prepare",
+        "--data-dir",
+        str(tmp_path),
+        "--train-requests",
+        "12",
+        "--test-requests",
+        "4",
+    ]
+    assert mind_large.main([*args, "--output", str(previous)]) == 0
+    prior_bytes = (previous / "dataset.json").read_bytes()
+    assert (
+        mind_large.main(
+            [
+                *args,
+                "--output",
+                str(current),
+                "--exclude-holdout",
+                str(previous / "dataset.json"),
+            ]
+        )
+        == 0
+    )
+    assert (previous / "dataset.json").read_bytes() == prior_bytes
+    assert (current / "identity-salt").read_bytes() == (
+        previous / "identity-salt"
+    ).read_bytes()
+    assert (current / "identity-salt").stat().st_mode & 0o777 == 0o600
+    result = json.loads((current / "dataset.json").read_text())
+    assert result["metadata"]["excluded_test_requests"] == 4
+    assert len(result["metadata"]["excluded_dataset_sha256"]) == 1
+    conflicting = tmp_path / "conflicting"
+    conflicting.mkdir()
+    (conflicting / "identity-salt").write_text("different")
+    with pytest.raises(SystemExit):
+        mind_large.main(
+            [
+                *args,
+                "--output",
+                str(conflicting),
+                "--exclude-holdout",
+                str(previous / "dataset.json"),
+            ]
+        )
+
+
+@pytest.mark.parametrize("preserve", [False, True])
+def test_train_cli_passes_semantic_constraints_without_changing_legacy_defaults(
+    tmp_path, monkeypatch, preserve
+):
+    pytest.importorskip("torch")
+    from ai_pipeline import finetune
+
+    (tmp_path / "dataset.json").write_text(
+        json.dumps({"articles": [], "requests": [], "metadata": {}})
+    )
+    (tmp_path / "embeddings.npz").write_bytes(b"fixture")
+    monkeypatch.setattr(
+        mind_large, "cached_embeddings", lambda *args, **kwargs: np.eye(384)
+    )
+    calls = []
+    monkeypatch.setattr(
+        finetune, "run_experiment", lambda *args, **kwargs: calls.append(kwargs)
+    )
+    args = ["--stage", "train", "--output", str(tmp_path)]
+    assert mind_large.main(args + (["--preserve-semantics"] if preserve else [])) == 0
+    assert calls[0].get("freeze_values", False) is preserve
+    if preserve:
+        assert calls[0]["position_scale"] == 0
+        assert calls[0]["semantic_residual"] == 0.5
