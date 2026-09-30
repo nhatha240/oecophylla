@@ -201,7 +201,7 @@ async fn build_auth_response(s: &AppState, user: &repo::UserRow) -> AppResult<Re
             path: "/",
             max_age_seconds: s.cfg.jwt_access_ttl_seconds,
             same_site: "Lax",
-            secure: false,
+            secure: s.cfg.cookie_secure,
         }),
     );
     parts.headers.append(
@@ -212,7 +212,7 @@ async fn build_auth_response(s: &AppState, user: &repo::UserRow) -> AppResult<Re
             path: "/api/v1/auth",
             max_age_seconds: s.cfg.jwt_refresh_ttl_seconds,
             same_site: "Strict",
-            secure: false,
+            secure: s.cfg.cookie_secure,
         }),
     );
     Ok(Response::from_parts(parts, body))

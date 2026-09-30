@@ -38,6 +38,7 @@ config:
   rustLog: info,sqlx=warn
   jwtAccessTtlSeconds: "900"
   jwtRefreshTtlSeconds: "604800"
+  cookieSecure: "true"
   argon2MCost: "19456"
   argon2TCost: "2"
   argon2PCost: "1"

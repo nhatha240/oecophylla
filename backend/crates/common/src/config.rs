@@ -9,6 +9,8 @@ pub struct SharedConfig {
     pub jwt_secret: String,
     pub jwt_access_ttl_seconds: i64,
     pub jwt_refresh_ttl_seconds: i64,
+    #[serde(default)]
+    pub cookie_secure: bool,
     #[serde(default = "default_m_cost")]
     pub argon2_m_cost: u32,
     #[serde(default = "default_t_cost")]

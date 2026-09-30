@@ -24,6 +24,7 @@ pub async fn setup() -> (PgPool, deadpool_redis::Pool, Arc<SharedConfig>) {
         jwt_secret: "isolated-review-test-secret".into(),
         jwt_access_ttl_seconds: 900,
         jwt_refresh_ttl_seconds: 3600,
+        cookie_secure: false,
         argon2_m_cost: 8,
         argon2_t_cost: 1,
         argon2_p_cost: 1,

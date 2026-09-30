@@ -6,9 +6,9 @@ use axum::{
     Json,
 };
 use common::{
-    auth::verify_access,
     error::{AppError, AppResult},
     events::{Envelope, UserFollowed, TOPIC_USER_FOLLOWED},
+    middleware::auth::current_active_user,
 };
 use deadpool_redis::redis::AsyncCommands;
 use serde::Deserialize;
@@ -60,16 +60,11 @@ pub struct UserSearchResponse {
     pub page: i64,
 }
 
-fn current_user(s: &AppState, h: &axum::http::HeaderMap) -> Option<common::models::AuthUser> {
-    let raw = h.get(axum::http::header::COOKIE)?.to_str().ok()?;
-    let token = raw
-        .split(';')
-        .find_map(|kv| kv.trim().strip_prefix("oec_access=").map(String::from))?;
-    let c = verify_access(s.cfg.jwt_secret.as_bytes(), &token).ok()?;
-    Some(common::models::AuthUser {
-        id: c.sub,
-        role: c.role,
-    })
+async fn current_user(
+    s: &AppState,
+    h: &axum::http::HeaderMap,
+) -> AppResult<Option<common::models::AuthUser>> {
+    current_active_user(&s.db, s.cfg.jwt_secret.as_bytes(), h).await
 }
 
 fn topic_preferences_changed(before: &[String], after: &[String]) -> bool {
@@ -106,7 +101,7 @@ pub async fn get(
     Path(id): Path<Uuid>,
     h: axum::http::HeaderMap,
 ) -> AppResult<Json<repo::ProfileResponse>> {
-    let viewer = current_user(&s, &h);
+    let viewer = current_user(&s, &h).await?;
     match viewer {
         Some(me) => repo::get_profile_with_following(&s.db, id, me.id)
             .await?
@@ -134,7 +129,7 @@ pub async fn update(
     h: axum::http::HeaderMap,
     Json(body): Json<UpdateProfileReq>,
 ) -> AppResult<Json<repo::ProfileRow>> {
-    let me = current_user(&s, &h).ok_or(AppError::Unauthorized)?;
+    let me = current_user(&s, &h).await?.ok_or(AppError::Unauthorized)?;
     if me.id != id {
         return Err(AppError::Forbidden);
     }
@@ -199,7 +194,7 @@ pub async fn upload_avatar(
     h: axum::http::HeaderMap,
     mut multipart: Multipart,
 ) -> AppResult<Json<AvatarUploadResponse>> {
-    let me = current_user(&s, &h).ok_or(AppError::Unauthorized)?;
+    let me = current_user(&s, &h).await?.ok_or(AppError::Unauthorized)?;
     if me.id != id {
         return Err(AppError::Forbidden);
     }
@@ -269,7 +264,7 @@ pub async fn follow(
     Path(id): Path<Uuid>,
     h: axum::http::HeaderMap,
 ) -> AppResult<impl IntoResponse> {
-    let me = current_user(&s, &h).ok_or(AppError::Unauthorized)?;
+    let me = current_user(&s, &h).await?.ok_or(AppError::Unauthorized)?;
     if me.id == id {
         return Err(AppError::Validation {
             field: "id".into(),
@@ -299,7 +294,7 @@ pub async fn unfollow(
     Path(id): Path<Uuid>,
     h: axum::http::HeaderMap,
 ) -> AppResult<impl IntoResponse> {
-    let me = current_user(&s, &h).ok_or(AppError::Unauthorized)?;
+    let me = current_user(&s, &h).await?.ok_or(AppError::Unauthorized)?;
     repo::delete_follow(&s.db, me.id, id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -361,7 +356,7 @@ pub async fn suggestions(
     h: axum::http::HeaderMap,
     Query(q): Query<SuggestionsQ>,
 ) -> AppResult<Json<Vec<repo::SuggestionRow>>> {
-    let me = current_user(&s, &h).ok_or(AppError::Unauthorized)?;
+    let me = current_user(&s, &h).await?.ok_or(AppError::Unauthorized)?;
     let limit = q.limit.unwrap_or(10).clamp(1, 50);
     let items = repo::get_suggestions(&s.db, me.id, limit).await?;
     if items.is_empty() {

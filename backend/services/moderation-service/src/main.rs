@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, sync::Arc};
+use std::net::SocketAddr;
 
 use axum::{
     middleware::{from_fn, from_fn_with_state},
@@ -9,12 +9,10 @@ use common::{
     config::SharedConfig,
     db::pg_pool,
     kafka::Producer,
-    middleware::{
-        auth::{require_admin, AuthState},
-        trace::init_tracing,
-    },
+    middleware::trace::init_tracing,
 };
 
+mod auth;
 mod config;
 mod cursor;
 mod handlers;
@@ -35,12 +33,11 @@ async fn main() -> anyhow::Result<()> {
     let mod_cfg = config::ModerationConfig::from_env();
     let kafka = Producer::new(&mod_cfg.kafka_brokers)?;
 
-    let jwt_secret = Arc::new(cfg.jwt_secret.as_bytes().to_vec());
-    let auth_state = AuthState {
-        jwt_secret: jwt_secret.clone(),
-    };
-
     let state = AppState::new(db, cfg.clone(), mod_cfg, kafka);
+    let auth_state = auth::AdminAuthState {
+        db: state.db.clone(),
+        jwt_secret: cfg.jwt_secret.as_bytes().to_vec(),
+    };
 
     let admin_routes = Router::new()
         .route("/admin/reports", get(handlers::list_reports))
@@ -49,7 +46,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/admin/audit-logs", get(handlers::list_audit_logs))
         .route("/admin/users/{id}/history", get(handlers::user_history))
         .route("/admin/metrics", get(handlers::admin_metrics))
-        .layer(from_fn_with_state(auth_state, require_admin));
+        .layer(from_fn_with_state(auth_state, auth::require_current_admin));
 
     let app = Router::new()
         .route("/health", get(|| async { "ok" }))

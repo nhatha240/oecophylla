@@ -1,9 +1,10 @@
 use axum::{
     extract::{Request, State},
-    http::header::COOKIE,
+    http::{header::COOKIE, HeaderMap},
     middleware::Next,
     response::Response,
 };
+use sqlx::PgPool;
 use std::sync::Arc;
 
 use crate::{
@@ -15,6 +16,40 @@ use crate::{
 #[derive(Clone)]
 pub struct AuthState {
     pub jwt_secret: Arc<Vec<u8>>,
+    pub db: Option<PgPool>,
+}
+
+/// Resolve the active account and current role for a signed access cookie.
+/// Role changes and account bans take effect without waiting for JWT expiry.
+pub async fn current_active_user(
+    db: &PgPool,
+    jwt_secret: &[u8],
+    headers: &HeaderMap,
+) -> Result<Option<AuthUser>, AppError> {
+    let token = headers
+        .get(COOKIE)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|raw| {
+            raw.split(';')
+                .find_map(|part| part.trim().strip_prefix("oec_access="))
+        });
+    let Some(claims) = token.and_then(|token| verify_access(jwt_secret, token).ok()) else {
+        return Ok(None);
+    };
+    let role: Option<UserRole> =
+        sqlx::query_scalar("SELECT role FROM users WHERE id = $1 AND is_active = true")
+            .bind(claims.sub)
+            .fetch_optional(db)
+            .await?;
+    Ok(role.map(|role| AuthUser {
+        id: claims.sub,
+        // A newly promoted account receives admin permissions on its next login.
+        role: if claims.role == role {
+            role
+        } else {
+            UserRole::User
+        },
+    }))
 }
 
 pub async fn require_auth(
@@ -22,31 +57,46 @@ pub async fn require_auth(
     mut req: Request,
     next: Next,
 ) -> Result<Response, AppError> {
-    let token = extract_access_cookie(&req).ok_or(AppError::Unauthorized)?;
-    let claims = verify_access(&state.jwt_secret, &token).map_err(|_| AppError::Unauthorized)?;
-    req.extensions_mut().insert(AuthUser {
-        id: claims.sub,
-        role: claims.role,
-    });
+    let user = if let Some(db) = &state.db {
+        current_active_user(db, &state.jwt_secret, req.headers())
+            .await?
+            .ok_or(AppError::Unauthorized)?
+    } else {
+        let token = extract_access_cookie(&req).ok_or(AppError::Unauthorized)?;
+        let claims =
+            verify_access(&state.jwt_secret, &token).map_err(|_| AppError::Unauthorized)?;
+        AuthUser {
+            id: claims.sub,
+            role: claims.role,
+        }
+    };
+    req.extensions_mut().insert(user);
     Ok(next.run(req).await)
 }
 
-/// Same gate as `require_auth` but additionally rejects non-admin tokens with 403.
-/// All `/admin/*` routes in moderation-service use this.
+/// Same gate as `require_auth` but additionally rejects non-admin accounts with 403.
 pub async fn require_admin(
     State(state): State<AuthState>,
     mut req: Request,
     next: Next,
 ) -> Result<Response, AppError> {
-    let token = extract_access_cookie(&req).ok_or(AppError::Unauthorized)?;
-    let claims = verify_access(&state.jwt_secret, &token).map_err(|_| AppError::Unauthorized)?;
-    if claims.role != UserRole::Admin {
+    let user = if let Some(db) = &state.db {
+        current_active_user(db, &state.jwt_secret, req.headers())
+            .await?
+            .ok_or(AppError::Unauthorized)?
+    } else {
+        let token = extract_access_cookie(&req).ok_or(AppError::Unauthorized)?;
+        let claims =
+            verify_access(&state.jwt_secret, &token).map_err(|_| AppError::Unauthorized)?;
+        AuthUser {
+            id: claims.sub,
+            role: claims.role,
+        }
+    };
+    if user.role != UserRole::Admin {
         return Err(AppError::Forbidden);
     }
-    req.extensions_mut().insert(AuthUser {
-        id: claims.sub,
-        role: claims.role,
-    });
+    req.extensions_mut().insert(user);
     Ok(next.run(req).await)
 }
 
@@ -55,7 +105,11 @@ pub async fn optional_auth(
     mut req: Request,
     next: Next,
 ) -> Response {
-    if let Some(token) = extract_access_cookie(&req) {
+    if let Some(db) = &state.db {
+        if let Ok(Some(user)) = current_active_user(db, &state.jwt_secret, req.headers()).await {
+            req.extensions_mut().insert(user);
+        }
+    } else if let Some(token) = extract_access_cookie(&req) {
         if let Ok(claims) = verify_access(&state.jwt_secret, &token) {
             req.extensions_mut().insert(AuthUser {
                 id: claims.sub,
@@ -100,6 +154,7 @@ mod tests {
     fn make_state() -> AuthState {
         AuthState {
             jwt_secret: Arc::new(b"unit-test-secret".to_vec()),
+            db: None,
         }
     }
 

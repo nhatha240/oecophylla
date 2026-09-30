@@ -5,9 +5,9 @@ use axum::{
     Json,
 };
 use common::{
-    auth::verify_access,
     error::{AppError, AppResult},
     events::{ContentCreated, Envelope, TOPIC_CONTENT_CREATED},
+    middleware::auth::current_active_user,
     models::{AuthUser, PostStatus, UserRole},
 };
 use serde::Deserialize;
@@ -40,16 +40,8 @@ pub struct ListQ {
     pub limit: Option<i64>,
 }
 
-fn current(s: &AppState, h: &axum::http::HeaderMap) -> Option<AuthUser> {
-    let raw = h.get(axum::http::header::COOKIE)?.to_str().ok()?;
-    let token = raw
-        .split(';')
-        .find_map(|kv| kv.trim().strip_prefix("oec_access=").map(String::from))?;
-    let c = verify_access(s.cfg.jwt_secret.as_bytes(), &token).ok()?;
-    Some(AuthUser {
-        id: c.sub,
-        role: c.role,
-    })
+async fn current(s: &AppState, h: &axum::http::HeaderMap) -> AppResult<Option<AuthUser>> {
+    current_active_user(&s.db, s.cfg.jwt_secret.as_bytes(), h).await
 }
 
 pub async fn create(
@@ -57,7 +49,7 @@ pub async fn create(
     h: axum::http::HeaderMap,
     Json(body): Json<CreatePostReq>,
 ) -> AppResult<Json<repo::PostRow>> {
-    let me = current(&s, &h).ok_or(AppError::Unauthorized)?;
+    let me = current(&s, &h).await?.ok_or(AppError::Unauthorized)?;
     let content = body.content.trim();
     if content.is_empty() || content.chars().count() > 4000 {
         return Err(AppError::Validation {
@@ -127,7 +119,7 @@ pub async fn get_one(
     // A direct URL must enforce the same publication boundary as public lists.
     // Authors and administrators can still inspect content awaiting moderation.
     if row.status != PostStatus::Published
-        && !current(&s, &h)
+        && !current(&s, &h).await?
             .is_some_and(|viewer| viewer.id == row.author_id || viewer.role == UserRole::Admin)
     {
         return Err(AppError::NotFound {
@@ -143,7 +135,7 @@ pub async fn update_post(
     h: axum::http::HeaderMap,
     Json(body): Json<UpdatePostInput>,
 ) -> AppResult<Json<repo::PostRow>> {
-    let me = current(&s, &h).ok_or(AppError::Unauthorized)?;
+    let me = current(&s, &h).await?.ok_or(AppError::Unauthorized)?;
     let existing = repo::by_id(&s.db, id).await?.ok_or(AppError::NotFound {
         kind: "post".into(),
     })?;
@@ -233,7 +225,7 @@ pub async fn delete_post(
     Path(id): Path<Uuid>,
     h: axum::http::HeaderMap,
 ) -> AppResult<impl IntoResponse> {
-    let me = current(&s, &h).ok_or(AppError::Unauthorized)?;
+    let me = current(&s, &h).await?.ok_or(AppError::Unauthorized)?;
     let row = repo::by_id(&s.db, id).await?.ok_or(AppError::NotFound {
         kind: "post".into(),
     })?;

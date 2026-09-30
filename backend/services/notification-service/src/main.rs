@@ -44,7 +44,7 @@ async fn main() -> anyhow::Result<()> {
     kafka::spawn_consumers(state.clone());
 
     let jwt_secret = Arc::new(cfg.jwt_secret.as_bytes().to_vec());
-    let auth_state = AuthState { jwt_secret };
+    let auth_state = AuthState { jwt_secret, db: Some(state.db.clone()) };
 
     // All /api/v1/notifications routes require a valid JWT cookie.
     let notif_routes = Router::new()

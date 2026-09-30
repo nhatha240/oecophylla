@@ -1,6 +1,6 @@
-//! Pre: docker compose stack up incl. moderation-service. Hits moderation-service
-//! directly because Envoy does not route `/admin/*` until Phase 3 Task 19. Use
-//! `MODERATION_DIRECT_URL` to override (default `http://localhost:8006`).
+//! Pre: docker compose stack up incl. moderation-service. Use
+//! `MODERATION_DIRECT_URL` to choose the admin endpoint (default
+//! `http://localhost:8006`; use `http://localhost:8080` through Envoy).
 //!
 //! Promotes a freshly registered user to admin by issuing a `docker compose exec
 //! postgres psql` UPDATE — there is no admin self-service endpoint by design.
@@ -247,6 +247,78 @@ async fn non_admin_gets_403() {
         "non-admin must be 403, got {}: {}",
         r.status(),
         r.text().await.unwrap()
+    );
+}
+
+#[tokio::test]
+async fn stale_admin_token_loses_access_after_demotion_or_ban() {
+    let admin = cli();
+    let (username, info) = register(&admin).await;
+    let user_id = info["user"]["id"].as_str().unwrap();
+    promote_to_admin(&username);
+    login(&admin, &username).await;
+
+    let url = format!("{}/admin/metrics", moderation_url());
+    assert_eq!(
+        admin.get(&url).send().await.unwrap().status(),
+        StatusCode::OK
+    );
+
+    let author = cli();
+    let (_, author_info) = register(&author).await;
+    let post_id = create_post(&author, "RBAC ownership target").await;
+    let update_url = format!("{ENVOY}/api/v1/posts/{post_id}");
+    assert_eq!(
+        admin
+            .put(&update_url)
+            .json(&json!({ "content": "admin edit" }))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::OK
+    );
+
+    psql(&format!(
+        "UPDATE users SET role = 'user' WHERE id = '{user_id}'"
+    ));
+    assert_eq!(
+        admin.get(&url).send().await.unwrap().status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        admin
+            .put(&update_url)
+            .json(&json!({ "content": "stale admin edit" }))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+
+    let author_id = author_info["user"]["id"].as_str().unwrap();
+    psql(&format!(
+        "UPDATE users SET is_active = false WHERE id = '{author_id}'"
+    ));
+    assert_eq!(
+        author
+            .post(format!("{ENVOY}/api/v1/posts"))
+            .json(&json!({ "content": "banned author post" }))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
+
+    promote_to_admin(&username);
+    psql(&format!(
+        "UPDATE users SET is_active = false WHERE id = '{user_id}'"
+    ));
+    assert_eq!(
+        admin.get(&url).send().await.unwrap().status(),
+        StatusCode::FORBIDDEN
     );
 }
 

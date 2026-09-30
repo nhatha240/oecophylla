@@ -10,18 +10,19 @@ use serde_json::json;
 fn client() -> Client {
     Client::builder().cookie_store(true).build().unwrap()
 }
-const BASE: &str = "http://127.0.0.1:8001";
+const DEFAULT_BASE: &str = "http://127.0.0.1:8001";
 
 #[tokio::test]
 async fn register_login_refresh_logout() {
     let c = client();
+    let base = std::env::var("AUTH_BASE_URL").unwrap_or_else(|_| DEFAULT_BASE.into());
     let uniq = uuid::Uuid::now_v7().simple().to_string();
     let username = format!("u{}", &uniq[..10]);
     let email = format!("{username}@example.com");
 
     // Register
     let r = c
-        .post(format!("{BASE}/api/v1/auth/register"))
+        .post(format!("{base}/api/v1/auth/register"))
         .json(&json!({ "username": username, "email": email, "password": "Password!123" }))
         .send()
         .await
@@ -32,7 +33,7 @@ async fn register_login_refresh_logout() {
 
     // Duplicate
     let r = c
-        .post(format!("{BASE}/api/v1/auth/register"))
+        .post(format!("{base}/api/v1/auth/register"))
         .json(&json!({ "username": username, "email": email, "password": "Password!123" }))
         .send()
         .await
@@ -41,7 +42,7 @@ async fn register_login_refresh_logout() {
 
     // Wrong password → 401, no leak
     let r = c
-        .post(format!("{BASE}/api/v1/auth/login"))
+        .post(format!("{base}/api/v1/auth/login"))
         .json(&json!({ "email_or_username": email, "password": "wrong" }))
         .send()
         .await
@@ -50,7 +51,7 @@ async fn register_login_refresh_logout() {
 
     // Refresh rotates
     let r = c
-        .post(format!("{BASE}/api/v1/auth/refresh"))
+        .post(format!("{base}/api/v1/auth/refresh"))
         .send()
         .await
         .unwrap();
@@ -58,13 +59,13 @@ async fn register_login_refresh_logout() {
 
     // Logout invalidates refresh
     let r = c
-        .delete(format!("{BASE}/api/v1/auth/logout"))
+        .delete(format!("{base}/api/v1/auth/logout"))
         .send()
         .await
         .unwrap();
     assert_eq!(r.status(), StatusCode::NO_CONTENT);
     let r = c
-        .post(format!("{BASE}/api/v1/auth/refresh"))
+        .post(format!("{base}/api/v1/auth/refresh"))
         .send()
         .await
         .unwrap();

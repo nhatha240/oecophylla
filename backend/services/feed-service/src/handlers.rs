@@ -13,8 +13,8 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use common::{
-    auth::verify_access,
     error::{AppError, AppResult},
+    middleware::auth::current_active_user,
     models::AuthUser,
 };
 use serde::Serialize;
@@ -38,16 +38,8 @@ const TRENDING_MODEL_VERSION: &str = "trending-v1";
 const FALLBACK_TRENDING_MODEL_VERSION: &str = "fallback-trending-v1";
 const FALLBACK_RECENT_MODEL_VERSION: &str = "fallback-recent-v1";
 
-fn current(s: &AppState, h: &HeaderMap) -> Option<AuthUser> {
-    let raw = h.get(axum::http::header::COOKIE)?.to_str().ok()?;
-    let token = raw
-        .split(';')
-        .find_map(|kv| kv.trim().strip_prefix("oec_access=").map(String::from))?;
-    let claims = verify_access(s.cfg.jwt_secret.as_bytes(), &token).ok()?;
-    Some(AuthUser {
-        id: claims.sub,
-        role: claims.role,
-    })
+async fn current(s: &AppState, h: &HeaderMap) -> AppResult<Option<AuthUser>> {
+    current_active_user(&s.db, s.cfg.jwt_secret.as_bytes(), h).await
 }
 
 pub async fn get_feed(
@@ -55,7 +47,7 @@ pub async fn get_feed(
     Query(q): Query<FeedQuery>,
     h: HeaderMap,
 ) -> AppResult<Json<FeedResponse>> {
-    let me = current(&s, &h).ok_or(AppError::Unauthorized)?;
+    let me = current(&s, &h).await?.ok_or(AppError::Unauthorized)?;
     let limit = q.limit.unwrap_or(DEFAULT_PAGE_SIZE).clamp(1, MAX_PAGE_SIZE);
 
     if q.mode.as_deref() == Some("following") {
