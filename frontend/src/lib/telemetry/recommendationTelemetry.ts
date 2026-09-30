@@ -1,3 +1,5 @@
+import { refreshSession } from '$lib/api';
+
 const SESSION_KEY = 'oecophylla:recommendation-session-id';
 const DETAIL_CONTEXT_PREFIX = 'oecophylla:recommendation-detail:';
 const DETAIL_CONTEXT_TTL_MS = 30 * 60 * 1000;
@@ -29,9 +31,9 @@ interface BehaviorEvent {
 
 export interface TelemetryRecorder {
   visible(context: RecommendationContext, viewportRatio: number): void;
-  view(context: RecommendationContext, trigger: ViewTrigger, continuousVisibleMs: number): void;
+  view(context: RecommendationContext, trigger: ViewTrigger, continuousVisibleMs: number, visitId?: string): void;
   click(context: RecommendationContext): void;
-  dwell(context: RecommendationContext, dwellMs: number, trigger: DwellTrigger): void;
+  dwell(context: RecommendationContext, dwellMs: number, trigger: DwellTrigger, visitId?: string): void;
   flush(): Promise<void>;
 }
 
@@ -43,6 +45,7 @@ interface StorageLike {
 interface TelemetryClientOptions {
   fetch: typeof fetch;
   storage: StorageLike;
+  viewerId?: string | null;
   randomUUID?: () => string;
   now?: () => Date;
   flushDelayMs?: number;
@@ -52,6 +55,7 @@ interface TelemetryClientOptions {
 interface StoredDetailContext {
   context: RecommendationContext;
   stored_at: number;
+  viewer_id: string | null;
 }
 
 export class RecommendationTelemetryClient implements TelemetryRecorder {
@@ -62,11 +66,13 @@ export class RecommendationTelemetryClient implements TelemetryRecorder {
   private readonly flushDelayMs: number;
   private readonly sessionId: string;
   private readonly labelVersion: 'v1' | 'v2';
+  private readonly viewerId: string | null;
   private readonly visibleKeys = new Set<string>();
   private readonly viewKeys = new Set<string>();
   private queue: BehaviorEvent[] = [];
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private flushInFlight: Promise<void> | null = null;
+  private disposed = false;
 
   constructor(options: TelemetryClientOptions) {
     this.fetchImpl = options.fetch;
@@ -75,6 +81,7 @@ export class RecommendationTelemetryClient implements TelemetryRecorder {
     this.now = options.now ?? (() => new Date());
     this.flushDelayMs = options.flushDelayMs ?? 250;
     this.labelVersion = options.labelVersion ?? 'v1';
+    this.viewerId = options.viewerId ?? null;
     this.sessionId = this.loadSessionId();
   }
 
@@ -87,27 +94,32 @@ export class RecommendationTelemetryClient implements TelemetryRecorder {
     });
   }
 
-  view(context: RecommendationContext, trigger: ViewTrigger, continuousVisibleMs: number): void {
-    const key = this.eventKey(context);
+  view(context: RecommendationContext, trigger: ViewTrigger, continuousVisibleMs: number, visitId?: string): void {
+    const key = this.eventKey(context, visitId);
     if (this.viewKeys.has(key)) return;
     this.viewKeys.add(key);
     const durationMs = clampMilliseconds(continuousVisibleMs);
     this.enqueue(context, 'view', durationMs, {
       continuous_visible_ms: durationMs,
       trigger,
+      ...(visitId ? { visit_id: visitId } : {}),
     });
   }
 
   click(context: RecommendationContext): void {
+    if (this.disposed) return;
     this.rememberDetailContext(context);
     this.enqueue(context, 'click', null, { target: 'post_detail' });
   }
 
-  dwell(context: RecommendationContext, dwellMs: number, trigger: DwellTrigger): void {
-    this.enqueue(context, 'dwell', clampMilliseconds(dwellMs), { trigger });
+  dwell(context: RecommendationContext, dwellMs: number, trigger: DwellTrigger, visitId?: string): void {
+    this.enqueue(context, 'dwell', clampMilliseconds(dwellMs), {
+      trigger,
+      ...(visitId ? { visit_id: visitId } : {}),
+    });
   }
 
-  detailContext(postId: string): RecommendationContext {
+  detailContext(postId: string, viewerId: string | null = this.viewerId): RecommendationContext {
     const fallback: RecommendationContext = {
       post_id: postId,
       impression_id: null,
@@ -116,12 +128,21 @@ export class RecommendationTelemetryClient implements TelemetryRecorder {
       position: null,
     };
     try {
-      const raw = this.storage.getItem(`${DETAIL_CONTEXT_PREFIX}${postId}`);
+      const key = `${DETAIL_CONTEXT_PREFIX}${postId}`;
+      const raw = this.storage.getItem(key);
       if (!raw) return fallback;
       const stored = JSON.parse(raw) as StoredDetailContext;
-      if (stored.context?.post_id !== postId || this.now().getTime() - stored.stored_at > DETAIL_CONTEXT_TTL_MS) {
+      if (
+        stored.context?.post_id !== postId ||
+        stored.viewer_id !== viewerId ||
+        viewerId !== this.viewerId ||
+        this.now().getTime() - stored.stored_at > DETAIL_CONTEXT_TTL_MS
+      ) {
         return fallback;
       }
+      // Attribution belongs to the navigation opened by this click. A later
+      // direct visit to the same post must not reuse the old impression.
+      this.storage.setItem(key, '');
       return stored.context;
     } catch {
       return fallback;
@@ -129,6 +150,7 @@ export class RecommendationTelemetryClient implements TelemetryRecorder {
   }
 
   flush(): Promise<void> {
+    if (this.disposed) return Promise.resolve();
     if (this.flushTimer) {
       clearTimeout(this.flushTimer);
       this.flushTimer = null;
@@ -140,7 +162,7 @@ export class RecommendationTelemetryClient implements TelemetryRecorder {
     const batchIds = new Set(batch.map((event) => event.client_event_id));
     this.flushInFlight = (async () => {
       try {
-        const response = await this.fetchImpl('/api/v1/interactions/events/batch', {
+        const sendBatch = () => this.fetchImpl('/api/v1/interactions/events/batch', {
           method: 'POST',
           credentials: 'include',
           keepalive: true,
@@ -150,6 +172,10 @@ export class RecommendationTelemetryClient implements TelemetryRecorder {
           },
           body: JSON.stringify({ events: batch }),
         });
+        let response = await sendBatch();
+        if (response.status === 401 && await refreshSession(this.fetchImpl)) {
+          response = await sendBatch();
+        }
         if (!response.ok && (response.status === 429 || response.status >= 500)) {
           throw new Error(`telemetry_http_${response.status}`);
         }
@@ -169,23 +195,30 @@ export class RecommendationTelemetryClient implements TelemetryRecorder {
 
   private loadSessionId(): string {
     try {
-      const existing = this.storage.getItem(SESSION_KEY);
+      const key = this.viewerId ? `${SESSION_KEY}:${this.viewerId}` : SESSION_KEY;
+      const existing = this.storage.getItem(key);
       if (existing) return existing;
       const created = this.randomUUID();
-      this.storage.setItem(SESSION_KEY, created);
+      this.storage.setItem(key, created);
       return created;
     } catch {
       return this.randomUUID();
     }
   }
 
-  private eventKey(context: RecommendationContext): string {
-    return context.impression_id ?? `${context.request_id ?? 'direct'}:${context.post_id}`;
+  private eventKey(context: RecommendationContext, visitId?: string): string {
+    return context.impression_id ?? (visitId
+      ? `visit:${visitId}`
+      : `${context.request_id ?? 'direct'}:${context.post_id}`);
   }
 
   private rememberDetailContext(context: RecommendationContext): void {
     try {
-      const value: StoredDetailContext = { context, stored_at: this.now().getTime() };
+      const value: StoredDetailContext = {
+        context,
+        stored_at: this.now().getTime(),
+        viewer_id: this.viewerId,
+      };
       this.storage.setItem(`${DETAIL_CONTEXT_PREFIX}${context.post_id}`, JSON.stringify(value));
     } catch {
       // sessionStorage can be unavailable in privacy modes; telemetry remains fail-silent.
@@ -198,6 +231,7 @@ export class RecommendationTelemetryClient implements TelemetryRecorder {
     dwellMs: number | null,
     metadata: BehaviorEvent['metadata'],
   ): void {
+    if (this.disposed) return;
     this.queue.push({
       client_event_id: this.randomUUID(),
       post_id: context.post_id,
@@ -213,11 +247,19 @@ export class RecommendationTelemetryClient implements TelemetryRecorder {
   }
 
   private scheduleFlush(delayMs: number): void {
+    if (this.disposed) return;
     if (this.flushTimer) return;
     this.flushTimer = setTimeout(() => {
       this.flushTimer = null;
       void this.flush();
     }, delayMs);
+  }
+
+  discardPending(): void {
+    this.disposed = true;
+    if (this.flushTimer) clearTimeout(this.flushTimer);
+    this.flushTimer = null;
+    this.queue = [];
   }
 }
 
@@ -227,17 +269,32 @@ export function clampMilliseconds(value: number): number {
 }
 
 let browserClient: RecommendationTelemetryClient | null = null;
+let browserViewerId: string | null = null;
+let browserLabelVersion: 'v1' | 'v2' = 'v1';
 
 export function getRecommendationTelemetryClient(
   labelVersion: 'v1' | 'v2' = 'v1',
+  viewerId: string | null = null,
 ): RecommendationTelemetryClient | null {
   if (typeof window === 'undefined') return null;
+  if (browserClient && (browserViewerId !== viewerId || browserLabelVersion !== labelVersion)) {
+    browserClient.discardPending();
+    browserClient = null;
+  }
   if (!browserClient) {
-    browserClient = new RecommendationTelemetryClient({
-      fetch: window.fetch.bind(window),
-      storage: window.sessionStorage,
-      labelVersion,
-    });
+    try {
+      browserClient = new RecommendationTelemetryClient({
+        fetch: window.fetch.bind(window),
+        storage: window.sessionStorage,
+        labelVersion,
+        viewerId,
+      });
+      browserViewerId = viewerId;
+      browserLabelVersion = labelVersion;
+    } catch {
+      // Storage can be blocked by browser privacy settings. Keep the UI usable.
+      return null;
+    }
   }
   return browserClient;
 }
@@ -245,16 +302,11 @@ export function getRecommendationTelemetryClient(
 export function trackRecommendationClick(
   context: RecommendationContext,
   labelVersion: 'v1' | 'v2' = 'v1',
+  viewerId: string | null = null,
 ): void {
-  getRecommendationTelemetryClient(labelVersion)?.click(context);
-}
-
-export function trackRecommendationDetailView(
-  postId: string,
-  labelVersion: 'v1' | 'v2' = 'v1',
-): void {
-  const client = getRecommendationTelemetryClient(labelVersion);
+  const client = getRecommendationTelemetryClient(labelVersion, viewerId);
   if (!client) return;
-  client.view(client.detailContext(postId), 'detail', 0);
+  client.click(context);
+  // Start the keepalive request before navigation can unload the feed page.
   void client.flush();
 }

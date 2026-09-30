@@ -1,305 +1,114 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
-  import { invalidateAll } from '$app/navigation';
   import type { PageData } from './$types';
-  import type { FeedItem, MyInteractions, UserPreferences } from '$lib/types';
-  import { getFeed, getMyInteractionsBatch, getTrendingTopics, type TrendingTopic } from '$lib/api';
+  import type { FeedItem, MyInteractions } from '$lib/types';
+  import { getFeed, getMyInteractionsBatch } from '$lib/api';
+  import EditorialPostCard from '$lib/components/EditorialPostCard.svelte';
   import Icon from '$lib/apple-glass/components/Icon.svelte';
-  import Composer from '$lib/components/Composer.svelte';
-  import FeedList from '$lib/components/FeedList.svelte';
-  import InfiniteSentinel from '$lib/components/InfiniteSentinel.svelte';
-  import SuggestedUsers from '$lib/components/SuggestedUsers.svelte';
 
   export let data: PageData;
-
-  const TOPIC_LABELS: Record<string, string> = {
-    tech: 'Công nghệ', science: 'Khoa học', sports: 'Thể thao',
-    politics: 'Chính trị', entertainment: 'Giải trí', health: 'Sức khoẻ',
-    business: 'Kinh doanh', culture: 'Văn hoá', education: 'Giáo dục',
-    environment: 'Môi trường', ai: 'AI & Học máy', news: 'Tin tức',
-  };
-
-  const TOPIC_COLORS: Record<string, string> = {
-    tech: '#3b82f6', science: '#8b5cf6', sports: '#f59e0b',
-    politics: '#ef4444', entertainment: '#ec4899', health: '#22c55e',
-    business: '#06b6d4', culture: '#f97316', education: '#6366f1',
-    environment: '#14b8a6', ai: '#a855f7', news: '#64748b',
-  };
-
-  // Scroll the tapped tab fully into view so the active label is never clipped
-  // by the rounded pill edge on narrow / overflowing tab strips.
-  function centerTab(e: MouseEvent) {
-    (e.currentTarget as HTMLElement)?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
-  }
-
-  let items: FeedItem[] = data.feed?.items ?? [];
-  let cursor: string | null = data.feed?.next_cursor ?? null;
-  let meByPost: Record<string, MyInteractions> = data.me ?? {};
+  let items: FeedItem[] = [];
+  let me: Record<string, MyInteractions> = {};
+  let cursor: string | null = null;
   let loading = false;
-  let error: string | null = null;
-  let feedMode: 'foryou' | 'following' | 'trending' = data.feedMode ?? 'foryou';
-  let prefs: UserPreferences | null = data.prefs ?? null;
+  let error = '';
+  $: { items = data.feed?.items ?? []; me = data.me ?? {}; cursor = data.feed?.next_cursor ?? null; }
 
-  $: topicBars = (() => {
-    if (!prefs?.topic_weights) return [];
-    const entries = Object.entries(prefs.topic_weights)
-      .filter(([slug, w]) => w > 0 && slug !== 'general')
-      .sort(([, a], [, b]) => b - a)
-      .slice(0, 5);
-    if (!entries.length) return [];
-    const max = entries[0][1];
-    return entries.map(([slug, weight]) => ({
-      slug,
-      label: TOPIC_LABELS[slug] ?? slug,
-      color: TOPIC_COLORS[slug] ?? '#94a3b8',
-      pct: Math.round((weight / max) * 100),
-    }));
-  })();
-  let localSort: 'default' | 'new' | 'trend' = 'default';
-  let trendingTopics: TrendingTopic[] = [];
-  let lastUpdate = Date.now();
-  let updatedAgo = 'vài giây trước';
-  let updateTimer: ReturnType<typeof setInterval> | null = null;
-  function fmtAgo(ms: number): string {
-    const s = Math.floor((Date.now() - ms) / 1000);
-    if (s < 60) return `${s} giây trước`;
-    const m = Math.floor(s / 60);
-    if (m < 60) return `${m} phút trước`;
-    const h = Math.floor(m / 60);
-    return `${h} giờ trước`;
-  }
-  function sortBy(mode: 'new' | 'trend'): void {
-    localSort = mode;
-    if (mode === 'new') {
-      items = [...items].sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at));
-    } else {
-      // Fetch from trending API for real ranking scores
-      switchFeed('trending');
-    }
-  }
-
-  async function switchFeed(mode: 'foryou' | 'following' | 'trending'): Promise<void> {
-    if (feedMode === mode) return;
-    feedMode = mode;
-    items = [];
-    cursor = null;
-    loading = true;
-    error = null;
+  async function loadMore() {
+    if (!cursor || loading) return;
+    loading = true; error = '';
     try {
-      const modeParam = mode === 'following' ? 'following' : mode === 'trending' ? 'trending' : undefined;
-      const next = await getFeed(fetch, undefined, 20, modeParam);
-      items = next.items;
-      cursor = next.next_cursor;
-      if (items.length) {
-        const ids = items.map((p) => p.id);
-        const meBatch = await getMyInteractionsBatch(fetch, ids).catch(() => ({ items: {} }));
-        meByPost = meBatch.items;
-      }
-    } catch (err) {
-      error = err instanceof Error ? err.message : 'feed_load_failed';
-    } finally {
-      loading = false;
-    }
-  }
-
-  let newPostCount = 0;
-  let isFirstEvent = true;
-  let es: EventSource | null = null;
-
-  onMount(() => {
-    updatedAgo = fmtAgo(lastUpdate);
-    updateTimer = setInterval(() => { updatedAgo = fmtAgo(lastUpdate); }, 10000);
-    getTrendingTopics(fetch).then((t) => { trendingTopics = t; }).catch(() => {});
-    es = new EventSource('/api/v1/feed/trending/stream');
-    es.addEventListener('trending', (e: MessageEvent) => {
-      if (isFirstEvent) {
-        isFirstEvent = false;
-        return;
-      }
-      try {
-        const ids: string[] = JSON.parse(e.data);
-        const known = new Set(items.map((p) => p.id));
-        const fresh = ids.filter((id) => !known.has(id));
-        if (fresh.length > 0) newPostCount += fresh.length;
-      } catch { /* ignore parse errors */ }
-    });
-  });
-
-  onDestroy(() => {
-    es?.close();
-    if (updateTimer) clearInterval(updateTimer);
-  });
-
-  let prefsLoading = false;
-  async function refreshPrefs(): Promise<void> {
-    if (!data.user?.id || prefsLoading) return;
-    prefsLoading = true;
-    try {
-      const { getUserPreferences } = await import('$lib/api');
-      const fresh = await getUserPreferences(fetch, data.user.id);
-      if (fresh) prefs = fresh;
-    } catch { /* silent */ } finally {
-      prefsLoading = false;
-    }
-  }
-
-  async function loadNew(): Promise<void> {
-    newPostCount = 0;
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-    await invalidateAll();
-  }
-
-  async function loadMore(): Promise<void> {
-    if (loading || !cursor) return;
-    loading = true;
-    error = null;
-    try {
-      const modeParam = feedMode === 'following' ? 'following' : feedMode === 'trending' ? 'trending' : undefined;
-      const next = await getFeed(fetch, cursor, 20, modeParam);
-      const seen = new Set(items.map((p) => p.id));
-      const fresh = next.items.filter((p) => !seen.has(p.id));
-      if (fresh.length) {
-        items = [...items, ...fresh];
-        const ids = fresh.map((p) => p.id);
-        const meBatch = await getMyInteractionsBatch(fetch, ids).catch(() => ({ items: {} }));
-        meByPost = { ...meByPost, ...meBatch.items };
-      }
-      cursor = next.next_cursor;
-    } catch (err) {
-      error = err instanceof Error ? err.message : 'feed_load_failed';
-    } finally {
-      loading = false;
-    }
+      const next = await getFeed(fetch, cursor, 20, data.feedMode === 'foryou' ? undefined : data.feedMode);
+      const nextMe = next.items.length ? await getMyInteractionsBatch(fetch, next.items.map((item) => item.id)).catch(() => ({ items: {} })) : { items: {} };
+      items = [...items, ...next.items]; me = { ...me, ...nextMe.items }; cursor = next.next_cursor;
+    } catch { error = 'Chưa tải thêm được bài viết. Vui lòng thử lại.'; }
+    finally { loading = false; }
   }
 </script>
 
 <svelte:head>
-  <title>Oecophylla — Feed</title>
+  <title>Bảng tin — Oecophylla</title>
+  <meta name="description" content="Tin tức đáng tin cậy và những cuộc thảo luận có chiều sâu trên Oecophylla." />
 </svelte:head>
 
-<div class="feed-grid">
-  <main class="feed-main">
-    {#if newPostCount > 0}
-      <button
-        class="glass-surface w-full rounded-2xl px-4 py-3 text-sm font-medium text-slate-700 shadow transition-all animate-slide-down flex items-center justify-center gap-2"
-        on:click={loadNew}
-      >
-        <span>✨ {newPostCount > 99 ? '99+' : newPostCount} bài viết mới</span>
-        <span class="glass-chip text-xs">Nhấn để tải</span>
-      </button>
-    {/if}
+<div class="feed-layout">
+  <section class="feed-content" aria-label="Bảng tin">
+    <div class="feed-heading">
+      <div><p class="eyebrow">TIN TỨC · THẢO LUẬN · CỘNG ĐỒNG</p><h1 class="serif">Cùng nhau đọc sâu,<br />nghĩ kỹ hơn, kiến tạo những đối thoại tốt đẹp hơn.</h1><p>Tin tức đáng tin cậy. Thảo luận có chiều sâu. Và một cộng đồng luôn hướng đến điều tốt đẹp hơn.</p></div>
+      <div class="handwritten">Tri thức<br />kết nối<br />con người<span>⌁</span></div>
+    </div>
 
-    {#if data.feed}
-      <Composer action="/post/new" prominent />
-    {/if}
-
-    <div class="tab-row">
-      <div class="tabs">
-        <button class="tab" class:active={feedMode === 'foryou' && localSort === 'default'} on:click={centerTab} on:click={() => { localSort = 'default'; switchFeed('foryou'); }}>
-          <Icon name="Sparkle" size={14} /> Dành cho bạn
-        </button>
-        <button class="tab" class:active={feedMode === 'following'} on:click={centerTab} on:click={() => { localSort = 'default'; switchFeed('following'); }}>
-          <Icon name="Users" size={14} /> Đang theo dõi
-        </button>
-        <button class="tab" class:active={localSort === 'new'} on:click={centerTab} on:click={() => sortBy('new')}>
-          <Icon name="Clock" size={14} /> Tin mới
-        </button>
-        <button class="tab" class:active={localSort === 'trend' || feedMode === 'trending'} on:click={centerTab} on:click={() => sortBy('trend')}>
-          <Icon name="Flame" size={14} /> Xu hướng
-        </button>
-        <a class="tab" href="/saved">
-          <Icon name="Bookmark" size={14} /> Đã lưu
-        </a>
-      </div>
-      <span class="tab-update t-meta">Cập nhật {updatedAgo}</span>
+    <div class="feed-tabs" aria-label="Chế độ bảng tin">
+      <a class:active={data.feedMode === 'foryou'} href="/">Dành cho bạn</a>
+      <a class:active={data.feedMode === 'following'} href="/?feed=following">Đang theo dõi</a>
+      <a class:active={data.feedMode === 'trending'} href="/?feed=trending">Thịnh hành</a>
     </div>
 
     {#if !data.feed}
-      <div class="card card-pad" style="text-align: center; padding: 48px 24px;">
-        <h2 class="serif" style="font-size: 28px; margin: 0 0 8px;">Bảng tin Apple Glass đang chờ bạn</h2>
-        <p class="muted" style="margin: 0 auto; max-width: 480px;">Đăng nhập để xem dòng tin được cá nhân hoá, theo dõi chủ đề quan tâm và lưu bài viết để đọc lại.</p>
-        <a class="btn emerald" style="margin-top: 18px;" href="/login">Đăng nhập</a>
-      </div>
+      <div class="empty-state"><Icon name="Book" size={27} /><h2 class="serif">Bảng tin đang chờ kết nối</h2><p>Chúng tôi chưa tải được bài viết lúc này. Hãy thử làm mới trang sau ít phút.</p><button class="pill-outline" on:click={() => location.reload()}>Tải lại</button></div>
     {:else if items.length === 0}
-      <div class="card card-pad" style="text-align: center; padding: 48px 24px;">
-        <h2 class="serif" style="font-size: 24px; margin: 0 0 8px;">Chưa có bài viết nào để gợi ý</h2>
-        <p class="muted" style="margin: 0;">Hãy thử đăng bài đầu tiên hoặc theo dõi thêm chủ đề để làm giàu bảng tin.</p>
-      </div>
+      <div class="empty-state"><Icon name="Sparkle" size={28} /><h2 class="serif">Chưa có bài viết để hiển thị</h2><p>{data.feedMode === 'following' ? 'Theo dõi thêm tác giả để bảng tin này phong phú hơn.' : 'Những câu chuyện mới sẽ xuất hiện tại đây.'}</p><a class="pill-outline" href="/search">Khám phá nội dung</a></div>
     {:else}
-      <FeedList {items} {meByPost} />
-      {#if error}
-        <p class="field err-msg" style="margin-top: 12px;">{error}</p>
-      {/if}
-      {#if cursor}
-        <InfiniteSentinel disabled={loading} onVisible={loadMore} />
-        {#if loading}
-          <p class="t-meta" style="text-align: center; margin-top: 12px;">Đang tải thêm…</p>
-        {/if}
-      {:else}
-        <p class="t-meta" style="text-align: center; margin-top: 20px;">Hết bài.</p>
-      {/if}
+      <div class="feed-list">{#each items as post (post.impression_id ?? `${post.request_id}:${post.id}`)}<EditorialPostCard {post} me={me[post.id] ?? null} viewerId={data.user?.id ?? null} />{/each}</div>
+      {#if error}<p class="load-error" role="alert">{error}</p>{/if}
+      {#if cursor}<button class="load-more pill-outline" type="button" disabled={loading} on:click={loadMore}>{loading ? 'Đang tải…' : 'Xem thêm bài viết'} <Icon name="ArrowRight" size={15} /></button>{/if}
     {/if}
-  </main>
+  </section>
 
-  <aside class="rail">
-    <div class="rail-card">
-      <h4><Icon name="Flame" size={16} className="pin" /> Đang thịnh hành</h4>
-      {#if trendingTopics.length > 0}
-        {#each trendingTopics as topic, i}
-          <a class="trend-item" href="/search?q={encodeURIComponent(topic.slug)}">
-            <span class="trend-num">{i + 1}</span>
-            <div>
-              <div class="trend-title">#{topic.label}</div>
-              <div class="trend-meta"><span>{topic.count} bài viết</span><span>·</span><span>xu hướng 24h</span></div>
-            </div>
-          </a>
+  <aside class="feed-rail" aria-label="Thông tin bên lề">
+    <div class="rail-community">
+      <img src="/brand/street.jpg" alt="Một góc phố Việt Nam rợp bóng cây" />
+      <h2 class="serif">Cùng những<br />con người tử tế<br />tạo nên khác biệt.</h2>
+      <p>Mỗi bài viết là một lời mời cùng hiểu hơn và trò chuyện sâu hơn.</p>
+      <a class="pill-primary" href="/post/new"><Icon name="Edit" size={15} /> Viết câu chuyện của bạn</a>
+    </div>
+    <blockquote>“Thế giới tốt đẹp hơn bắt đầu từ những cuộc đối thoại tốt đẹp hơn.”<cite>— Oecophylla</cite></blockquote>
+    <div class="rail-trending">
+      <h2 class="serif">Chủ đề nổi bật</h2>
+      {#if data.trendingTopics?.length}
+        {#each data.trendingTopics.slice(0, 4) as topic, index}
+          <a href={'/search?q=' + encodeURIComponent(topic.slug)}><span class="trend-index">{index + 1}</span><span><strong>{topic.label}</strong><small>{topic.count} bài viết</small></span><Icon name="ArrowRight" size={14} /></a>
         {/each}
       {:else}
-        <p class="taste-empty">Đang tải xu hướng…</p>
+        <p class="muted">Các chủ đề đang được cập nhật.</p>
       {/if}
     </div>
-
-    <div class="rail-card">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-        <h4 style="margin:0;"><Icon name="ChartBar" size={16} className="pin" /> Nhịp đọc của bạn</h4>
-        {#if data.user}
-          <button
-            type="button"
-            class="icon-btn"
-            title="Làm mới"
-            style="opacity:{prefsLoading ? 0.4 : 0.6};"
-            disabled={prefsLoading}
-            on:click={refreshPrefs}
-          ><Icon name="Refresh" size={13} /></button>
-        {/if}
-      </div>
-      {#if topicBars.length > 0}
-        <div class="taste-bars">
-          {#each topicBars as bar}
-            <div class="taste-bar">
-              <div class="taste-bar-head">
-                <span style="display:flex;align-items:center;gap:5px;">
-                  <span style="width:8px;height:8px;border-radius:50%;background:{bar.color};flex-shrink:0;"></span>
-                  {bar.label}
-                </span>
-                <span class="pct">{bar.pct}%</span>
-              </div>
-              <div class="taste-bar-track">
-                <div class="taste-bar-fill" style="width:{bar.pct}%;background:{bar.color};opacity:0.85;"></div>
-              </div>
-            </div>
-          {/each}
-        </div>
-        <p style="font-size:11px;color:var(--ink-300,#cbd5e1);margin:10px 0 0;text-align:right;">
-          Dựa trên {Object.keys(prefs?.topic_weights ?? {}).length} chủ đề bạn đã tương tác
-        </p>
-      {:else if data.user}
-        <p class="taste-empty">Hãy thích, lưu hoặc chia sẻ bài viết — chúng tôi sẽ học sở thích của bạn theo thời gian.</p>
-      {:else}
-        <p class="taste-empty"><a href="/login" style="color:var(--emerald-600);">Đăng nhập</a> để cá nhân hoá nhịp đọc.</p>
-      {/if}
-    </div>
-
-    <SuggestedUsers />
   </aside>
 </div>
+
+<style>
+  .feed-layout { display: grid; grid-template-columns: minmax(0, 1fr) 265px; gap: 26px; max-width: 1180px; margin: 0 auto; padding: 25px 28px 60px 30px; background: #fbfcfb; }
+  .feed-content { min-width: 0; }
+  .feed-heading { display: flex; gap: 15px; justify-content: space-between; align-items: center; padding: 5px 0 23px; }
+  .feed-heading .eyebrow { margin: 0 0 12px; }
+  h1 { margin: 0; max-width: 720px; font-size: clamp(23px, 2.1vw, 32px); line-height: 1.22; letter-spacing: -.045em; font-weight: 500; }
+  .feed-heading p:last-child { margin: 8px 0 0; color: #7b8985; font: 12px/1.6 'Lora', Georgia, serif; }
+  .handwritten { flex: 0 0 80px; transform: rotate(-11deg); color: #688b83; font: italic 14px/1.22 'Lora', Georgia, serif; text-align: center; }
+  .handwritten span { display: block; font-size: 30px; line-height: .7; }
+  .feed-tabs { display: flex; gap: 2px; width: fit-content; max-width: 100%; margin-bottom: 15px; padding: 3px; border: 1px solid #e2ebe6; border-radius: 99px; background: white; overflow: auto; }
+  .feed-tabs a { flex: 0 0 auto; min-width: 115px; padding: 8px 15px; border: 0; border-radius: 99px; color: #536a64; background: transparent; text-align: center; font: 500 12px 'Lora', Georgia, serif; }
+  .feed-tabs .active { background: #1e5b54; color: white; }
+  .feed-list { display: grid; gap: 11px; }
+  .load-more { display: flex; margin: 24px auto 0; }
+  .load-error { color: #a64046; text-align: center; font-size: 12px; }
+  .empty-state { display: grid; justify-items: center; gap: 12px; padding: 65px 30px; border: 1px solid #e7eeea; border-radius: 10px; background: white; text-align: center; color: #42736b; }
+  .empty-state h2 { margin: 0; color: #173d37; font-size: 22px; font-weight: 500; }
+  .empty-state p { max-width: 390px; margin: 0 0 5px; color: #758780; font-size: 12px; line-height: 1.6; }
+  .rail-community { padding: 10px; border: 1px solid #e9efec; border-radius: 10px; background: white; }
+  .rail-community img { display: block; width: 100%; height: 126px; object-fit: cover; border-radius: 5px; }
+  .rail-community h2 { margin: 14px 5px 8px; font-size: 18px; line-height: 1.3; font-weight: 500; }
+  .rail-community p { margin: 0 5px 16px; color: #6e807a; font: 11px/1.6 'Lora', Georgia, serif; }
+  .rail-community .pill-primary { width: 100%; padding: 0 9px; font-size: 10px; }
+  blockquote { margin: 14px 0; padding: 25px 16px; border-radius: 9px; background: #f4f7f4; color: #4d6c64; text-align: center; font: italic 16px/1.55 'Lora', Georgia, serif; }
+  cite { display: block; margin-top: 10px; font-size: 11px; }
+  .rail-trending { padding: 18px 14px; border: 1px solid #e9efec; border-radius: 9px; background: white; }
+  .rail-trending h2 { margin: 0 0 10px; font-size: 16px; font-weight: 500; }
+  .rail-trending a { display: flex; align-items: center; gap: 11px; padding: 12px 0; border-top: 1px solid #edf1ee; }
+  .rail-trending a > span:nth-child(2) { display: grid; gap: 4px; flex: 1; }
+  .rail-trending strong { font: 500 12px 'Lora', Georgia, serif; }
+  .rail-trending small { color: #8a9892; font-size: 10px; }
+  .trend-index { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; background: #f2f6f3; font: 12px 'Lora', serif; }
+  .rail-trending .muted { font-size: 11px; }
+  @media (max-width: 1160px) { .feed-layout { grid-template-columns: minmax(0,1fr) 225px; gap: 18px; padding: 24px 20px; } }
+  @media (max-width: 900px) { .feed-layout { display: block; max-width: 760px; margin: auto; } .feed-rail { display: none; } }
+  @media (max-width: 720px) { .feed-layout { padding: 22px 14px 24px; } .feed-heading { padding: 0 3px 15px; } .feed-heading h1 { font-size: 22px; } .feed-heading h1 br { display: none; } .feed-heading p:last-child { display: none; } .handwritten { display: none; } .feed-tabs { width: 100%; margin-bottom: 12px; } .feed-tabs a { flex: 1; min-width: auto; padding: 9px 10px; white-space: nowrap; font-size: 11px; } }
+</style>

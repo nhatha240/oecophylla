@@ -1,88 +1,36 @@
 <script lang="ts">
   import type { PageData } from './$types';
-  import type { SavedPostItem, MyInteractions } from '$lib/types';
-  import { getSavedPosts, getMyInteractionsBatch } from '$lib/api';
-  import PostCard from '$lib/components/PostCard.svelte';
-  import InfiniteSentinel from '$lib/components/InfiniteSentinel.svelte';
+  import { apiFetch } from '$lib/api';
   import Icon from '$lib/apple-glass/components/Icon.svelte';
-
   export let data: PageData;
-
-  let items: SavedPostItem[] = data.saved.items;
-  let cursor: string | null = data.saved.next_cursor;
-  let meByPost: Record<string, MyInteractions> = data.me;
-  let loading = false;
-  let error: string | null = null;
-
-  async function loadMore(): Promise<void> {
-    if (loading || !cursor) return;
-    loading = true;
-    error = null;
-    try {
-      const next = await getSavedPosts(fetch, cursor);
-      const seen = new Set(items.map((p) => p.id));
-      const fresh = next.items.filter((p) => !seen.has(p.id));
-      if (fresh.length) {
-        items = [...items, ...fresh];
-        const ids = fresh.map((p) => p.id);
-        const meBatch = await getMyInteractionsBatch(fetch, ids).catch(() => ({ items: {} }));
-        meByPost = { ...meByPost, ...meBatch.items };
-      }
-      cursor = next.next_cursor;
-    } catch (err) {
-      error = err instanceof Error ? err.message : 'load_failed';
-    } finally {
-      loading = false;
-    }
+  let items = data.saved.items;
+  let error = '';
+  async function remove(id: string) {
+    try { await apiFetch(fetch, '/posts/' + id + '/save', { method: 'DELETE' }); items = items.filter((post) => post.id !== id); }
+    catch { error = 'Chưa thể bỏ lưu bài viết. Vui lòng thử lại.'; }
   }
 </script>
-
-<svelte:head>
-  <title>Đã lưu — Oecophylla</title>
-</svelte:head>
-
-<div class="feed-grid">
-  <main class="feed-main">
-    <div class="flex items-center gap-3 mb-4">
-      <a href="/" class="glass-chip text-sm cursor-pointer">&larr; Bảng tin</a>
-      <h2 class="text-lg font-semibold text-slate-800">Đã lưu</h2>
-    </div>
-
-    {#if items.length === 0}
-      <div class="card card-pad" style="text-align: center; padding: 48px 24px;">
-        <h2 class="serif" style="font-size: 24px; margin: 0 0 8px;">Chưa lưu bài nào</h2>
-        <p class="muted" style="margin: 0;">Nhấn vào biểu tượng lưu trên bất kỳ bài viết nào để đọc lại sau.</p>
-      </div>
-    {:else}
-      <ul class="flex flex-col gap-3">
-        {#each items as item (item.id)}
-          <li>
-            <PostCard post={item} me={meByPost[item.id] ?? null} />
-            <div class="text-mono-meta px-5 -mt-1 mb-2 opacity-70">
-              @{item.username}
-              <span class="glass-chip ml-2">đã lưu</span>
-            </div>
-          </li>
-        {/each}
-      </ul>
-      {#if error}
-        <p class="field err-msg" style="margin-top: 12px;">{error}</p>
-      {/if}
-      {#if cursor}
-        <InfiniteSentinel disabled={loading} onVisible={loadMore} />
-        {#if loading}
-          <p class="t-meta" style="text-align: center; margin-top: 12px;">Đang tải thêm…</p>
-        {/if}
-      {:else}
-        <p class="t-meta" style="text-align: center; margin-top: 20px;">Hết bài.</p>
-      {/if}
-    {/if}
-  </main>
-
-  <aside class="rail">
-    <div class="rail-card">
-      <h4><Icon name="Bookmark" size={16} className="pin" /> Bài đã lưu</h4>
-      <p class="t-meta">Các bài viết bạn lưu sẽ xuất hiện ở đây. Không giới hạn số lượng.</p>
-    </div>
-  </aside>
-</div>
+<svelte:head><title>Bài đã lưu — Oecophylla</title></svelte:head>
+<section class="saved-page"><p class="eyebrow">THƯ VIỆN CỦA BẠN</p><h1 class="serif">Bài viết đã lưu</h1><p class="intro">Lưu lại những câu chuyện đáng suy ngẫm để đọc lại khi bạn muốn.</p>{#if error}<p class="error" role="alert">{error}</p>{/if}
+  {#if items.length}<div class="saved-list">{#each items as post}<article><div><p class="eyebrow">{post.topics?.[0] ?? post.tags?.[0] ?? 'BÀI VIẾT'}</p><a class="serif" href={'/post/' + post.id}>{post.content.slice(0, 160)}{post.content.length > 160 ? '…' : ''}</a><p class="byline">{post.display_name ?? post.username} · {new Intl.DateTimeFormat('vi-VN').format(new Date(post.created_at))}</p></div>{#if post.media_urls?.[0]}<img src={post.media_urls[0]} alt="Ảnh bài viết" loading="lazy" />{/if}<button type="button" aria-label="Bỏ lưu" on:click={() => remove(post.id)}><Icon name="BookmarkFill" size={18} /></button></article>{/each}</div>{:else}<div class="empty"><Icon name="Bookmark" size={28} /><h2 class="serif">Chưa có bài viết đã lưu</h2><p>Khám phá bảng tin và lưu những nội dung bạn muốn đọc lại.</p><a class="pill-primary" href="/">Đến bảng tin</a></div>{/if}
+</section>
+<style>
+  .saved-page { max-width: 920px; margin: auto; padding: 35px 32px 60px; }
+  h1 { margin: 9px 0; font-size: 35px; font-weight: 500; letter-spacing: -.05em; }
+  .intro { margin: 0 0 26px; color: #71857b; font: 13px 'Lora', serif; }
+  .saved-list { display: grid; gap: 11px; }
+  article { display: flex; align-items: center; gap: 18px; padding: 19px; border: 1px solid #e7eeea; border-radius: 9px; background: white; }
+  article > div { flex: 1; }
+  article .eyebrow { margin: 0 0 7px; }
+  article a.serif { display: block; font-size: 17px; line-height: 1.4; }
+  article a:hover { color: #1e655b; }
+  .byline { margin: 10px 0 0; color: #8a9b92; font-size: 10px; }
+  article img { width: 100px; height: 76px; object-fit: cover; border-radius: 5px; }
+  article button { border: 0; background: transparent; color: #1d5b54; }
+  .empty { display: grid; justify-items: center; gap: 12px; padding: 65px 20px; border: 1px solid #e7eeea; border-radius: 10px; background: white; text-align: center; color: #4b796e; }
+  .empty h2, .empty p { margin: 0; }
+  .empty h2 { color: #234139; font-size: 22px; font-weight: 500; }
+  .empty p { color: #7d8e85; font-size: 12px; }
+  .error { color: #ad4246; font-size: 12px; }
+  @media (max-width: 720px) { .saved-page { padding: 23px 14px 35px; } article { padding: 15px; } article img { display: none; } h1 { font-size: 28px; } }
+</style>

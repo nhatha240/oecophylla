@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { HandleFetch } from '@sveltejs/kit';
-import { handleFetch } from './hooks.server';
+import type { Handle, HandleFetch } from '@sveltejs/kit';
+import { handle, handleFetch } from './hooks.server';
 
 async function invoke(request: Request) {
   const upstream = vi.fn<typeof fetch>().mockResolvedValue(new Response('{}'));
@@ -38,5 +38,36 @@ describe('server API fetch hook', () => {
     const request = new Request('https://example.test/resource');
     const upstream = await invoke(request);
     expect(upstream).toHaveBeenCalledWith(request);
+  });
+
+  it('keeps an explicit rotated cookie for the current-user retry', async () => {
+    const upstream = await invoke(new Request('http://localhost:3000/api/v1/auth/me', {
+      headers: { cookie: 'oec_access=rotated-token' }
+    }));
+    expect(new Headers(upstream.mock.calls[0][1]?.headers).get('cookie')).toBe('oec_access=rotated-token');
+  });
+});
+
+describe('incoming request origin guard', () => {
+  it('rejects a cross-origin form before reaching the action', async () => {
+    const resolve = vi.fn().mockResolvedValue(new Response('ok'));
+    const url = new URL('http://localhost:3000/login');
+    const request = new Request(url, {
+      method: 'POST',
+      headers: { origin: 'https://attacker.example', 'content-type': 'application/x-www-form-urlencoded' },
+      body: 'email_or_username=x&password=y'
+    });
+    const response = await handle({ event: { url, request }, resolve } as unknown as Parameters<Handle>[0]);
+    expect(response.status).toBe(403);
+    expect(resolve).not.toHaveBeenCalled();
+  });
+
+  it('allows a same-origin write', async () => {
+    const resolve = vi.fn().mockResolvedValue(new Response('ok'));
+    const url = new URL('http://localhost:3000/login');
+    const request = new Request(url, { method: 'POST', headers: { origin: url.origin }, body: '' });
+    const response = await handle({ event: { url, request }, resolve } as unknown as Parameters<Handle>[0]);
+    expect(response.status).toBe(200);
+    expect(resolve).toHaveBeenCalledOnce();
   });
 });

@@ -15,10 +15,13 @@ interface ViewTrackerOptions {
   monotonicNow?: () => number;
   qualifiedReadMs?: number;
   labelVersion?: 'v1' | 'v2';
+  viewerId?: string | null;
 }
 
 export function viewTracker(node: HTMLElement, options: ViewTrackerOptions) {
-  const client = options.client ?? getRecommendationTelemetryClient(options.labelVersion);
+  const client = options.enabled
+    ? options.client ?? getRecommendationTelemetryClient(options.labelVersion, options.viewerId ?? null)
+    : null;
   if (!options.enabled || !client || typeof IntersectionObserver === 'undefined') {
     return { destroy() {} };
   }
@@ -29,8 +32,13 @@ export function viewTracker(node: HTMLElement, options: ViewTrackerOptions) {
   let viewTimer: ReturnType<typeof setTimeout> | null = null;
   let visibleStartedAt: number | null = null;
   let latestRatio = 0.5;
+  let intersectsAtThreshold = false;
   let visibleSent = false;
   let viewSent = false;
+
+  function pageIsVisible(): boolean {
+    return typeof document === 'undefined' || document.visibilityState === 'visible';
+  }
 
   function clearThresholdTimers(): void {
     if (visibleTimer) clearTimeout(visibleTimer);
@@ -47,28 +55,44 @@ export function viewTracker(node: HTMLElement, options: ViewTrackerOptions) {
     if (dwellMs > 0) client?.dwell(options.context, dwellMs, trigger);
   }
 
+  function startVisibleSegment(): void {
+    if (!intersectsAtThreshold || !pageIsVisible() || visibleStartedAt !== null) return;
+    visibleStartedAt = monotonicNow();
+    if (!visibleSent) {
+      visibleTimer = setTimeout(() => {
+        if (!pageIsVisible()) {
+          finishVisibleSegment('page_hidden');
+          return;
+        }
+        if (visibleStartedAt === null) return;
+        visibleSent = true;
+        visibleTimer = null;
+        client?.visible(options.context, latestRatio);
+      }, VISIBLE_THRESHOLD_MS);
+    }
+    if (!viewSent) {
+      viewTimer = setTimeout(() => {
+        if (!pageIsVisible()) {
+          finishVisibleSegment('page_hidden');
+          return;
+        }
+        if (visibleStartedAt === null) return;
+        viewSent = true;
+        viewTimer = null;
+        client?.view(options.context, 'feed', qualifiedReadMs);
+      }, qualifiedReadMs);
+    }
+  }
+
   const io = new IntersectionObserver(
     (entries) => {
       const visibleEntry = entries.find((entry) => entry.isIntersecting && entry.intersectionRatio >= 0.5);
       if (visibleEntry) {
         latestRatio = visibleEntry.intersectionRatio;
-        if (visibleStartedAt !== null) return;
-        visibleStartedAt = monotonicNow();
-        if (!visibleSent) {
-          visibleTimer = setTimeout(() => {
-            visibleSent = true;
-            visibleTimer = null;
-            client.visible(options.context, latestRatio);
-          }, VISIBLE_THRESHOLD_MS);
-        }
-        if (!viewSent) {
-          viewTimer = setTimeout(() => {
-            viewSent = true;
-            viewTimer = null;
-            client.view(options.context, 'feed', qualifiedReadMs);
-          }, qualifiedReadMs);
-        }
+        intersectsAtThreshold = true;
+        startVisibleSegment();
       } else {
+        intersectsAtThreshold = false;
         finishVisibleSegment('viewport_exit');
       }
     },
@@ -76,9 +100,12 @@ export function viewTracker(node: HTMLElement, options: ViewTrackerOptions) {
   );
 
   function handleVisibilityChange(): void {
-    if (document.visibilityState !== 'hidden') return;
-    finishVisibleSegment('page_hidden');
-    void client?.flush();
+    if (pageIsVisible()) {
+      startVisibleSegment();
+    } else {
+      finishVisibleSegment('page_hidden');
+      void client?.flush();
+    }
   }
 
   io.observe(node);

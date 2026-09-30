@@ -1,7 +1,7 @@
-import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
+import { listNotifications } from '$lib/api/notifications';
 
-export const load: PageServerLoad = async ({ parent }) => {
-  const { user } = await parent();
-  if (!user) throw redirect(302, '/login');
+export const load: PageServerLoad = async ({ fetch }) => {
+  const notifications = await listNotifications(fetch).catch(() => ({ items: [], next_cursor: null }));
+  return { notifications };
 };

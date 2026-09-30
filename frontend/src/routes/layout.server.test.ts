@@ -1,0 +1,49 @@
+import { describe, expect, it, vi } from 'vitest';
+
+class RedirectResponse extends Error {
+	constructor(
+		public status: number,
+		public location: string
+	) {
+		super(`redirect ${status} ${location}`);
+	}
+}
+
+vi.mock('@sveltejs/kit', async () => {
+	const actual = await vi.importActual<typeof import('@sveltejs/kit')>('@sveltejs/kit');
+	return {
+		...actual,
+		redirect: (status: number, location: string) => {
+			throw new RedirectResponse(status, location);
+		}
+	};
+});
+
+import { load } from './+layout.server';
+
+function loadRoute(pathname: string, fetch = vi.fn().mockResolvedValue(new Response(null, { status: 401 })), refresh?: string) {
+	return load({
+		fetch,
+		url: new URL(`http://localhost${pathname}`),
+		cookies: { get: vi.fn().mockReturnValue(refresh), set: vi.fn(), delete: vi.fn() }
+	} as never);
+}
+
+describe('root layout authentication guard', () => {
+	it('redirects an unauthenticated request to login on protected routes', async () => {
+		await expect(loadRoute('/')).rejects.toMatchObject({ status: 303, location: '/login' });
+	});
+
+	it('lets an unauthenticated visitor reach the login route', async () => {
+		await expect(loadRoute('/login')).resolves.toEqual({ user: null });
+	});
+
+	it('refreshes an expired access token and loads the current user', async () => {
+		const fetch = vi.fn()
+			.mockResolvedValueOnce(new Response(null, { status: 401 }))
+			.mockResolvedValueOnce(new Response('{}', { headers: { 'set-cookie': 'oec_access=new-token; Path=/; HttpOnly; SameSite=Lax' } }))
+			.mockResolvedValueOnce(Response.json({ user: { id: 'admin-1', role: 'admin' } }));
+		await expect(loadRoute('/admin', fetch, 'refresh-token')).resolves.toEqual({ user: { id: 'admin-1', role: 'admin' } });
+		expect(fetch).toHaveBeenNthCalledWith(3, '/api/v1/auth/me', { headers: { cookie: 'oec_access=new-token' } });
+	});
+});

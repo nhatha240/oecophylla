@@ -1,128 +1,95 @@
 <script lang="ts">
-  import { env } from '$env/dynamic/public';
-  import { onMount, onDestroy } from 'svelte';
-  import Icon from '$lib/apple-glass/components/Icon.svelte';
-  import CommentItem from '$lib/components/CommentItem.svelte';
-  import CommentForm from '$lib/components/CommentForm.svelte';
-  import ReportDialog from '$lib/components/ReportDialog.svelte';
-  import ShareButton from '$lib/components/ShareButton.svelte';
-  import { user } from '$lib/stores/auth';
+  import type { PageData } from './$types';
   import type { Comment } from '$lib/types';
-  import { trackRecommendationDetailView } from '$lib/telemetry/recommendationTelemetry';
-
-  export let data: { post: import('$lib/types').Post; me: import('$lib/types').MyInteractions | null; comments: import('$lib/types').Comment[] };
-
-  let showReport = false;
-  let comments: Comment[] = [...(data.comments ?? [])];
-  let sseConnected = false;
-  let es: EventSource | null = null;
-
-  function addComment(raw: { id: string; post_id: string; author_id: string; author_username: string; author_display_name?: string | null; content: string; parent_id: string | null; created_at: string }) {
-    if (comments.some((c) => c.id === raw.id || (c.replies ?? []).some((r) => r.id === raw.id))) return;
-    const formatted: Comment = {
-      id: raw.id,
-      post_id: raw.post_id,
-      author_id: raw.author_id,
-      author_username: raw.author_username,
-      author_display_name: raw.author_display_name ?? null,
-      parent_comment_id: raw.parent_id,
-      content: raw.content,
-      is_deleted: false,
-      created_at: raw.created_at
-    };
-    if (raw.parent_id) {
-      const idx = comments.findIndex((c) => c.id === raw.parent_id);
-      if (idx !== -1) {
-        comments[idx] = { ...comments[idx], replies: [...(comments[idx].replies ?? []), formatted] };
-        comments = comments;
+  import { apiFetch } from '$lib/api';
+  import { detailReadTracker } from '$lib/actions/detailReadTracker';
+  import { isRecommendationTelemetryEnabled, recommendationLabelVersion, recommendationQualifiedReadMs } from '$lib/telemetry/config';
+  import Icon from '$lib/apple-glass/components/Icon.svelte';
+  export let data: PageData;
+  let liked = data.me?.liked ?? false;
+  let saved = data.me?.saved ?? false;
+  let shared = data.me?.shared ?? false;
+  let likeCount = data.post.like_count;
+  let comments: Comment[] = data.comments;
+  let comment = '';
+  let busy = false;
+  let feedback = '';
+  $: authorName = data.author?.display_name || data.author?.username || 'Thành viên Oecophylla';
+  async function toggle(kind: 'like' | 'save') {
+    if (busy) return;
+    busy = true; feedback = '';
+    const wasOn = kind === 'like' ? liked : saved;
+    try { await apiFetch(fetch, '/posts/' + data.post.id + '/' + kind, { method: wasOn ? 'DELETE' : 'POST' }); if (kind === 'like') { liked = !liked; likeCount += liked ? 1 : -1; } else saved = !saved; }
+    catch { feedback = 'Không thể cập nhật tương tác.'; }
+    finally { busy = false; }
+  }
+  async function submitComment() {
+    if (!comment.trim() || busy) return;
+    busy = true; feedback = '';
+    try { const created = await apiFetch<Comment>(fetch, '/posts/' + data.post.id + '/comments', { method: 'POST', body: JSON.stringify({ content: comment.trim(), parent_comment_id: null }) }); comments = [created, ...comments]; comment = ''; }
+    catch { feedback = 'Không thể gửi bình luận. Vui lòng thử lại.'; }
+    finally { busy = false; }
+  }
+  async function share() {
+    try {
+      await navigator.clipboard.writeText(location.href);
+    } catch {
+      feedback = 'Không thể sao chép liên kết.';
+      return;
+    }
+    if (!shared) {
+      try {
+        await apiFetch(fetch, '/posts/' + data.post.id + '/share', { method: 'POST' });
+        shared = true;
+      } catch {
+        feedback = 'Đã sao chép liên kết, nhưng chưa ghi nhận lượt chia sẻ.';
         return;
       }
     }
-    comments = [...comments, formatted];
+    feedback = 'Đã sao chép liên kết.';
   }
-
-  onMount(() => {
-    if (env.PUBLIC_RECOMMENDATION_TELEMETRY_ENABLED === 'true') {
-      trackRecommendationDetailView(
-        data.post.id,
-        env.PUBLIC_RECOMMENDATION_LABEL_VERSION === 'v2' ? 'v2' : 'v1',
-      );
-    }
-    es = new EventSource(`/api/v1/posts/${data.post.id}/comments/stream`, { withCredentials: true } as EventSourceInit);
-
-    es.addEventListener('open', () => {
-      sseConnected = true;
-    });
-
-    es.addEventListener('comment', (e) => {
-      try {
-        const raw = JSON.parse((e as MessageEvent).data);
-        addComment(raw);
-      } catch { /* ignore parse errors */ }
-    });
-
-    es.addEventListener('heartbeat', () => {});
-
-    es.addEventListener('error', () => {
-      sseConnected = false;
-    });
-  });
-
-  onDestroy(() => {
-    es?.close();
-    es = null;
-  });
 </script>
 
-<div class="reader">
-  <div class="crumbs">
-    <a href="/" style="color: var(--muted);"><Icon name="ArrowLeft" size={12} style="vertical-align: -2px" /> Quay lại bảng tin</a>
-  </div>
-
-  <div style="display: flex; gap: 8px; margin-bottom: 16px; align-items: center; flex-wrap: wrap;">
-    <span class="chip active">Bài viết</span>
-    <span class="t-meta"><Icon name="Clock" size={12} style="vertical-align: -2px" /> {new Date(data.post.created_at).toLocaleString('vi-VN')}</span>
-  </div>
-
-  <h1>{data.post.content.length > 140 ? `${data.post.content.slice(0, 140)}…` : data.post.content}</h1>
-  <p class="dek">{data.post.content}</p>
-
-  <div class="why-card">
-    <h4><Icon name="Sparkle" size={14} /> Vì sao bạn thấy bài viết này?</h4>
-    <p>Bài viết đang có tương tác trong mạng lưới của bạn và được phân phối qua feed hiện tại của Oecophylla.</p>
-    <div class="why-tags">
-      {#each data.post.tags as tag}
-        <span class="chip">#{tag}</span>
-      {/each}
+<svelte:head><title>Bài viết — Oecophylla</title></svelte:head>
+<div class="article-page"><article><nav class="breadcrumbs"><a href="/">Trang chủ</a><Icon name="Chevron" size={13} /><span>Bài viết</span></nav><div class="reading-region" use:detailReadTracker={{ postId: data.post.id, userId: data.user?.id, enabled: isRecommendationTelemetryEnabled(), labelVersion: recommendationLabelVersion(), qualifiedReadMs: recommendationQualifiedReadMs() }}><p class="eyebrow">{data.post.topics?.[0] ?? data.post.tags?.[0] ?? 'CỘNG ĐỒNG'} · {new Intl.DateTimeFormat('vi-VN').format(new Date(data.post.created_at))}</p><h1 class="serif">{data.post.content.slice(0, 135)}{data.post.content.length > 135 ? '…' : ''}</h1><div class="author"><a class="avatar" href={'/profile/' + data.post.author_id}>{#if data.author?.avatar_url}<img src={data.author.avatar_url} alt="" />{:else}{authorName.slice(0,1).toUpperCase()}{/if}</a><div><a href={'/profile/' + data.post.author_id}>{authorName}</a><small>@{data.author?.username ?? 'oecophylla'}</small></div></div>
+    {#if data.post.media_urls?.[0]}<img class="article-image" src={data.post.media_urls[0]} alt="Ảnh minh họa bài viết" />{/if}
+    <div class="body-copy serif">{data.post.content}</div>
     </div>
-  </div>
+    {#if data.post.tags?.length}<div class="tags">{#each data.post.tags as tag}<a href={'/search?q=' + encodeURIComponent(tag)}>#{tag}</a>{/each}</div>{/if}
+    <div class="actions"><button class:active={liked} disabled={busy} on:click={() => toggle('like')} aria-label="Thích bài viết"><Icon name={liked ? 'HeartFill' : 'Heart'} size={19} /> {likeCount}</button><a href="#comments"><Icon name="Comment" size={19} /> {comments.length}</a><button on:click={share}><Icon name="Share" size={19} /> Chia sẻ</button><button class:active={saved} disabled={busy} on:click={() => toggle('save')}><Icon name={saved ? 'BookmarkFill' : 'Bookmark'} size={19} /> {saved ? 'Đã lưu' : 'Lưu'}</button></div>
+    {#if feedback}<p class="feedback" role="status">{feedback}</p>{/if}
+  </article><section class="discussion" id="comments"><h2 class="serif">Thảo luận ({comments.length})</h2><form on:submit|preventDefault={submitComment}><textarea bind:value={comment} maxlength="2000" rows="3" placeholder="Viết bình luận của bạn..." aria-label="Bình luận"></textarea><button type="submit" class="pill-primary" disabled={busy || !comment.trim()}>Gửi bình luận <Icon name="ArrowRight" size={15} /></button></form><div class="comments">{#each comments as item}<div class="comment"><div class="comment-avatar">{(item.author_display_name ?? item.author_username).slice(0,1).toUpperCase()}</div><div><strong>{item.author_display_name ?? item.author_username}</strong><small>{new Intl.DateTimeFormat('vi-VN').format(new Date(item.created_at))}</small><p>{item.content}</p></div></div>{:else}<p class="muted">Hãy bắt đầu cuộc thảo luận đầu tiên.</p>{/each}</div></section></div>
 
-  <div class="reader-actions">
-    <a class="post-action" href="#comments"><Icon name="Comment" size={16} /> {data.post.comment_count} bình luận</a>
-    <span class="post-action"><Icon name="Eye" size={16} /> {data.post.view_count} lượt xem</span>
-    <ShareButton post={data.post} me={data.me} expanded />
-    {#if $user}
-      <button class="post-action" on:click={() => (showReport = true)}><Icon name="Flag" size={16} /> Báo cáo</button>
-    {/if}
-  </div>
-
-  <section id="comments">
-    <h2 class="serif" style="font-size: 26px; margin: 0 0 16px;">Bình luận ({data.post.comment_count})</h2>
-    {#if $user}
-      <CommentForm post_id={data.post.id} />
-    {/if}
-    <ul style="margin-top: 16px; padding: 0; list-style: none;">
-      {#each comments as c (c.id)}
-        <CommentItem {c} post_id={data.post.id} />
-      {/each}
-      {#if comments.length === 0}<p class="muted">Chưa có bình luận.</p>{/if}
-    </ul>
-    <p class="text-xs text-slate-400 mt-3 px-1">
-      {sseConnected ? '🟢 Đang cập nhật trực tiếp' : '⚪ Chờ kết nối'}
-    </p>
-  </section>
-</div>
-
-{#if showReport}
-  <ReportDialog post_id={data.post.id} on:close={() => (showReport = false)} />
-{/if}
+<style>
+  .article-page { display: grid; grid-template-columns: minmax(0,1.4fr) minmax(280px,.8fr); gap: 30px; max-width: 1180px; margin: auto; padding: 32px 35px 60px; }
+  article { min-width: 0; }
+  .breadcrumbs { display: flex; align-items: center; gap: 8px; margin-bottom: 25px; color: #86968f; font-size: 11px; }
+  .breadcrumbs a:hover { color: #1d5b54; }
+  h1 { margin: 10px 0 20px; font-size: clamp(31px, 3vw, 45px); font-weight: 500; line-height: 1.24; letter-spacing: -.05em; }
+  .author { display: flex; gap: 10px; align-items: center; margin-bottom: 23px; }
+  .avatar, .comment-avatar { width: 38px; height: 38px; display: grid; place-items: center; overflow: hidden; border-radius: 50%; background: #dcece5; color: #1d5b54; font: 600 17px 'Lora', serif; }
+  .avatar img { width: 100%; height: 100%; object-fit: cover; }
+  .author div { display: grid; gap: 3px; font: 600 12px 'Lora', serif; }
+  .author small { color: #91a19a; font: 10px 'Be Vietnam Pro', sans-serif; }
+  .article-image { display: block; width: 100%; max-height: 460px; object-fit: cover; border-radius: 8px; }
+  .body-copy { margin-top: 23px; white-space: pre-wrap; font-size: 16px; line-height: 1.9; color: #304b43; }
+  .tags { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 22px; }
+  .tags a { padding: 7px 12px; border-radius: 20px; background: #edf4ef; color: #396c61; font-size: 11px; }
+  .actions { display: flex; gap: 23px; padding: 18px 0; margin-top: 20px; border-top: 1px solid #e8eeeb; border-bottom: 1px solid #e8eeeb; }
+  .actions a, .actions button { display: inline-flex; align-items: center; gap: 7px; padding: 0; border: 0; background: transparent; color: #56776d; font-size: 12px; }
+  .actions .active { color: #19635a; }
+  .feedback { color: #527a70; font-size: 12px; }
+  .discussion { padding-left: 25px; border-left: 1px solid #edf1ee; }
+  .discussion h2 { margin: 5px 0 20px; font-size: 21px; font-weight: 500; }
+  .discussion form { display: grid; justify-items: end; gap: 10px; }
+  textarea { width: 100%; padding: 12px; resize: vertical; border: 1px solid #e2eae5; border-radius: 8px; outline: 0; font-size: 12px; }
+  textarea:focus { border-color: #4e8e7e; }
+  .comments { display: grid; gap: 18px; margin-top: 25px; }
+  .comment { display: flex; gap: 10px; }
+  .comment-avatar { flex: 0 0 32px; width: 32px; height: 32px; font-size: 14px; }
+  .comment strong { display: block; font: 600 12px 'Lora', serif; }
+  .comment small { color: #96a59d; font-size: 10px; }
+  .comment p { margin: 8px 0 0; color: #5f746a; font: 12px/1.65 'Lora', serif; }
+  @media (max-width: 900px) { .article-page { display: block; } .discussion { margin-top: 40px; padding: 0; border: 0; } }
+  @media (max-width: 720px) { .article-page { padding: 22px 17px 40px; } h1 { font-size: 28px; } .actions { gap: 14px; } .actions a, .actions button { font-size: 10px; } }
+</style>

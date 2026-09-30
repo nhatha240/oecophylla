@@ -1,9 +1,8 @@
-import type { RequestHandler } from '@sveltejs/kit';
-import { proxyToEnvoy } from '$lib/server/proxy';
+import type { RequestHandler } from './$types';
+import { proxyToEnvoy } from '$lib/server/upstreamProxy';
 
-const handle: RequestHandler = async (event) => {
-  const path = event.params.path ?? '';
-  return proxyToEnvoy(event, `/api/v1/${path}`);
+const handle: RequestHandler = async ({ request, params, url }) => {
+  return proxyToEnvoy(request, url, '/api/v1/' + (params.path ?? ''), '/api/v1/');
 };
 
 export const GET = handle;

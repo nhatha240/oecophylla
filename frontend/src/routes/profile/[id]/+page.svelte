@@ -1,464 +1,69 @@
 <script lang="ts">
-  import { invalidateAll } from '$app/navigation';
-  import Icon from '$lib/apple-glass/components/Icon.svelte';
-  import PostCard from '$lib/components/PostCard.svelte';
-  import { user } from '$lib/stores/auth';
-  import { ApiException, apiFetch } from '$lib/api';
-  import { showToast } from '$lib/stores/toast';
+  import type { PageData } from './$types';
   import type { Profile } from '$lib/types';
-
-  export let data: { profile: Profile; posts: import('$lib/types').Post[] };
-
-  const ALL_TOPICS = ['tech', 'science', 'sports', 'politics', 'entertainment', 'health', 'business', 'culture', 'education', 'environment'];
-
-  let following = data.profile.is_following ?? false;
-  let activeTab: 'posts' | 'followers' | 'following' = 'posts';
-  let followers: Profile[] = [];
-  let followingList: Profile[] = [];
-  let followersLoaded = false;
-  let followingLoaded = false;
-  let loadingTab = false;
-
-  // Edit profile state
+  import { page } from '$app/stores';
+  import { apiFetch, followUser, unfollowUser } from '$lib/api';
+  export let data: PageData;
+  let profile: Profile = data.profile;
   let editing = false;
-  let editDisplayName = '';
-  let editBio = '';
-  let editAvatarUrl = '';
-  let editTopicPrefs: string[] = [];
+  let name = profile.display_name ?? '';
+  let bio = profile.bio ?? '';
+  let avatarUrl = profile.avatar_url ?? '';
+  let following = profile.is_following ?? false;
   let saving = false;
-
-  $: isOwner = $user && $user.id === data.profile.id;
-
-  async function toggleFollow() {
-    try {
-      if (following) await apiFetch(fetch, `/users/${data.profile.id}/follow`, { method: 'DELETE' });
-      else           await apiFetch(fetch, `/users/${data.profile.id}/follow`, { method: 'POST' });
-      following = !following;
-    } catch (e) {
-      if (e instanceof ApiException && e.status === 400) showToast('Không thể theo dõi chính mình.');
-      else showToast('Không cập nhật được trạng thái theo dõi.');
-    }
-  }
-
-  async function switchTab(tab: 'posts' | 'followers' | 'following') {
-    activeTab = tab;
-    if (tab === 'followers' && !followersLoaded) {
-      loadingTab = true;
-      try {
-        followers = await apiFetch<Profile[]>(fetch, `/users/${data.profile.id}/followers?limit=50`);
-        followersLoaded = true;
-      } catch {
-        showToast('Không thể tải danh sách người theo dõi.');
-      } finally {
-        loadingTab = false;
-      }
-    } else if (tab === 'following' && !followingLoaded) {
-      loadingTab = true;
-      try {
-        followingList = await apiFetch<Profile[]>(fetch, `/users/${data.profile.id}/following?limit=50`);
-        followingLoaded = true;
-      } catch {
-        showToast('Không thể tải danh sách đang theo dõi.');
-      } finally {
-        loadingTab = false;
-      }
-    }
-  }
-
-  function startEdit() {
-    editDisplayName = data.profile.display_name ?? '';
-    editBio = data.profile.bio ?? '';
-    editAvatarUrl = data.profile.avatar_url ?? '';
-    editTopicPrefs = [...data.profile.topic_prefs];
-    editing = true;
-  }
-
-  function cancelEdit() {
-    editing = false;
-  }
-
-  function toggleTopic(topic: string) {
-    if (editTopicPrefs.includes(topic)) {
-      editTopicPrefs = editTopicPrefs.filter(t => t !== topic);
-    } else {
-      editTopicPrefs = [...editTopicPrefs, topic];
-    }
-  }
-
-  async function saveProfile() {
-    saving = true;
-    try {
-      const updated = await apiFetch<Profile>(fetch, `/users/${data.profile.id}`, {
-        method: 'PUT',
-        body: JSON.stringify({
-          display_name: editDisplayName || null,
-          bio: editBio || null,
-          avatar_url: editAvatarUrl || null,
-          topic_prefs: editTopicPrefs,
-        }),
-      });
-      data.profile = { ...data.profile, ...updated };
-      await invalidateAll();
-      editing = false;
-      showToast('Đã cập nhật hồ sơ.');
-    } catch {
-      showToast('Không thể cập nhật hồ sơ.');
-    } finally {
-      saving = false;
-    }
-  }
-
-  function handleAvatarError(e: Event) {
-    (e.target as HTMLImageElement).style.display = 'none';
-    const fallback = (e.target as HTMLImageElement).nextElementSibling as HTMLElement;
-    if (fallback) fallback.style.display = 'flex';
-  }
+  let feedback = '';
+  $: isOwner = $page.data.user?.id === profile.id;
+  function edit() { name = profile.display_name ?? ''; bio = profile.bio ?? ''; avatarUrl = profile.avatar_url ?? ''; editing = true; }
+  async function save() { saving = true; feedback = ''; try { profile = await apiFetch<Profile>(fetch, '/users/' + profile.id, { method: 'PUT', body: JSON.stringify({ display_name: name || null, bio: bio || null, avatar_url: avatarUrl || null, topic_prefs: profile.topic_prefs }) }); editing = false; feedback = 'Đã lưu thay đổi.'; } catch { feedback = 'Chưa lưu được hồ sơ.'; } finally { saving = false; } }
+  async function toggleFollow() { saving = true; feedback = ''; try { if (following) await unfollowUser(fetch, profile.id); else await followUser(fetch, profile.id); following = !following; } catch { feedback = 'Không thể cập nhật theo dõi.'; } finally { saving = false; } }
 </script>
-
-<div class="profile-page">
-  <div class="profile-cover"></div>
-  <div class="profile-head">
-    <div class="avatar s120">
-      {#if data.profile.avatar_url}
-        <img
-          src={data.profile.avatar_url}
-          alt={data.profile.display_name ?? data.profile.username}
-          class="avatar-img"
-          on:error={handleAvatarError}
-        />
-      {/if}
-      <span class="avatar-fallback" style={data.profile.avatar_url ? 'display:none' : ''}>
-        {(data.profile.display_name ?? data.profile.username).slice(0, 1).toUpperCase()}
-      </span>
-    </div>
-    <div class="profile-meta">
-      <h2>
-        {data.profile.display_name ?? data.profile.username}
-        <Icon name="Verified" size={18} style="color: var(--azure-500)" />
-      </h2>
-      <div class="handle">@{data.profile.username} · tham gia từ {new Date(data.profile.created_at).toLocaleDateString('vi-VN')}</div>
-      <p class="bio">{data.profile.bio ?? 'Người dùng Oecophylla đang xây dựng hồ sơ đọc tin và dấu chân thảo luận của mình.'}</p>
-      <div class="chips">
-        {#each data.profile.topic_prefs.slice(0, 4) as topic}
-          <span class="chip active">{topic}</span>
-        {/each}
-      </div>
-      <div class="profile-stats">
-        <div><b>{data.posts.length}</b> <span>bài viết</span></div>
-        <button class="stat-link" on:click={() => switchTab('followers')}>
-          <b>{followersLoaded ? followers.length : '—'}</b> <span>người theo dõi</span>
-        </button>
-        <button class="stat-link" on:click={() => switchTab('following')}>
-          <b>{followingLoaded ? followingList.length : '—'}</b> <span>đang theo dõi</span>
-        </button>
-      </div>
-    </div>
-    <div class="profile-head-actions">
-      {#if isOwner}
-        <button class="btn ghost" on:click={startEdit}>Chỉnh sửa hồ sơ</button>
-      {:else if $user}
-        <button class={`btn ${following ? 'ghost' : 'emerald'}`} on:click={toggleFollow}>
-          {following ? 'Đang theo dõi' : '+ Theo dõi'}
-        </button>
-      {/if}
-    </div>
-  </div>
-
-  {#if editing}
-    <div class="edit-panel">
-      <h3>Chỉnh sửa hồ sơ</h3>
-      <div class="edit-field">
-        <label for="edit-name">Tên hiển thị</label>
-        <input id="edit-name" type="text" bind:value={editDisplayName} placeholder="Tên hiển thị" maxlength="100" />
-      </div>
-      <div class="edit-field">
-        <label for="edit-bio">Giới thiệu</label>
-        <textarea id="edit-bio" bind:value={editBio} placeholder="Mô tả bản thân..." rows="3" maxlength="500"></textarea>
-      </div>
-      <div class="edit-field">
-        <label for="edit-avatar">URL ảnh đại diện</label>
-        <input id="edit-avatar" type="url" bind:value={editAvatarUrl} placeholder="https://..." />
-      </div>
-      <div class="edit-field">
-        <span class="edit-label">Chủ đề quan tâm</span>
-        <div class="topic-grid">
-          {#each ALL_TOPICS as topic}
-            <button
-              class="chip-toggle"
-              class:active={editTopicPrefs.includes(topic)}
-              on:click={() => toggleTopic(topic)}
-            >{topic}</button>
-          {/each}
-        </div>
-      </div>
-      <div class="edit-actions">
-        <button class="btn emerald" on:click={saveProfile} disabled={saving}>
-          {saving ? 'Đang lưu...' : 'Lưu thay đổi'}
-        </button>
-        <button class="btn ghost" on:click={cancelEdit}>Hủy</button>
-      </div>
-    </div>
-  {/if}
-
-  <div class="profile-grid">
-    <div>
-      <div class="tabs">
-        <button class="tab" class:active={activeTab === 'posts'} on:click={() => switchTab('posts')}>
-          Bài viết <span class="count-mini">{data.posts.length}</span>
-        </button>
-        <button class="tab" class:active={activeTab === 'followers'} on:click={() => switchTab('followers')}>
-          Người theo dõi
-        </button>
-        <button class="tab" class:active={activeTab === 'following'} on:click={() => switchTab('following')}>
-          Đang theo dõi
-        </button>
-      </div>
-
-      {#if activeTab === 'posts'}
-        {#each data.posts as p (p.id)}<PostCard post={p} />{/each}
-        {#if data.posts.length === 0}<p class="muted">Chưa có bài viết.</p>{/if}
-      {:else if activeTab === 'followers'}
-        {#if loadingTab}
-          <p class="muted">Đang tải...</p>
-        {:else if followers.length === 0}
-          <p class="muted">Chưa có người theo dõi.</p>
-        {:else}
-          <div class="user-list">
-            {#each followers as f (f.id)}
-              <a href="/profile/{f.id}" class="user-card">
-                <div class="avatar s40">
-                  {#if f.avatar_url}
-                    <img src={f.avatar_url} alt={f.display_name ?? f.username} class="avatar-img" on:error={handleAvatarError} />
-                  {/if}
-                  <span class="avatar-fallback" style={f.avatar_url ? 'display:none' : ''}>
-                    {(f.display_name ?? f.username).slice(0, 1).toUpperCase()}
-                  </span>
-                </div>
-                <div class="user-card-info">
-                  <div class="user-card-name">{f.display_name ?? f.username}</div>
-                  <div class="user-card-handle">@{f.username}</div>
-                </div>
-              </a>
-            {/each}
-          </div>
-        {/if}
-      {:else if activeTab === 'following'}
-        {#if loadingTab}
-          <p class="muted">Đang tải...</p>
-        {:else if followingList.length === 0}
-          <p class="muted">Chưa theo dõi ai.</p>
-        {:else}
-          <div class="user-list">
-            {#each followingList as f (f.id)}
-              <a href="/profile/{f.id}" class="user-card">
-                <div class="avatar s40">
-                  {#if f.avatar_url}
-                    <img src={f.avatar_url} alt={f.display_name ?? f.username} class="avatar-img" on:error={handleAvatarError} />
-                  {/if}
-                  <span class="avatar-fallback" style={f.avatar_url ? 'display:none' : ''}>
-                    {(f.display_name ?? f.username).slice(0, 1).toUpperCase()}
-                  </span>
-                </div>
-                <div class="user-card-info">
-                  <div class="user-card-name">{f.display_name ?? f.username}</div>
-                  <div class="user-card-handle">@{f.username}</div>
-                </div>
-              </a>
-            {/each}
-          </div>
-        {/if}
-      {/if}
-    </div>
-
-    <aside class="profile-aside">
-      <div class="taste-card">
-        <h4>Hồ sơ sở thích</h4>
-        <p class="hint">Các chủ đề được đồng bộ từ hồ sơ người dùng hiện tại.</p>
-        <div class="chips">
-          {#each data.profile.topic_prefs as topic}
-            <span class="chip">{topic}</span>
-          {/each}
-        </div>
-      </div>
-    </aside>
-  </div>
-</div>
-
+<svelte:head><title>{profile.display_name ?? profile.username} — Oecophylla</title></svelte:head>
+<div class="profile-page"><header><p class="eyebrow">CỘNG ĐỒNG OECOPHYLLA</p><h1 class="serif">{isOwner ? 'Quản lý hồ sơ' : 'Hồ sơ thành viên'}</h1><p>Một hồ sơ đầy đủ giúp xây dựng những cuộc thảo luận chất lượng.</p></header><div class="profile-grid"><section class="profile-panel">{#if editing}<h2 class="serif">Thông tin cá nhân</h2><div class="edit-top"><div class="avatar">{#if avatarUrl}<img src={avatarUrl} alt="" />{:else}{(name || profile.username).slice(0,1).toUpperCase()}{/if}</div><p>Chỉnh sửa thông tin hiển thị trên hồ sơ cộng đồng của bạn.</p></div><label for="name">Họ tên</label><input id="name" bind:value={name} maxlength="100" /><label for="avatar">Đường dẫn ảnh đại diện</label><input id="avatar" type="url" bind:value={avatarUrl} placeholder="https://..." /><label for="bio">Tiểu sử</label><textarea id="bio" bind:value={bio} rows="4" maxlength="280"></textarea><p class="field-label">Chủ đề quan tâm</p><div class="chips">{#each profile.topic_prefs as topic}<span>{topic}</span>{/each}</div><div class="buttons"><button class="pill-primary" disabled={saving} on:click={save}>Lưu thay đổi</button><button class="pill-outline" on:click={() => editing = false}>Hủy</button></div>{:else}<div class="cover"></div><div class="profile-head"><div class="avatar large">{#if profile.avatar_url}<img src={profile.avatar_url} alt="" />{:else}{(profile.display_name ?? profile.username).slice(0,1).toUpperCase()}{/if}</div><div class="buttons">{#if isOwner}<a class="pill-outline" href="/my-posts">Bài viết của tôi</a><button class="pill-outline" on:click={edit}>Chỉnh sửa hồ sơ</button>{:else}<button class={following ? 'pill-outline' : 'pill-primary'} disabled={saving} on:click={toggleFollow}>{following ? 'Đang theo dõi' : 'Theo dõi'}</button>{/if}</div></div><h2 class="serif">{profile.display_name ?? profile.username}</h2><p class="handle">@{profile.username}</p><p class="bio">{profile.bio ?? 'Thành viên Oecophylla đang cùng khám phá những câu chuyện đáng suy ngẫm.'}</p><div class="stats"><div><strong>{data.posts.length}</strong><span>Bài viết</span></div><div><strong>{profile.topic_prefs.length}</strong><span>Chủ đề quan tâm</span></div></div><div class="chips">{#each profile.topic_prefs as topic}<span>{topic}</span>{/each}</div>{/if}{#if feedback}<p class="feedback" role="status">{feedback}</p>{/if}{#if isOwner}<form class="signout" method="POST" action="/logout"><button type="submit">Đăng xuất</button></form>{/if}</section><aside class="profile-rail"><img src="/brand/city.jpg" alt="Thành phố Việt Nam bên sông" /><h3 class="serif">Tri thức kết nối con người</h3><p>Những góc nhìn tử tế cùng tạo nên thay đổi lớn.</p><small>Tham gia từ {new Intl.DateTimeFormat('vi-VN').format(new Date(profile.created_at))}</small></aside></div><section class="posts"><h2 class="serif">Bài viết</h2>{#if data.posts.length}<div class="post-list">{#each data.posts as post}<a href={'/post/' + post.id}><span class="eyebrow">{post.topics?.[0] ?? 'BÀI VIẾT'}</span><h3 class="serif">{post.content.slice(0, 165)}{post.content.length > 165 ? '…' : ''}</h3><small>{new Intl.DateTimeFormat('vi-VN').format(new Date(post.created_at))}</small></a>{/each}</div>{:else}<p class="empty">Chưa có bài viết nào.</p>{/if}</section></div>
 <style>
-  .chips {
-    display: flex;
-    gap: 6px;
-    margin-top: 10px;
-    flex-wrap: wrap;
-  }
-
-  .avatar {
-    position: relative;
-    overflow: hidden;
-  }
-
-  .avatar-img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    border-radius: 50%;
-    position: absolute;
-    inset: 0;
-  }
-
-  .avatar-fallback {
-    width: 100%;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .stat-link {
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 0;
-    font: inherit;
-    color: inherit;
-    transition: opacity 0.15s;
-  }
-
-  .stat-link:hover {
-    opacity: 0.7;
-  }
-
-  /* Edit panel */
-  .edit-panel {
-    max-width: 640px;
-    margin: 0 auto 24px;
-    padding: 20px 24px;
-    border-radius: 16px;
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    backdrop-filter: blur(12px);
-  }
-
-  .edit-panel h3 {
-    margin: 0 0 16px;
-    font-size: 1.1rem;
-  }
-
-  .edit-field {
-    margin-bottom: 14px;
-  }
-
-  .edit-field label,
-  .edit-label {
-    display: block;
-    font-size: 0.85rem;
-    color: rgba(255, 255, 255, 0.6);
-    margin-bottom: 6px;
-  }
-
-  .edit-field input,
-  .edit-field textarea {
-    width: 100%;
-    padding: 10px 12px;
-    border-radius: 10px;
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    background: rgba(255, 255, 255, 0.04);
-    color: inherit;
-    font: inherit;
-    font-size: 0.95rem;
-    outline: none;
-    transition: border-color 0.2s;
-    box-sizing: border-box;
-  }
-
-  .edit-field input:focus,
-  .edit-field textarea:focus {
-    border-color: var(--azure-500, #3b82f6);
-  }
-
-  .edit-field textarea {
-    resize: vertical;
-  }
-
-  .topic-grid {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-
-  .chip-toggle {
-    padding: 6px 14px;
-    border-radius: 20px;
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    background: transparent;
-    color: inherit;
-    font: inherit;
-    font-size: 0.85rem;
-    cursor: pointer;
-    transition: all 0.15s;
-  }
-
-  .chip-toggle.active {
-    background: var(--azure-500, #3b82f6);
-    border-color: var(--azure-500, #3b82f6);
-    color: #fff;
-  }
-
-  .chip-toggle:hover:not(.active) {
-    border-color: rgba(255, 255, 255, 0.3);
-  }
-
-  .edit-actions {
-    display: flex;
-    gap: 10px;
-    margin-top: 16px;
-  }
-
-  /* User list */
-  .user-list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .user-card {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 12px 16px;
-    border-radius: 12px;
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    text-decoration: none;
-    color: inherit;
-    transition: background 0.15s;
-  }
-
-  .user-card:hover {
-    background: rgba(255, 255, 255, 0.08);
-  }
-
-  .user-card-info {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .user-card-name {
-    font-weight: 600;
-    font-size: 0.95rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .user-card-handle {
-    font-size: 0.82rem;
-    color: rgba(255, 255, 255, 0.5);
-  }
-
-  .muted {
-    text-align: center;
-    padding: 32px 0;
-    color: rgba(255, 255, 255, 0.4);
-  }
+  .profile-page { max-width: 1160px; margin: auto; padding: 31px 34px 60px; }
+  header h1 { margin: 8px 0 3px; font-size: 35px; font-weight: 500; letter-spacing: -.05em; }
+  header p:last-child { margin: 0 0 22px; color: #72877e; font: 13px/1.5 'Lora', serif; }
+  .profile-grid { display: grid; grid-template-columns: minmax(0,1.5fr) minmax(260px,.8fr); gap: 15px; }
+  .profile-panel, .profile-rail { overflow: hidden; border: 1px solid #e7eeea; border-radius: 9px; background: white; }
+  .profile-panel { padding: 20px; }
+  .cover { height: 170px; margin: -20px -20px 0; background: linear-gradient(0deg, #173f3880, transparent), url('/brand/city.jpg') center 62%/cover; }
+  .profile-head { display: flex; justify-content: space-between; align-items: end; margin-top: -40px; }
+  .avatar { width: 86px; height: 86px; display: grid; place-items: center; overflow: hidden; border: 4px solid white; border-radius: 50%; background: #dcece5; color: #1d5b54; font: 600 35px 'Lora', serif; }
+  .avatar.large { width: 98px; height: 98px; }
+  .avatar img { width: 100%; height: 100%; object-fit: cover; }
+  .profile-panel h2 { margin: 14px 0 0; font-size: 25px; font-weight: 500; }
+  .handle { margin: 3px 0 12px; color: #8b9c94; font-size: 11px; }
+  .bio { max-width: 540px; color: #5e7369; font: 13px/1.7 'Lora', serif; }
+  .stats { display: flex; gap: 0; margin: 20px 0; padding: 16px 0; border-top: 1px solid #edf1ee; border-bottom: 1px solid #edf1ee; }
+  .stats div { display: grid; gap: 3px; min-width: 120px; border-right: 1px solid #e5ebe7; }
+  .stats div + div { padding-left: 25px; }
+  .stats div:last-child { border: 0; }
+  .stats strong { font: 600 18px 'Lora', serif; }
+  .stats span { color: #83968b; font-size: 10px; }
+  .chips { display: flex; gap: 7px; flex-wrap: wrap; margin: 10px 0; }
+  .chips span { padding: 7px 11px; border-radius: 20px; background: #edf5f0; color: #35695e; font-size: 10px; }
+  .buttons { display: flex; gap: 8px; }
+  .profile-rail { padding: 15px; align-self: start; }
+  .profile-rail img { width: 100%; height: 170px; object-fit: cover; border-radius: 6px; }
+  .profile-rail h3 { margin: 14px 0 5px; font-size: 19px; font-weight: 500; }
+  .profile-rail p { color: #71867b; font: italic 13px/1.6 'Lora', serif; }
+  .profile-rail small { color: #90a096; }
+  .posts { margin-top: 30px; }
+  .posts h2 { font-size: 22px; font-weight: 500; }
+  .post-list { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 11px; }
+  .post-list a { padding: 18px; border: 1px solid #e7eeea; border-radius: 8px; background: white; }
+  .post-list h3 { margin: 8px 0; font-size: 16px; font-weight: 500; }
+  .post-list small { color: #8fa097; }
+  label, .field-label { display: block; margin: 17px 0 7px; font: 600 12px 'Lora', serif; }
+  input, textarea { width: 100%; padding: 11px; border: 1px solid #dce7e1; border-radius: 6px; outline: 0; background: #fff; font-size: 12px; }
+  textarea { resize: vertical; }
+  .edit-top { display: flex; gap: 12px; align-items: center; margin-top: 15px; }
+  .edit-top p { color: #81948b; font-size: 12px; }
+  .profile-panel > .buttons { margin-top: 25px; }
+  .feedback { color: #45756b; font-size: 12px; }
+  .empty { color: #8a9b91; font-size: 12px; }
+  @media (max-width: 900px) { .profile-grid { display: block; } .profile-rail { display: none; } }
+  @media (max-width: 720px) { .profile-page { padding: 21px 14px 35px; } header h1 { font-size: 28px; } .post-list { grid-template-columns: 1fr; } }
+  .signout { display: none; }
+  @media (max-width: 720px) { .signout { display: block; margin-top: 28px; } .signout button { border: 0; background: transparent; color: #698579; font-size: 12px; text-decoration: underline; } }
 </style>

@@ -1,23 +1,21 @@
-import type { Actions } from './$types';
-import { fail, redirect } from '@sveltejs/kit';
+import { fail, redirect, type Actions } from '@sveltejs/kit';
 import { apiFetch, ApiException } from '$lib/api';
 import type { Post } from '$lib/types';
 
 export const actions: Actions = {
   default: async ({ request, fetch }) => {
-    const f = await request.formData();
-    const tags = String(f.get('tags') ?? '').split(',').map(s => s.trim()).filter(Boolean);
-    const media_urls = f.getAll('media_urls[]').map(String).filter(Boolean);
+    const form = await request.formData();
+    const content = String(form.get('content') ?? '').trim();
+    const tags = String(form.get('tags') ?? '').split(',').map((tag) => tag.trim()).filter(Boolean);
+    const mediaUrl = String(form.get('media_url') ?? '').trim();
+    if (!content) return fail(400, { error: 'Vui lòng nhập nội dung bài viết.', content });
+    let post: Post;
     try {
-      const post = await apiFetch<Post>(fetch, '/posts', {
-        method: 'POST',
-        body: JSON.stringify({ content: String(f.get('content') ?? ''), tags, media_urls }),
-      });
-      throw redirect(303, `/post/${post.id}`);
+      post = await apiFetch<Post>(fetch, '/posts', { method: 'POST', body: JSON.stringify({ content, tags, media_urls: mediaUrl ? [mediaUrl] : [] }) });
     } catch (e) {
-      if (e instanceof ApiException && e.status === 400) return fail(400, { error: 'Nội dung không hợp lệ' });
       if (e instanceof ApiException && e.status === 401) throw redirect(303, '/login');
-      throw e;
+      return fail(400, { error: 'Không thể đăng bài. Hãy kiểm tra nội dung và thử lại.', content });
     }
-  },
+    throw redirect(303, '/post/' + post.id);
+  }
 };

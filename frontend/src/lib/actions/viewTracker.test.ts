@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { viewTracker } from './viewTracker';
 import type { RecommendationContext, TelemetryRecorder } from '../telemetry/recommendationTelemetry';
 
@@ -22,9 +22,15 @@ function recorder(): TelemetryRecorder {
 
 describe('viewTracker', () => {
   let emitIntersection: (ratio: number) => void;
+  let pageVisibility: DocumentVisibilityState;
+  let fakeDocument: Document;
 
   beforeEach(() => {
     vi.useFakeTimers();
+    pageVisibility = 'visible';
+    fakeDocument = new EventTarget() as Document;
+    Object.defineProperty(fakeDocument, 'visibilityState', { get: () => pageVisibility });
+    vi.stubGlobal('document', fakeDocument);
     class FakeIntersectionObserver {
       constructor(callback: IntersectionObserverCallback) {
         emitIntersection = (ratio: number) => callback([
@@ -35,6 +41,11 @@ describe('viewTracker', () => {
       disconnect() {}
     }
     vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
   it('does not emit visible before 800 ms', () => {
@@ -92,6 +103,40 @@ describe('viewTracker', () => {
     expect(client.view).not.toHaveBeenCalled();
     vi.advanceTimersByTime(1);
     expect(client.view).toHaveBeenCalledWith(context, 'feed', 12_345);
+    action.destroy();
+  });
+
+  it('pauses in a hidden tab and resumes a card that is still in the viewport', () => {
+    let now = 0;
+    const client = recorder();
+    const action = viewTracker({} as HTMLElement, {
+      context,
+      client,
+      enabled: true,
+      monotonicNow: () => now,
+    });
+
+    emitIntersection(0.8);
+    now = 400;
+    vi.advanceTimersByTime(400);
+    pageVisibility = 'hidden';
+    fakeDocument.dispatchEvent(new Event('visibilitychange'));
+    expect(client.dwell).toHaveBeenCalledWith(context, 400, 'page_hidden');
+
+    emitIntersection(0.8);
+    now = 20_400;
+    vi.advanceTimersByTime(20_000);
+    expect(client.visible).not.toHaveBeenCalled();
+    expect(client.view).not.toHaveBeenCalled();
+
+    pageVisibility = 'visible';
+    fakeDocument.dispatchEvent(new Event('visibilitychange'));
+    now = 21_200;
+    vi.advanceTimersByTime(800);
+    expect(client.visible).toHaveBeenCalledTimes(1);
+    now = 30_400;
+    vi.advanceTimersByTime(9_200);
+    expect(client.view).toHaveBeenCalledWith(context, 'feed', 10_000);
     action.destroy();
   });
 

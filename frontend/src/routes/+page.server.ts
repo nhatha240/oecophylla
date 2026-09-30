@@ -1,13 +1,15 @@
 import type { PageServerLoad } from './$types';
-import { getFeed, getMyInteractionsBatch, getUserPreferences } from '$lib/api';
+import { getFeed, getMyInteractionsBatch, getUserPreferences, getTrendingTopics } from '$lib/api';
 import type { UserPreferences } from '$lib/types';
 
 export const load: PageServerLoad = async ({ fetch, url, parent }) => {
   const feedParam = url.searchParams.get('feed');
-  const feedMode: 'foryou' | 'following' = feedParam === 'following' ? 'following' : 'foryou';
+  const feedMode: 'foryou' | 'following' | 'trending' =
+    feedParam === 'following' || feedParam === 'trending' ? feedParam : 'foryou';
+  const trendingTopics = await getTrendingTopics(fetch).catch(() => []);
 
   try {
-    const modeParam = feedMode === 'following' ? 'following' : undefined;
+    const modeParam = feedMode === 'foryou' ? undefined : feedMode;
     const feed = await getFeed(fetch, undefined, 20, modeParam);
     const postIds = feed.items.map((p) => p.id);
     const me = postIds.length
@@ -20,9 +22,9 @@ export const load: PageServerLoad = async ({ fetch, url, parent }) => {
       ? await getUserPreferences(fetch, userId).catch(() => null)
       : null;
 
-    return { feed, me: me.items, feedMode, prefs };
+    return { feed, me: me.items, feedMode, prefs, trendingTopics };
   } catch {
     // Unauthenticated visit or feed-service down — render empty page.
-    return { feed: null, me: {}, feedMode, prefs: null };
+    return { feed: null, me: {}, feedMode, prefs: null, trendingTopics };
   }
 };
