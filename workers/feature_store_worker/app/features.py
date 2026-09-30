@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from math import exp2
 
 PREFERENCE_SCHEMA_V2 = "preference-vector-v2"
 DEFAULT_PREFERENCE_HALF_LIFE_HOURS = 24.0 * 30.0
 DEFAULT_CHANNEL_BOUND = 10.0
+DIRECT_READ_VISIT_GAP = timedelta(hours=1)
 
 
 @dataclass(frozen=True)
@@ -18,7 +19,10 @@ class PreferenceEvent:
     topics: tuple[str, ...]
     occurred_at: datetime
     impression_id: str | None = None
+    session_id: str | None = None
+    visit_id: str | None = None
     dwell_ms: int | None = None
+    read_trigger: str | None = None
 
 
 @dataclass(frozen=True)
@@ -39,7 +43,21 @@ class PreferenceVectorV2:
         }
 
 
+@dataclass
+class _DirectReadVisit:
+    last_event_at: datetime
+    qualified_counted: bool = False
+    view_seen: bool = False
+    max_dwell_ms: int = 0
+
+
 WEIGHTS: dict[str, float] = {
+    # The canonical click row is replayed into v2; legacy v1 keeps its
+    # existing weights and must not gain a second click contribution. Dwell
+    # and unhide likewise trigger v2 replay without a legacy v1 delta.
+    "click": 0.0,
+    "dwell": 0.0,
+    "unhide": 0.0,
     "viewed": 0.5,
     "qualified_read": 0.5,
     "liked": 1.5,
@@ -134,17 +152,59 @@ def build_preference_vector_v2(
 
     active: dict[tuple[str, str], PreferenceEvent] = {}
     additive: list[tuple[PreferenceEvent, str]] = []
-    seen_reads: set[str] = set()
+    seen_impression_reads: set[str] = set()
+    seen_visit_reads: set[tuple[str | None, str, str]] = set()
+    direct_read_visits: dict[tuple[str, str], _DirectReadVisit] = {}
     for event in unique:
         event_type = event.event_type
         if event_type in ("view", "dwell"):
-            if event.dwell_ms is None or event.dwell_ms < qualified_read_ms:
+            qualified = event.dwell_ms is not None and event.dwell_ms >= qualified_read_ms
+            if event.impression_id is not None:
+                if qualified and event.impression_id not in seen_impression_reads:
+                    seen_impression_reads.add(event.impression_id)
+                    additive.append((event, "qualified_read"))
                 continue
-            read_identity = event.impression_id or event.event_id
-            if read_identity in seen_reads:
+
+            if event.visit_id is not None:
+                visit_key = (event.session_id, event.post_id, event.visit_id)
+                if qualified and visit_key not in seen_visit_reads:
+                    seen_visit_reads.add(visit_key)
+                    additive.append((event, "qualified_read"))
                 continue
-            seen_reads.add(read_identity)
-            additive.append((event, "qualified_read"))
+
+            if event.session_id is None:
+                # No reliable shared identity exists for historical rows with
+                # neither impression nor session. Preserve their event-level
+                # evidence rather than guessing across unrelated visits.
+                if qualified:
+                    additive.append((event, "qualified_read"))
+                continue
+
+            key = (event.session_id, event.post_id)
+            occurred_at = _aware_utc(event.occurred_at)
+            visit = direct_read_visits.get(key)
+            if (
+                visit is None
+                or occurred_at - visit.last_event_at > DIRECT_READ_VISIT_GAP
+                or (event_type == "view" and visit.view_seen)
+                or (
+                    event_type == "dwell"
+                    and event.dwell_ms is not None
+                    and event.dwell_ms < visit.max_dwell_ms
+                )
+            ):
+                visit = _DirectReadVisit(last_event_at=occurred_at)
+                direct_read_visits[key] = visit
+            visit.last_event_at = occurred_at
+            if event_type == "view":
+                visit.view_seen = True
+            if event.dwell_ms is not None:
+                visit.max_dwell_ms = max(visit.max_dwell_ms, event.dwell_ms)
+            if qualified and not visit.qualified_counted:
+                additive.append((event, "qualified_read"))
+                visit.qualified_counted = True
+            if event.read_trigger == "destroy":
+                direct_read_visits.pop(key, None)
             continue
         if event_type in STATEFUL_EVENTS:
             active[(event.post_id, event_type)] = event

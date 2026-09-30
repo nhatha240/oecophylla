@@ -28,7 +28,7 @@ from .settings import settings as load_settings
 logger = logging.getLogger("feature_store_worker")
 
 UUID_KEYS = ("user_id", "reporter_id", "commenter_id")
-IGNORED_EVENT_TYPES = frozenset({"visible", "dwell"})
+IGNORED_EVENT_TYPES = frozenset({"visible"})
 
 FEATURE_EVENT_OUTCOMES = Counter(
     "feature_worker_events_total",
@@ -169,12 +169,14 @@ class Worker:
             per_user[user].append(env)
 
         failed_events: list[dict[str, Any]] = []
+        trending_events: list[dict[str, Any]] = []
         if per_user:
             assert self.pool is not None
             assert self.redis is not None
             for user_id, user_events in per_user.items():
                 try:
                     result = await self._apply_for_user(user_id, user_events)
+                    trending_events.extend(result.applied_events)
                     for env in result.applied_events:
                         _record_outcome("applied", _event_type(env))
                     for env in result.duplicate_events:
@@ -185,13 +187,15 @@ class Worker:
                     logger.exception("failed to apply preference features")
                     failed_events.extend(user_events)
 
-        # Trending is deliberately approximate and is not receipt-deduplicated.
-        # It must never be treated as a ground-truth training label. A failure
-        # here is logged but does not block the Kafka offset commit.
-        try:
-            await self._update_trending(events)
-        except Exception:
-            logger.exception("failed to update trending")
+        # Only count events whose receipts and features committed. Trending is
+        # still approximate: if Redis fails after the receipt commits, a replay
+        # cannot recover the missed increment. Trending failures are logged but
+        # do not block the Kafka offset commit or retry an uncertain increment.
+        if trending_events:
+            try:
+                await self._update_trending(trending_events)
+            except Exception:
+                logger.exception("failed to update trending")
 
         if failed_events:
             # Re-queue for the next flush so the events are retried rather than
@@ -302,8 +306,12 @@ class Worker:
                             event.id::text AS event_id,
                             event.post_id::text AS post_id,
                             event.impression_id::text AS impression_id,
+                            event.session_id::text AS session_id,
                             event.event_type,
                             event.dwell_ms,
+                            event.metadata ->> 'trigger' AS read_trigger,
+                            event.metadata ->> 'visit_id' AS visit_id,
+                            event.topic_snapshot,
                             event.occurred_at,
                             post.topics,
                             post.tags
@@ -387,8 +395,12 @@ class Worker:
                         event.id::text AS event_id,
                         event.post_id::text AS post_id,
                         event.impression_id::text AS impression_id,
+                        event.session_id::text AS session_id,
                         event.event_type,
                         event.dwell_ms,
+                        event.metadata ->> 'trigger' AS read_trigger,
+                        event.metadata ->> 'visit_id' AS visit_id,
+                        event.topic_snapshot,
                         event.occurred_at,
                         post.topics,
                         post.tags
@@ -417,9 +429,10 @@ class Worker:
         for env in events:
             etype = _event_type(env)
             pid = env.get("data", {}).get("post_id")
-            if not pid:
+            delta = WEIGHTS.get(etype, 0.0)
+            if not pid or delta == 0.0:
                 continue
-            score_by_post[str(pid)] += WEIGHTS.get(etype, 0.0)
+            score_by_post[str(pid)] += delta
         if not score_by_post:
             return
         async with self.redis.pipeline() as pipe:
@@ -518,11 +531,19 @@ def _decode_vector_v2(raw: Any) -> PreferenceVectorV2 | None:
 def _canonical_preference_events(rows: list[Any]) -> list[PreferenceEvent]:
     events: list[PreferenceEvent] = []
     for row in rows:
-        topics = [
-            topic for topic in (row["topics"] or []) if topic and topic != "general"
-        ]
-        if not topics:
-            topics = [tag for tag in (row["tags"] or []) if tag] or ["general"]
+        topic_snapshot = row.get("topic_snapshot")
+        if topic_snapshot is not None:
+            # Snapshots are event-time evidence. An empty snapshot is still
+            # authoritative and resolves to general in the vector builder.
+            topics = [topic for topic in topic_snapshot if topic]
+        else:
+            # Historical rows predate snapshots and can only use current post
+            # classification as a best-effort fallback.
+            topics = [
+                topic for topic in (row["topics"] or []) if topic and topic != "general"
+            ]
+            if not topics:
+                topics = [tag for tag in (row["tags"] or []) if tag] or ["general"]
         events.append(
             PreferenceEvent(
                 event_id=str(row["event_id"]),
@@ -530,8 +551,13 @@ def _canonical_preference_events(rows: list[Any]) -> list[PreferenceEvent]:
                 impression_id=(
                     str(row["impression_id"]) if row["impression_id"] else None
                 ),
+                session_id=(
+                    str(row.get("session_id")) if row.get("session_id") else None
+                ),
+                visit_id=row.get("visit_id"),
                 event_type=str(row["event_type"]),
                 dwell_ms=row["dwell_ms"],
+                read_trigger=row.get("read_trigger"),
                 occurred_at=row["occurred_at"],
                 topics=tuple(topics),
             )
