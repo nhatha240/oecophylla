@@ -253,6 +253,21 @@ def _qualifies_for_history(event: BehaviorEvent, reference_at: datetime) -> bool
     )
 
 
+def _verified_exposure_at(
+    impression: Impression, linked_events: Sequence[BehaviorEvent]
+) -> datetime | None:
+    # A click proves exposure even when the 800 ms visible timer has not fired.
+    return min(
+        (
+            event.occurred_at
+            for event in linked_events
+            if event.event_type in {"visible", "click"}
+            and event.occurred_at >= impression.served_at
+        ),
+        default=None,
+    )
+
+
 def _select_history_feature(
     features: Sequence[ArticleFeatureRecord], engaged_at: datetime
 ) -> ArticleFeatureRecord | None:
@@ -367,16 +382,10 @@ def build_samples(
             if event.user_id == impression.user_id
             and event.post_id == impression.post_id
         ]
-        visible_events = [
-            event
-            for event in linked_events
-            if event.event_type == "visible"
-            and event.occurred_at >= impression.served_at
-        ]
-        if not visible_events:
+        visible_at = _verified_exposure_at(impression, linked_events)
+        if visible_at is None:
             served_without_visible += 1
             continue
-        visible_at = min(event.occurred_at for event in visible_events)
         label_window_end = visible_at + window
         if label_window_end > config.extraction_time:
             immature_impressions += 1
@@ -635,16 +644,10 @@ def build_ranking_samples_v2(
             if event.user_id == impression.user_id
             and event.post_id == impression.post_id
         ]
-        visible_events = [
-            event
-            for event in linked_events
-            if event.event_type == "visible"
-            and event.occurred_at >= impression.served_at
-        ]
-        if not visible_events:
+        visible_at = _verified_exposure_at(impression, linked_events)
+        if visible_at is None:
             served_without_visible += 1
             continue
-        visible_at = min(event.occurred_at for event in visible_events)
         label_window_end = visible_at + label_window
         if label_window_end > config.extraction_time:
             immature_impressions += 1

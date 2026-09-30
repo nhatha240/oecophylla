@@ -18,8 +18,11 @@ contain the complete pre-ranking retrieval pool. `retrieval_recall_supported`
 is therefore always `false`; retrieval evaluation is deferred to T8b.
 
 Only candidates with both a stored recommendation impression (`served=true`)
-and a proven visibility event (`visible=true`) are exported. A served candidate
-without visibility is counted in exclusions, not converted into a negative.
+and a proven exposure event (viewport `visible` or a verified click after serving)
+are exported. A served candidate without either exposure proof is counted in
+exclusions, not converted into a negative. When click arrives before visible,
+the click timestamp anchors `visible_at` and the click remains a valid direct
+engagement label.
 An item that was retrieved but never logged as served is outside this dataset
 and is never synthesized as a candidate or negative.
 
@@ -35,7 +38,7 @@ Each Parquet row has these logical fields:
 | `split` | `train`, `validation`, or `test`. |
 | `served_at`, `visible_at` | Timezone-aware event timestamps. |
 | `position` | Unique served position within the request. |
-| `served`, `visible` | Both must be `true`; retained separately for audit. |
+| `served`, `visible` | Both are `true`; `visible` is the dataset's proven-exposure flag and may be anchored by a verified click even when no viewport event arrived. |
 | `click_label` | `1` only when a click occurred in the closed label window, otherwise `0`. |
 | `utility_label` | Binary target from `engagement-label-v2`, independent of click. |
 | `utility_label_name` | Resolved v2 semantic used to derive `utility_label`. |

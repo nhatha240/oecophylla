@@ -11,6 +11,7 @@ import pytest
 from ai_pipeline.build_dataset import (
     _split_ranking_rows,
     build_ranking_samples_v2,
+    build_samples,
     validate_dataset_v2,
     write_dataset_v2_artifact,
 )
@@ -150,6 +151,155 @@ def config() -> DatasetConfig:
         encoder_version=ENCODER,
         encoder_dimension=384,
     )
+
+
+def _click_without_visible_telemetry(config: DatasetConfig):
+    served_at = config.start + timedelta(hours=1)
+    user_id = UUID(int=1)
+    request_id = UUID(int=2)
+    snapshot = {
+        "schema_version": "rank-features-v1",
+        "topic_relevance": 0.5,
+        "freshness": 0.8,
+        "safety_score": 1.0,
+        "candidate_source": "personalized",
+        "is_followed_author": False,
+        "author_affinity": 0.0,
+        "heuristic_score": 0.6,
+        "ml_score": None,
+    }
+    impressions = [
+        Impression(
+            id=UUID(int=10 + position),
+            request_id=request_id,
+            user_id=user_id,
+            post_id=UUID(int=20 + position),
+            position=position,
+            feed_source="personalized",
+            model_version="heuristic-v1",
+            feature_snapshot=snapshot,
+            served_at=served_at,
+        )
+        for position in range(3)
+    ]
+    click_at = served_at + timedelta(minutes=2)
+    visible_at = served_at + timedelta(seconds=1)
+    events = [
+        BehaviorEvent(
+            id=UUID(int=30 + position),
+            impression_id=impressions[position].id,
+            user_id=user_id,
+            post_id=impressions[position].post_id,
+            event_type=event_type,
+            dwell_ms=None,
+            occurred_at=occurred_at,
+            ingested_at=occurred_at,
+            event_version="v2",
+        )
+        for position, event_type, occurred_at in (
+            (0, "click", click_at),
+            (1, "visible", visible_at),
+        )
+    ]
+    embedding = (1.0,) + (0.0,) * (config.encoder_dimension - 1)
+    features = [
+        ArticleFeatureRecord(
+            id=UUID(int=40 + position),
+            post_id=impression.post_id,
+            encoder_version=config.encoder_version,
+            content_hash=f"{position + 1:064x}",
+            embedding=embedding,
+            source_updated_at=served_at - timedelta(days=2),
+            computed_at=served_at - timedelta(days=1),
+        )
+        for position, impression in enumerate(impressions)
+    ]
+    return impressions, events, features, click_at
+
+
+def test_dataset_v1_click_without_visible_is_positive_and_served_only_excluded(
+    config: DatasetConfig,
+):
+    impressions, events, _, click_at = _click_without_visible_telemetry(config)
+
+    result = build_samples(
+        impressions,
+        events,
+        replace(config, dataset_schema_version="v1"),
+    )
+    rows_by_position = {row.position: row for row in result.rows}
+
+    assert set(rows_by_position) == {0, 1}
+    assert rows_by_position[0].visible_at == click_at
+    assert rows_by_position[0].label_name == "click"
+    assert rows_by_position[0].label == 1
+    assert rows_by_position[1].label == 0
+    assert result.stats.served_without_visible == 1
+
+
+def test_dataset_v2_click_without_visible_is_positive_and_served_only_excluded(
+    config: DatasetConfig,
+):
+    impressions, events, features, click_at = _click_without_visible_telemetry(config)
+
+    result = build_ranking_samples_v2(impressions, events, features, config)
+    rows_by_position = {row.position: row for row in result.rows}
+
+    assert set(rows_by_position) == {0, 1}
+    assert rows_by_position[0].visible_at == click_at
+    assert rows_by_position[0].visible
+    assert rows_by_position[0].click_label == 1
+    assert rows_by_position[0].utility_label == 1
+    assert rows_by_position[0].utility_label_name == "click"
+    assert rows_by_position[1].click_label == 0
+    assert rows_by_position[1].utility_label == 0
+    assert result.stats.served_without_visible == 1
+
+
+def test_click_before_visible_anchors_both_dataset_label_windows(
+    config: DatasetConfig,
+):
+    impressions, events, features, click_at = _click_without_visible_telemetry(config)
+    clicked = impressions[0]
+    events.extend(
+        [
+            BehaviorEvent(
+                id=UUID(int=50 + index),
+                impression_id=clicked.id,
+                user_id=clicked.user_id,
+                post_id=clicked.post_id,
+                event_type=event_type,
+                dwell_ms=None,
+                occurred_at=occurred_at,
+                ingested_at=occurred_at,
+                event_version="v2",
+            )
+            for index, (event_type, occurred_at) in enumerate(
+                (
+                    ("visible", click_at + timedelta(minutes=2)),
+                    (
+                        "report",
+                        click_at
+                        + timedelta(hours=config.label_window_hours, minutes=1),
+                    ),
+                )
+            )
+        ]
+    )
+
+    v1_result = build_samples(
+        impressions,
+        events,
+        replace(config, dataset_schema_version="v1"),
+    )
+    v2_result = build_ranking_samples_v2(impressions, events, features, config)
+    v1_clicked = next(row for row in v1_result.rows if row.position == 0)
+    v2_clicked = next(row for row in v2_result.rows if row.position == 0)
+
+    assert v1_clicked.visible_at == click_at
+    assert v1_clicked.label_name == "click"
+    assert v2_clicked.visible_at == click_at
+    assert v2_clicked.utility_label_name == "click"
 
 
 def test_local_v2_preserves_visibility_labels_history_and_scope(config: DatasetConfig):
