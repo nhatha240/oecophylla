@@ -285,6 +285,7 @@ fn v2_feature_rollout_emits_versioned_idempotent_qualified_read_envelope() {
             behavior_event_id,
             impression_id: Some(impression_id),
             session_id: Some(Uuid::now_v7()),
+            visit_id: None,
             occurred_at: Utc::now(),
             duration_ms: 10_000,
             source_event_type: "view".into(),
@@ -393,6 +394,88 @@ async fn behavior_batch_is_authenticated_partial_idempotent_and_append_only() {
     assert_eq!(retried_view["accepted"], 0);
     assert_eq!(retried_view["duplicate"], 1);
 
+    let click_id = Uuid::now_v7();
+    let click = telemetry_event(
+        click_id,
+        post_id,
+        Some(viewer_impression),
+        "click",
+        None,
+        json!({ "target": "post_detail" }),
+    );
+    let rejected_click_id = Uuid::now_v7();
+    let rejected_click = telemetry_event(
+        rejected_click_id,
+        post_id,
+        Some(viewer_impression),
+        "click",
+        None,
+        json!({ "target": "external_site" }),
+    );
+    let (status, click_batch) = post_batch(&viewer, json!([click.clone(), rejected_click])).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(click_batch["accepted"], 1);
+    assert_eq!(click_batch["rejected"], 1);
+    let (status, retried_click) = post_batch(&viewer, json!([click])).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(retried_click["accepted"], 0);
+    assert_eq!(retried_click["duplicate"], 1);
+    let durable_click_id: Uuid =
+        sqlx::query_scalar("SELECT id FROM behavior_events WHERE client_event_id = $1")
+            .bind(click_id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+
+    let dwell_id = Uuid::now_v7();
+    let qualified_dwell = telemetry_event(
+        dwell_id,
+        post_id,
+        None,
+        "dwell",
+        Some(10_000),
+        json!({ "trigger": "viewport_exit" }),
+    );
+    let (status, first_dwell) = post_batch(&viewer, json!([qualified_dwell.clone()])).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(first_dwell["accepted"], 1);
+    let (status, retried_dwell) = post_batch(&viewer, json!([qualified_dwell])).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(retried_dwell["duplicate"], 1);
+    let durable_dwell_id: Uuid =
+        sqlx::query_scalar("SELECT id FROM behavior_events WHERE client_event_id = $1")
+            .bind(dwell_id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+
+    let hide_url = format!("{ENVOY}/api/v1/posts/{post_id}/hide");
+    assert_eq!(
+        viewer.post(&hide_url).send().await.unwrap().status(),
+        StatusCode::CREATED
+    );
+    assert_eq!(
+        viewer.delete(&hide_url).send().await.unwrap().status(),
+        StatusCode::NO_CONTENT
+    );
+    let unhide_event_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM behavior_events WHERE user_id = $1 AND post_id = $2 \
+         AND event_type = 'unhide' ORDER BY occurred_at DESC LIMIT 1",
+    )
+    .bind(viewer_id)
+    .bind(post_id)
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    let durable_outbox_ids: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT event_id FROM interaction_event_outbox WHERE event_id = ANY($1::uuid[])",
+    )
+    .bind(vec![durable_click_id, durable_dwell_id, unhide_event_id])
+    .fetch_all(&db)
+    .await
+    .unwrap();
+    assert_eq!(durable_outbox_ids.len(), 3);
+
     let (view_count, stored_views): (i64, i64) = sqlx::query_as(
         "SELECT p.view_count, count(e.id) \
          FROM posts p LEFT JOIN behavior_events e \
@@ -413,6 +496,31 @@ async fn behavior_batch_is_authenticated_partial_idempotent_and_append_only() {
         "retry must not increment the rollout-selected view counter twice"
     );
     assert_eq!(stored_views, 1);
+
+    let topic_snapshot: Vec<String> =
+        sqlx::query_scalar("SELECT topic_snapshot FROM behavior_events WHERE client_event_id = $1")
+            .bind(view_id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(topic_snapshot, vec!["ai".to_string()]);
+    sqlx::query("UPDATE posts SET topics = ARRAY['politics']::text[] WHERE id = $1")
+        .bind(post_id)
+        .execute(&db)
+        .await
+        .unwrap();
+    let unchanged_snapshot: Vec<String> =
+        sqlx::query_scalar("SELECT topic_snapshot FROM behavior_events WHERE client_event_id = $1")
+            .bind(view_id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(unchanged_snapshot, vec!["ai".to_string()]);
+    sqlx::query("UPDATE posts SET topics = ARRAY['ai']::text[] WHERE id = $1")
+        .bind(post_id)
+        .execute(&db)
+        .await
+        .unwrap();
 
     let under_guardrail_id = Uuid::now_v7();
     let under_guardrail_view = telemetry_event(
@@ -441,6 +549,60 @@ async fn behavior_batch_is_authenticated_partial_idempotent_and_append_only() {
     assert!(
         !kafka_events.contains(&under_guardrail_id.to_string()),
         "view below positive dwell guardrail must not publish a preference signal"
+    );
+    let click_envelopes = kafka_events
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .filter(|event| event["event_id"] == durable_click_id.to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        click_envelopes.len(),
+        1,
+        "only the inserted click should publish once; Kafka output: {kafka_events}"
+    );
+    let click_envelope = &click_envelopes[0];
+    assert_eq!(click_envelope["event_type"], "click");
+    assert_eq!(click_envelope["event_version"], 1);
+    assert_eq!(click_envelope["data"]["user_id"], viewer_id.to_string());
+    assert_eq!(click_envelope["data"]["post_id"], post_id.to_string());
+    assert_eq!(
+        click_envelope["data"]["impression_id"],
+        viewer_impression.to_string()
+    );
+    assert_eq!(
+        click_envelope["data"]["client_event_id"],
+        click_id.to_string()
+    );
+    assert_eq!(
+        click_envelope["data"]["behavior_event_id"],
+        durable_click_id.to_string()
+    );
+    assert!(click_envelope["data"].get("weight").is_none());
+    let dwell_envelopes = kafka_events
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .filter(|event| event["event_id"] == durable_dwell_id.to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        dwell_envelopes.len(),
+        1,
+        "only the inserted qualified dwell should publish once; Kafka output: {kafka_events}"
+    );
+    assert_eq!(dwell_envelopes[0]["event_type"], "dwell");
+    assert_eq!(dwell_envelopes[0]["event_version"], 1);
+    assert_eq!(dwell_envelopes[0]["data"]["post_id"], post_id.to_string());
+    assert!(dwell_envelopes[0]["data"].get("weight").is_none());
+    let unhide_envelopes = kafka_events
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .filter(|event| event["event_id"] == unhide_event_id.to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(unhide_envelopes.len(), 1);
+    assert_eq!(unhide_envelopes[0]["event_type"], "unhide");
+    assert_eq!(unhide_envelopes[0]["data"]["weight"], 0.0);
+    assert!(
+        !kafka_events.contains(&rejected_click_id.to_string()),
+        "rejected click must not be published"
     );
 
     let old_dwell_id = Uuid::now_v7();

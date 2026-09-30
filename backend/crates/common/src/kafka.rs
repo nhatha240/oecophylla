@@ -22,17 +22,24 @@ impl Producer {
         Ok(Self { inner })
     }
 
-    pub async fn produce_json<T: Serialize>(&self, topic: &str, key: &str, payload: &T) {
-        let body = match serde_json::to_vec(payload) {
-            Ok(b) => b,
-            Err(e) => {
-                tracing::error!(error=?e, topic, "serialize event");
-                return;
-            }
-        };
+    pub async fn try_produce_json<T: Serialize>(
+        &self,
+        topic: &str,
+        key: &str,
+        payload: &T,
+    ) -> anyhow::Result<()> {
+        let body = serde_json::to_vec(payload)?;
         let rec = FutureRecord::to(topic).key(key).payload(&body);
-        if let Err((e, _)) = self.inner.send(rec, Duration::from_secs(5)).await {
-            tracing::error!(error=?e, topic, key, "kafka produce failed");
+        self.inner
+            .send(rec, Duration::from_secs(5))
+            .await
+            .map_err(|(error, _)| anyhow::Error::new(error))?;
+        Ok(())
+    }
+
+    pub async fn produce_json<T: Serialize>(&self, topic: &str, key: &str, payload: &T) {
+        if let Err(error) = self.try_produce_json(topic, key, payload).await {
+            tracing::error!(?error, topic, key, "kafka produce failed");
         }
     }
 }

@@ -53,6 +53,7 @@ pub struct QualifiedReadData {
     pub behavior_event_id: Uuid,
     pub impression_id: Option<Uuid>,
     pub session_id: Option<Uuid>,
+    pub visit_id: Option<Uuid>,
     pub occurred_at: DateTime<Utc>,
     pub duration_ms: i32,
     pub source_event_type: String,
@@ -71,13 +72,42 @@ pub fn viewed_envelope(data: BehaviorTelemetryData) -> Envelope<BehaviorTelemetr
     }
 }
 
+/// A persisted click refreshes recommendation caches without assigning a
+/// preference weight. The behavior row ID stays stable across producer retries.
+pub fn click_envelope(data: BehaviorTelemetryData) -> Envelope<BehaviorTelemetryData> {
+    Envelope {
+        event_id: data.behavior_event_id,
+        event_type: "click",
+        event_version: 1,
+        occurred_at: data.occurred_at,
+        producer: "interaction-service",
+        data,
+    }
+}
+
+/// A qualified dwell row triggers canonical v2 replay while the v1 feature
+/// stream remains active. The worker assigns it no independent v1 weight.
+pub fn dwell_envelope(data: BehaviorTelemetryData) -> Envelope<BehaviorTelemetryData> {
+    Envelope {
+        event_id: data.behavior_event_id,
+        event_type: "dwell",
+        event_version: 1,
+        occurred_at: data.occurred_at,
+        producer: "interaction-service",
+        data,
+    }
+}
+
 /// Build the v2 qualified-read envelope. Recommendation-attributed reads use
 /// the impression as their semantic identity, collapsing a threshold `view`
-/// and later `dwell` into one feature delta. Direct-entry reads fall back to
-/// the durable behavior row ID.
+/// and later `dwell` into one feature delta. Direct-entry reads use the visit
+/// ID when available, then fall back to the durable behavior row ID.
 pub fn qualified_read_envelope(data: QualifiedReadData) -> Envelope<QualifiedReadData> {
     Envelope {
-        event_id: data.impression_id.unwrap_or(data.behavior_event_id),
+        event_id: data
+            .impression_id
+            .or(data.visit_id)
+            .unwrap_or(data.behavior_event_id),
         event_type: "qualified_read",
         event_version: 2,
         occurred_at: data.occurred_at,
@@ -193,6 +223,7 @@ mod tests {
             behavior_event_id: Uuid::now_v7(),
             impression_id: Some(impression_id),
             session_id: Some(Uuid::now_v7()),
+            visit_id: None,
             occurred_at,
             duration_ms: 10_000,
             source_event_type: "view".into(),
@@ -204,6 +235,7 @@ mod tests {
             behavior_event_id: Uuid::now_v7(),
             impression_id: Some(impression_id),
             session_id: view.data.session_id,
+            visit_id: None,
             occurred_at,
             duration_ms: 12_000,
             source_event_type: "dwell".into(),
@@ -225,11 +257,83 @@ mod tests {
             behavior_event_id,
             impression_id: None,
             session_id: Some(Uuid::now_v7()),
+            visit_id: None,
             occurred_at: Utc::now(),
             duration_ms: 10_000,
             source_event_type: "dwell".into(),
         });
         assert_eq!(envelope.event_id, behavior_event_id);
+    }
+
+    #[test]
+    fn direct_entry_qualified_view_and_dwell_share_a_visit_receipt() {
+        let visit_id = Uuid::now_v7();
+        let user_id = Uuid::now_v7();
+        let post_id = Uuid::now_v7();
+        let session_id = Some(Uuid::now_v7());
+        let occurred_at = Utc::now();
+        for source_event_type in ["view", "dwell"] {
+            let envelope = qualified_read_envelope(QualifiedReadData {
+                user_id,
+                post_id,
+                client_event_id: Uuid::now_v7(),
+                behavior_event_id: Uuid::now_v7(),
+                impression_id: None,
+                session_id,
+                visit_id: Some(visit_id),
+                occurred_at,
+                duration_ms: 10_000,
+                source_event_type: source_event_type.into(),
+            });
+            assert_eq!(envelope.event_id, visit_id);
+        }
+    }
+
+    #[test]
+    fn click_envelope_uses_durable_identity_and_has_no_feature_weight() {
+        let behavior_event_id = Uuid::now_v7();
+        let user_id = Uuid::now_v7();
+        let post_id = Uuid::now_v7();
+        let impression_id = Uuid::now_v7();
+        let occurred_at = Utc::now();
+        let envelope = serde_json::to_value(click_envelope(BehaviorTelemetryData {
+            user_id,
+            post_id,
+            client_event_id: Uuid::now_v7(),
+            behavior_event_id,
+            impression_id: Some(impression_id),
+            session_id: Some(Uuid::now_v7()),
+            occurred_at,
+        }))
+        .unwrap();
+
+        assert_eq!(envelope["event_id"], behavior_event_id.to_string());
+        assert_eq!(envelope["event_type"], "click");
+        assert_eq!(envelope["event_version"], 1);
+        assert_eq!(envelope["data"]["user_id"], user_id.to_string());
+        assert_eq!(envelope["data"]["post_id"], post_id.to_string());
+        assert_eq!(envelope["data"]["impression_id"], impression_id.to_string());
+        assert!(envelope["data"].get("weight").is_none());
+    }
+
+    #[test]
+    fn dwell_envelope_uses_durable_identity_and_has_no_feature_weight() {
+        let behavior_event_id = Uuid::now_v7();
+        let envelope = serde_json::to_value(dwell_envelope(BehaviorTelemetryData {
+            user_id: Uuid::now_v7(),
+            post_id: Uuid::now_v7(),
+            client_event_id: Uuid::now_v7(),
+            behavior_event_id,
+            impression_id: None,
+            session_id: Some(Uuid::now_v7()),
+            occurred_at: Utc::now(),
+        }))
+        .unwrap();
+
+        assert_eq!(envelope["event_id"], behavior_event_id.to_string());
+        assert_eq!(envelope["event_type"], "dwell");
+        assert_eq!(envelope["event_version"], 1);
+        assert!(envelope["data"].get("weight").is_none());
     }
 }
 

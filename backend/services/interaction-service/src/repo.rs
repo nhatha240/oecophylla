@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use common::{error::AppError, ids::new_id, models::AuthUser};
 use serde::Serialize;
+use serde_json::Value;
 use sqlx::{Postgres, Transaction};
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
@@ -28,6 +29,63 @@ pub struct InsertedBehaviorEvent {
     pub event_type: String,
     pub dwell_ms: Option<i32>,
     pub occurred_at: DateTime<Utc>,
+}
+
+pub struct OutboxMessage {
+    pub event_id: Uuid,
+    pub post_id: Uuid,
+    pub payload: Value,
+}
+
+impl OutboxMessage {
+    pub fn from_envelope<T: Serialize>(
+        post_id: Uuid,
+        envelope: &common::events::Envelope<T>,
+    ) -> Result<Self, AppError> {
+        Ok(Self {
+            event_id: envelope.event_id,
+            post_id,
+            payload: serde_json::to_value(envelope)
+                .map_err(|error| AppError::Other(error.into()))?,
+        })
+    }
+}
+
+pub async fn enqueue_outbox_events(
+    tx: &mut Transaction<'_, Postgres>,
+    messages: &[OutboxMessage],
+) -> Result<(), AppError> {
+    if messages.is_empty() {
+        return Ok(());
+    }
+    let ids = messages
+        .iter()
+        .map(|message| message.event_id)
+        .collect::<Vec<_>>();
+    let post_ids = messages
+        .iter()
+        .map(|message| message.post_id)
+        .collect::<Vec<_>>();
+    let payloads = messages
+        .iter()
+        .map(|message| message.payload.to_string())
+        .collect::<Vec<_>>();
+    sqlx::query(
+        r#"
+        INSERT INTO interaction_event_outbox (event_id, topic, partition_key, payload)
+        SELECT item.event_id, $1, item.post_id::text, item.payload::jsonb
+        FROM UNNEST($2::uuid[], $3::uuid[], $4::text[])
+             AS item(event_id, post_id, payload)
+        ON CONFLICT (event_id) DO NOTHING
+        "#,
+    )
+    .bind(crate::events::TOPIC_INTERACTIONS)
+    .bind(ids)
+    .bind(post_ids)
+    .bind(payloads)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
 }
 
 pub async fn valid_impression_ids(
@@ -115,7 +173,7 @@ pub async fn insert_behavior_events(
         r#"
         INSERT INTO behavior_events (
             id, client_event_id, user_id, post_id, impression_id, session_id,
-            event_type, dwell_ms, metadata, occurred_at
+            event_type, dwell_ms, metadata, occurred_at, topic_snapshot
         )
         SELECT
             batch.id,
@@ -127,7 +185,25 @@ pub async fn insert_behavior_events(
             batch.event_type,
             batch.dwell_ms,
             batch.metadata::jsonb,
-            batch.occurred_at
+            batch.occurred_at,
+            CASE
+                WHEN EXISTS (
+                    SELECT 1 FROM unnest(post.topics) AS topic(value)
+                    WHERE topic.value IS NOT NULL
+                      AND topic.value <> '' AND topic.value <> 'general'
+                ) THEN ARRAY(
+                    SELECT value FROM unnest(post.topics) AS topic(value)
+                    WHERE value IS NOT NULL AND value <> '' AND value <> 'general'
+                )
+                WHEN EXISTS (
+                    SELECT 1 FROM unnest(post.tags) AS tag(value)
+                    WHERE tag.value IS NOT NULL AND tag.value <> ''
+                ) THEN ARRAY(
+                    SELECT value FROM unnest(post.tags) AS tag(value)
+                    WHERE value IS NOT NULL AND value <> ''
+                )
+                ELSE ARRAY['general']::text[]
+            END
         FROM UNNEST(
             $2::uuid[],
             $3::uuid[],
@@ -149,6 +225,7 @@ pub async fn insert_behavior_events(
             metadata,
             occurred_at
         )
+        JOIN posts AS post ON post.id = batch.post_id
         ON CONFLICT (client_event_id) DO NOTHING
         RETURNING
             id, client_event_id, post_id, impression_id, session_id,
@@ -202,15 +279,35 @@ pub async fn insert_canonical_behavior_event(
     event_version: &str,
 ) -> Result<Uuid, AppError> {
     let event_id = Uuid::now_v7();
-    sqlx::query(
+    let inserted = sqlx::query(
         r#"
         INSERT INTO behavior_events (
-            id, client_event_id, user_id, post_id, event_type, metadata
+            id, client_event_id, user_id, post_id, event_type, metadata,
+            topic_snapshot
         )
-        VALUES (
+        SELECT
             $1, $1, $2, $3, $4,
-            jsonb_build_object('source', 'canonical_api', 'event_version', $5::text)
-        )
+            jsonb_build_object('source', 'canonical_api', 'event_version', $5::text),
+            CASE
+                WHEN EXISTS (
+                    SELECT 1 FROM unnest(post.topics) AS topic(value)
+                    WHERE topic.value IS NOT NULL
+                      AND topic.value <> '' AND topic.value <> 'general'
+                ) THEN ARRAY(
+                    SELECT value FROM unnest(post.topics) AS topic(value)
+                    WHERE value IS NOT NULL AND value <> '' AND value <> 'general'
+                )
+                WHEN EXISTS (
+                    SELECT 1 FROM unnest(post.tags) AS tag(value)
+                    WHERE tag.value IS NOT NULL AND tag.value <> ''
+                ) THEN ARRAY(
+                    SELECT value FROM unnest(post.tags) AS tag(value)
+                    WHERE value IS NOT NULL AND value <> ''
+                )
+                ELSE ARRAY['general']::text[]
+            END
+        FROM posts AS post
+        WHERE post.id = $3
         "#,
     )
     .bind(event_id)
@@ -220,6 +317,11 @@ pub async fn insert_canonical_behavior_event(
     .bind(event_version)
     .execute(&mut **tx)
     .await?;
+    if inserted.rows_affected() != 1 {
+        return Err(AppError::NotFound {
+            kind: "post".into(),
+        });
+    }
     Ok(event_id)
 }
 

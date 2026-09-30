@@ -6,9 +6,9 @@ use axum::{
 };
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use common::{
-    auth::verify_access,
     error::{AppError, AppResult},
     events::Envelope,
+    middleware::auth::current_active_user,
     models::AuthUser,
 };
 use serde::{Deserialize, Serialize};
@@ -22,16 +22,8 @@ use uuid::Uuid;
 
 use crate::{events::*, repo, state::AppState};
 
-fn current(s: &AppState, h: &HeaderMap) -> Option<AuthUser> {
-    let raw = h.get(axum::http::header::COOKIE)?.to_str().ok()?;
-    let token = raw
-        .split(';')
-        .find_map(|kv| kv.trim().strip_prefix("oec_access=").map(String::from))?;
-    let c = verify_access(s.cfg.jwt_secret.as_bytes(), &token).ok()?;
-    Some(AuthUser {
-        id: c.sub,
-        role: c.role,
-    })
+async fn current(s: &AppState, h: &HeaderMap) -> AppResult<Option<AuthUser>> {
+    current_active_user(&s.db, s.cfg.jwt_secret.as_bytes(), h).await
 }
 
 const MAX_BEHAVIOR_BATCH_SIZE: usize = 100;
@@ -85,6 +77,7 @@ struct ValidatedBehaviorEvent {
     index: usize,
     event: repo::NewBehaviorEvent,
     qualified_signal: bool,
+    visit_id: Option<Uuid>,
 }
 
 #[derive(Debug)]
@@ -98,7 +91,7 @@ pub async fn ingest_behavior_events(
     h: HeaderMap,
     Json(body): Json<BehaviorBatchRequest>,
 ) -> AppResult<Json<BehaviorBatchResponse>> {
-    let me = current(&s, &h).ok_or(AppError::Unauthorized)?;
+    let me = current(&s, &h).await?.ok_or(AppError::Unauthorized)?;
     if body.events.is_empty() || body.events.len() > MAX_BEHAVIOR_BATCH_SIZE {
         return Err(AppError::Validation {
             field: "events".into(),
@@ -219,11 +212,6 @@ pub async fn ingest_behavior_events(
             .await
             .map_err(record_behavior_ingest_error)?;
     }
-    tx.commit()
-        .await
-        .map_err(AppError::Db)
-        .map_err(record_behavior_ingest_error)?;
-
     let inserted_ids = inserted
         .iter()
         .map(|event| event.client_event_id)
@@ -234,15 +222,17 @@ pub async fn ingest_behavior_events(
         .filter(|item| item.qualified_signal)
         .map(|item| item.event.client_event_id)
         .collect::<HashSet<_>>();
-    for event in inserted
+    let visit_ids = parsed
         .iter()
-        .filter(|event| qualified_ids.contains(&event.client_event_id))
-    {
-        let kafka = s.kafka.clone();
-        let post_key = event.post_id.to_string();
-        let Some(envelope) = feature_event_envelope(
-            &s.feature_event_version,
-            QualifiedReadData {
+        .filter_map(|item| {
+            item.visit_id
+                .map(|visit_id| (item.event.client_event_id, visit_id))
+        })
+        .collect::<HashMap<_, _>>();
+    let mut outbox_messages = Vec::with_capacity(inserted.len());
+    for event in &inserted {
+        let envelope = if event.event_type == "click" {
+            serde_json::to_value(click_envelope(BehaviorTelemetryData {
                 user_id: me.id,
                 post_id: event.post_id,
                 client_event_id: event.client_event_id,
@@ -250,18 +240,62 @@ pub async fn ingest_behavior_events(
                 impression_id: event.impression_id,
                 session_id: event.session_id,
                 occurred_at: event.occurred_at,
-                duration_ms: event.dwell_ms.unwrap_or(0),
-                source_event_type: event.event_type.clone(),
-            },
-        ) else {
+            }))
+            .ok()
+        } else if qualified_ids.contains(&event.client_event_id)
+            && event.event_type == "dwell"
+            && s.feature_event_version == crate::label_contract::LABEL_V1
+        {
+            serde_json::to_value(dwell_envelope(BehaviorTelemetryData {
+                user_id: me.id,
+                post_id: event.post_id,
+                client_event_id: event.client_event_id,
+                behavior_event_id: event.id,
+                impression_id: event.impression_id,
+                session_id: event.session_id,
+                occurred_at: event.occurred_at,
+            }))
+            .ok()
+        } else if qualified_ids.contains(&event.client_event_id) {
+            feature_event_envelope(
+                &s.feature_event_version,
+                QualifiedReadData {
+                    user_id: me.id,
+                    post_id: event.post_id,
+                    client_event_id: event.client_event_id,
+                    behavior_event_id: event.id,
+                    impression_id: event.impression_id,
+                    session_id: event.session_id,
+                    visit_id: visit_ids.get(&event.client_event_id).copied(),
+                    occurred_at: event.occurred_at,
+                    duration_ms: event.dwell_ms.unwrap_or(0),
+                    source_event_type: event.event_type.clone(),
+                },
+            )
+        } else {
+            None
+        };
+        let Some(envelope) = envelope else {
             continue;
         };
-        tokio::spawn(async move {
-            kafka
-                .produce_json(TOPIC_INTERACTIONS, &post_key, &envelope)
-                .await;
+        let event_id = envelope
+            .get("event_id")
+            .and_then(serde_json::Value::as_str)
+            .and_then(|value| Uuid::parse_str(value).ok())
+            .expect("server-created feature envelope has a UUID event_id");
+        outbox_messages.push(repo::OutboxMessage {
+            event_id,
+            post_id: event.post_id,
+            payload: envelope,
         });
     }
+    repo::enqueue_outbox_events(&mut tx, &outbox_messages)
+        .await
+        .map_err(record_behavior_ingest_error)?;
+    tx.commit()
+        .await
+        .map_err(AppError::Db)
+        .map_err(record_behavior_ingest_error)?;
 
     errors.sort_by_key(|error| error.index);
     let accepted = inserted_ids.len();
@@ -357,7 +391,8 @@ fn validate_behavior_event(
             }
         }
         "view" => {
-            require_metadata_keys(metadata, &["continuous_visible_ms", "trigger"])?;
+            require_metadata_keys(metadata, &["continuous_visible_ms", "trigger", "visit_id"])?;
+            validate_visit_id(metadata)?;
             let trigger = metadata
                 .get("trigger")
                 .and_then(|value| value.as_str())
@@ -415,7 +450,8 @@ fn validate_behavior_event(
             }
         }
         "dwell" => {
-            require_metadata_keys(metadata, &["trigger"])?;
+            require_metadata_keys(metadata, &["trigger", "visit_id"])?;
+            validate_visit_id(metadata)?;
             if raw.dwell_ms.is_none() {
                 return Err(validation_error(
                     "invalid_dwell_ms",
@@ -439,6 +475,10 @@ fn validate_behavior_event(
         }
     }
 
+    let visit_id = metadata
+        .get("visit_id")
+        .and_then(|value| value.as_str())
+        .and_then(|value| Uuid::parse_str(value).ok());
     let occurred_at = raw
         .occurred_at
         .max(now - ChronoDuration::hours(24))
@@ -462,6 +502,7 @@ fn validate_behavior_event(
             occurred_at,
         },
         qualified_signal,
+        visit_id,
     })
 }
 
@@ -474,6 +515,24 @@ fn require_metadata_keys(
             "unknown_metadata_key",
             format!("metadata key {key} is not allowed"),
         ));
+    }
+    Ok(())
+}
+
+fn validate_visit_id(
+    metadata: &serde_json::Map<String, serde_json::Value>,
+) -> Result<(), EventValidationError> {
+    if let Some(value) = metadata.get("visit_id") {
+        if value
+            .as_str()
+            .and_then(|id| Uuid::parse_str(id).ok())
+            .is_none()
+        {
+            return Err(validation_error(
+                "invalid_metadata",
+                "visit_id must be a UUID string",
+            ));
+        }
     }
     Ok(())
 }
@@ -521,6 +580,21 @@ mod behavior_label_tests {
                     .expect("exact threshold is qualified");
             assert!(validated.qualified_signal);
             assert_eq!(validated.event.dwell_ms, Some(10_000));
+        }
+    }
+
+    #[test]
+    fn view_and_dwell_accept_a_valid_visit_id_and_reject_an_invalid_one() {
+        for event_type in ["view", "dwell"] {
+            let mut valid = raw(event_type, 10_000, "v2");
+            valid.metadata["visit_id"] = json!(Uuid::now_v7().to_string());
+            assert!(validate_behavior_event(0, valid, Utc::now(), 10_000).is_ok());
+            let mut invalid = raw(event_type, 10_000, "v2");
+            invalid.metadata["visit_id"] = json!("not-a-uuid");
+            let error = validate_behavior_event(0, invalid, Utc::now(), 10_000)
+                .err()
+                .expect("invalid visit ID must be rejected");
+            assert_eq!(error.code, "invalid_metadata");
         }
     }
 
@@ -576,7 +650,7 @@ async fn toggle_post(
     type_: &'static str,
     method: &'static str,
 ) -> AppResult<impl IntoResponse> {
-    let me = current(&s, &h).ok_or(AppError::Unauthorized)?;
+    let me = current(&s, &h).await?.ok_or(AppError::Unauthorized)?;
     let author = repo::post_author(&s.db, post_id)
         .await?
         .ok_or(AppError::NotFound {
@@ -620,7 +694,6 @@ async fn toggle_post(
     } else {
         None
     };
-    tx.commit().await?;
     if changed {
         let evt = match (type_, method) {
             ("like", "POST") => "liked",
@@ -630,26 +703,32 @@ async fn toggle_post(
             ("share", "POST") => "shared",
             ("share", "DELETE") => "unshared",
             ("hide", "POST") => "hidden",
-            ("hide", "DELETE") => "", // no event for unhide
+            ("hide", "DELETE") => "unhide",
             _ => "",
         };
         if !evt.is_empty() {
-            let env = Envelope::new(
-                evt,
-                "interaction-service",
-                ToggleData {
+            let env = Envelope {
+                event_id: behavior_event_id.expect("changed action has behavior event"),
+                event_type: evt,
+                event_version: 1,
+                occurred_at: Utc::now(),
+                producer: "interaction-service",
+                data: ToggleData {
                     user_id: me.id,
                     post_id,
                     post_author_id: author,
                     client_event_id: behavior_event_id.expect("changed action has behavior event"),
-                    weight,
+                    weight: if evt == "unhide" { 0.0 } else { weight },
                 },
-            );
-            s.kafka
-                .produce_json(TOPIC_INTERACTIONS, post_id.to_string().as_str(), &env)
-                .await;
+            };
+            repo::enqueue_outbox_events(
+                &mut tx,
+                &[repo::OutboxMessage::from_envelope(post_id, &env)?],
+            )
+            .await?;
         }
     }
+    tx.commit().await?;
     let code = match (method, changed) {
         ("POST", true) => StatusCode::CREATED,
         ("POST", false) => StatusCode::OK,
@@ -730,7 +809,7 @@ pub async fn report_post(
     h: HeaderMap,
     Json(body): Json<ReportReq>,
 ) -> AppResult<impl IntoResponse> {
-    let me = current(&s, &h).ok_or(AppError::Unauthorized)?;
+    let me = current(&s, &h).await?.ok_or(AppError::Unauthorized)?;
     let allowed = ["spam", "misinformation", "harassment", "nsfw", "other"];
     if !allowed.contains(&body.reason.as_str()) {
         return Err(AppError::Validation {
@@ -761,11 +840,13 @@ pub async fn report_post(
         &s.recommendation_label_version,
     )
     .await?;
-    tx.commit().await?;
-    let env = Envelope::new(
-        "reported",
-        "interaction-service",
-        ReportData {
+    let env = Envelope {
+        event_id: behavior_event_id,
+        event_type: "reported",
+        event_version: 1,
+        occurred_at: Utc::now(),
+        producer: "interaction-service",
+        data: ReportData {
             reporter_id: me.id,
             post_id,
             post_author_id: author,
@@ -773,10 +854,13 @@ pub async fn report_post(
             report_id,
             client_event_id: behavior_event_id,
         },
-    );
-    s.kafka
-        .produce_json(TOPIC_INTERACTIONS, post_id.to_string().as_str(), &env)
-        .await;
+    };
+    repo::enqueue_outbox_events(
+        &mut tx,
+        &[repo::OutboxMessage::from_envelope(post_id, &env)?],
+    )
+    .await?;
+    tx.commit().await?;
     Ok(StatusCode::CREATED)
 }
 
@@ -798,7 +882,7 @@ pub async fn create_comment(
     h: HeaderMap,
     Json(body): Json<CommentReq>,
 ) -> AppResult<Json<serde_json::Value>> {
-    let me = current(&s, &h).ok_or(AppError::Unauthorized)?;
+    let me = current(&s, &h).await?.ok_or(AppError::Unauthorized)?;
     let content = body.content.trim();
     if content.is_empty() || content.chars().count() > 2000 {
         return Err(AppError::Validation {
@@ -825,17 +909,19 @@ pub async fn create_comment(
         &s.recommendation_label_version,
     )
     .await?;
-    tx.commit().await?;
     let preview = content.chars().take(200).collect::<String>();
     let event_type = if body.parent_comment_id.is_some() {
         "comment_replied"
     } else {
         "commented"
     };
-    let env = Envelope::new(
+    let env = Envelope {
+        event_id: behavior_event_id,
         event_type,
-        "interaction-service",
-        CommentData {
+        event_version: 1,
+        occurred_at: Utc::now(),
+        producer: "interaction-service",
+        data: CommentData {
             commenter_id: me.id,
             post_id,
             post_author_id: author,
@@ -844,10 +930,13 @@ pub async fn create_comment(
             content_preview: preview,
             client_event_id: behavior_event_id,
         },
-    );
-    s.kafka
-        .produce_json(TOPIC_INTERACTIONS, post_id.to_string().as_str(), &env)
-        .await;
+    };
+    repo::enqueue_outbox_events(
+        &mut tx,
+        &[repo::OutboxMessage::from_envelope(post_id, &env)?],
+    )
+    .await?;
+    tx.commit().await?;
     // Fan out to live SSE subscribers for this post.
     if let Some(dto) = repo::fetch_comment_dto(&s.db, comment_id).await? {
         s.comment_fanout.publish(post_id, dto);
@@ -900,7 +989,7 @@ pub async fn delete_comment(
     Path(id): Path<Uuid>,
     h: HeaderMap,
 ) -> AppResult<impl IntoResponse> {
-    let me = current(&s, &h).ok_or(AppError::Unauthorized)?;
+    let me = current(&s, &h).await?.ok_or(AppError::Unauthorized)?;
     let mut tx = s.db.begin().await?;
     let (post_id, was_top) = repo::soft_delete_comment(&mut tx, id, me).await?;
     if was_top {
@@ -919,7 +1008,7 @@ pub async fn comments_sse_stream(
     Path(post_id): Path<Uuid>,
     h: HeaderMap,
 ) -> Result<Response, AppError> {
-    let _me = current(&state, &h).ok_or(AppError::Unauthorized)?;
+    let _me = current(&state, &h).await?.ok_or(AppError::Unauthorized)?;
     let rx = state.comment_fanout.subscribe(post_id);
     let heartbeat_interval = Duration::from_secs(SSE_HEARTBEAT_SECS);
 
@@ -984,7 +1073,7 @@ pub async fn list_saved_posts(
     h: HeaderMap,
     Query(q): Query<SavedQuery>,
 ) -> AppResult<Json<SavedResponse>> {
-    let me = current(&s, &h).ok_or(AppError::Unauthorized)?;
+    let me = current(&s, &h).await?.ok_or(AppError::Unauthorized)?;
     let limit = q.limit.unwrap_or(20).clamp(1, 100);
     let cursor_pair = q.cursor.as_deref().and_then(|c| {
         let mut parts = c.splitn(2, '|');
@@ -1026,7 +1115,7 @@ pub async fn my_post_interactions(
     Path(post_id): Path<Uuid>,
     h: HeaderMap,
 ) -> AppResult<Json<repo::MyInteractions>> {
-    let me = current(&s, &h).ok_or(AppError::Unauthorized)?;
+    let me = current(&s, &h).await?.ok_or(AppError::Unauthorized)?;
     Ok(Json(repo::my_interactions(&s.db, me.id, post_id).await?))
 }
 
@@ -1035,7 +1124,7 @@ pub async fn batch_me(
     h: HeaderMap,
     Json(body): Json<BatchMeRequest>,
 ) -> AppResult<Json<BatchMeResponse>> {
-    let me = current(&s, &h).ok_or(AppError::Unauthorized)?;
+    let me = current(&s, &h).await?.ok_or(AppError::Unauthorized)?;
     if body.post_ids.is_empty() || body.post_ids.len() > 100 {
         return Err(AppError::Validation {
             field: "post_ids".into(),

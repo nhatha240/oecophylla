@@ -20,6 +20,7 @@ mod comment_fanout;
 mod events;
 mod handlers;
 mod label_contract;
+mod outbox;
 mod repo;
 mod state;
 
@@ -52,6 +53,8 @@ async fn main() -> anyhow::Result<()> {
         recommendation_label_version: version_flag("RECOMMENDATION_LABEL_VERSION"),
         feature_event_version: version_flag("FEATURE_EVENT_VERSION"),
     };
+
+    tokio::spawn(outbox::run(state.db.clone(), state.kafka.clone()));
 
     let rl = |key_prefix: &'static str, max: u32| RateLimitState {
         redis: redis.clone(),
