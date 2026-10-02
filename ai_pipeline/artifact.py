@@ -48,10 +48,39 @@ class LoadedNRMSArtifact:
     ranker: NRMSLikeRanker
     manifest: Mapping[str, Any]
 
-    def predict_scores(self, records: Sequence[Mapping[str, Any]]) -> list[float]:
+    def predict_scores(
+        self,
+        records: Sequence[Mapping[str, Any]],
+    ) -> list[float]:
+        """
+        Return calibrated probability-like scores.
+
+        Giữ lại API cũ để không làm thay đổi hành vi
+        của các phần serving đang cần calibrated score.
+        """
         if not records:
             return []
+
         return self.ranker.predict_scores(records)
+
+    def predict_rank_scores(
+        self,
+        records: Sequence[Mapping[str, Any]],
+    ) -> list[float]:
+        """
+        Return raw NRMS scores for ranking evaluation.
+
+        Dùng cho:
+        - Impression AUC
+        - MRR
+        - nDCG@5
+        - nDCG@10
+        - sắp xếp candidate
+        """
+        if not records:
+            return []
+
+        return self.ranker.predict_rank_scores(records)
 
 
 def load_artifact(directory: Path) -> LoadedArtifact | LoadedNRMSArtifact:

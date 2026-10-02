@@ -13,11 +13,40 @@ from .artifact import sha256_file
 from .schemas import parse_datetime
 
 METRICS = ("impression_auc", "mrr", "ndcg_at_5", "ndcg_at_10")
-REQUIRED_SEGMENTS = (
+PRODUCTION_REQUIRED_SEGMENTS = (
     ("user_tenure", "new"),
     ("article_tenure", "new"),
     ("language", "vi"),
 )
+
+MIND_REQUIRED_SEGMENTS = (
+    ("user_tenure", "existing"),
+    ("history_length", "3+"),
+    ("feed_source", "mind-benchmark"),
+    ("language", "en"),
+)
+
+
+def _required_segments(report):
+    """
+    Return release-gate segments appropriate for the dataset.
+
+    Production telemetry and the MIND benchmark have different
+    metadata contracts. MIND does not provide article publication
+    timestamps and is an English benchmark, so production-only
+    segments must not be required for a MIND evaluation.
+    """
+    source_formats = (
+        report.get("data_provenance", {}).get("source_formats", [])
+    )
+
+    if isinstance(source_formats, str):
+        source_formats = [source_formats]
+
+    if "official-mind-tsv-v1" in source_formats:
+        return MIND_REQUIRED_SEGMENTS
+
+    return PRODUCTION_REQUIRED_SEGMENTS
 
 
 def _number(value):
@@ -145,7 +174,7 @@ def evaluate_release(report, evidence, *, comparison_sha256=None, model_sha256=N
                 failures.append(f"{name}:{metric}:regression")
             elif interval[0] < -0.01:
                 missing.append(f"{name}:{metric}:uncertain_no_regression")
-    for name, bucket in REQUIRED_SEGMENTS:
+    for name, bucket in _required_segments(report):
         segment = report.get("segments", {}).get(name, {}).get(bucket, {})
         if any(
             type(segment.get(key)) is not int or segment[key] < 100

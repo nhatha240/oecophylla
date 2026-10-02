@@ -1,711 +1,5751 @@
 from __future__ import annotations
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import argparse
+
+
+
+
+
+
+
 import hashlib
+
+
+
+
+
+
+
 import json
+
+
+
+
+
+
+
 import math
+
+
+
+
+
+
+
 import random
+
+
+
+
+
+
+
 from collections import defaultdict
+
+
+
+
+
+
+
 from collections.abc import Mapping, Sequence
+
+
+
+
+
+
+
 from pathlib import Path
+
+
+
+
+
+
+
 from statistics import fmean
+
+
+
+
+
+
+
 from typing import Any, Protocol
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import numpy as np
+
+
+
+
+
+
+
 import pyarrow.parquet as pq
+
+
+
+
+
+
+
 from sklearn.linear_model import LogisticRegression
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 from .artifact import MODEL_FILENAME, NRMS_MODEL_TYPE, load_artifact
+
+
+
+
+
+
+
 from .model import FEATURE_COLUMNS
+
+
+
+
+
+
+
 from .schemas import parse_datetime
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 METRIC_NAMES = (
+
+
+
+
+
+
+
     "impression_auc",
+
+
+
+
+
+
+
     "mrr",
+
+
+
+
+
+
+
     "ndcg_at_5",
+
+
+
+
+
+
+
     "ndcg_at_10",
+
+
+
+
+
+
+
     "precision_at_k",
+
+
+
+
+
+
+
     "recall_at_k",
+
+
+
+
+
+
+
     "ndcg_at_k",
+
+
+
+
+
+
+
     "hit_rate",
+
+
+
+
+
+
+
     "coverage",
+
+
+
+
+
+
+
     "diversity",
+
+
+
+
+
+
+
     "strong_negative_rate",
+
+
+
+
+
+
+
 )
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 class ScoreArtifact(Protocol):
+
+
+
+
+
+
+
     manifest: Mapping[str, Any]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     def predict_scores(self, records: Sequence[Mapping[str, Any]]) -> list[float]: ...
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+def _predict_rank_scores(
+
+
+
+    artifact: ScoreArtifact,
+
+
+
+    records: Sequence[Mapping[str, Any]],
+
+
+
+) -> list[float]:
+
+
+
+    """Return scores that preserve the ranker's learned ordering.
+
+
+
+
+
+
+
+    NRMS calibration is used for probability/confidence estimation. A negative
+
+
+
+    calibration scale is valid for probability fitting but would reverse the
+
+
+
+    ranking if calibrated probabilities were used directly for ranking.
+
+
+
+    Prefer an explicit rank-score API when available, including the ranker
+
+
+
+    wrapped by LoadedNRMSArtifact; otherwise fall back to predict_scores().
+
+
+
+    """
+
+
+
+    direct = getattr(artifact, "predict_rank_scores", None)
+
+
+
+    if callable(direct):
+
+
+
+        return [float(value) for value in direct(records)]
+
+
+
+
+
+
+
+    ranker = getattr(artifact, "ranker", None)
+
+
+
+    nested = getattr(ranker, "predict_rank_scores", None)
+
+
+
+    if callable(nested):
+
+
+
+        return [float(value) for value in nested(records)]
+
+
+
+
+
+
+
+    return [float(value) for value in artifact.predict_scores(records)]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def _precision(ranked: Sequence[str], relevant: set[str], k: int) -> float:
+
+
+
+
+
+
+
     return sum(item in relevant for item in ranked[:k]) / k
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def _recall(ranked: Sequence[str], relevant: set[str], k: int) -> float:
+
+
+
+
+
+
+
     return len(set(ranked[:k]) & relevant) / len(relevant) if relevant else 0.0
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def _ndcg(ranked: Sequence[str], relevant: set[str], k: int) -> float:
+
+
+
+
+
+
+
     if not relevant:
+
+
+
+
+
+
+
         return 0.0
+
+
+
+
+
+
+
     dcg = sum(
+
+
+
+
+
+
+
         1 / math.log2(index + 2)
+
+
+
+
+
+
+
         for index, item in enumerate(ranked[:k])
+
+
+
+
+
+
+
         if item in relevant
+
+
+
+
+
+
+
     )
+
+
+
+
+
+
+
     ideal = sum(1 / math.log2(index + 2) for index in range(min(k, len(relevant))))
+
+
+
+
+
+
+
     return dcg / ideal
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def _mean(values: Sequence[float]) -> float:
+
+
+
+
+
+
+
     return round(fmean(values), 6) if values else 0.0
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def _reciprocal_rank(ranked: Sequence[str], relevant: set[str]) -> float:
+
+
+
+
+
+
+
     for rank, item in enumerate(ranked, start=1):
+
+
+
+
+
+
+
         if item in relevant:
+
+
+
+
+
+
+
             return 1.0 / rank
+
+
+
+
+
+
+
     return 0.0
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def _impression_auc(
+
+
+
+
+
+
+
     candidates: Sequence[tuple[Mapping[str, Any], float]],
+
+
+
+
+
+
+
 ) -> float | None:
+
+
+
+
+
+
+
     positives = [score for row, score in candidates if int(row["label"]) > 0]
+
+
+
+
+
+
+
     negatives = [score for row, score in candidates if int(row["label"]) <= 0]
+
+
+
+
+
+
+
     if not positives or not negatives:
+
+
+
+
+
+
+
         return None
+
+
+
+
+
+
+
     credit = sum(
+
+
+
+
+
+
+
         1.0 if positive > negative else (0.5 if positive == negative else 0.0)
+
+
+
+
+
+
+
         for positive in positives
+
+
+
+
+
+
+
         for negative in negatives
+
+
+
+
+
+
+
     )
+
+
+
+
+
+
+
     return credit / (len(positives) * len(negatives))
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def _evaluate_scores(
+
+
+
+
+
+
+
     rows: Sequence[Mapping[str, Any]], scores: Sequence[float], k: int
+
+
+
+
+
+
+
 ) -> tuple[dict[str, Any], dict[str, list[float]]]:
+
+
+
+
+
+
+
     grouped: dict[str, list[tuple[Mapping[str, Any], float]]] = defaultdict(list)
+
+
+
+
+
+
+
     for row, score in zip(rows, scores, strict=True):
+
+
+
+
+
+
+
         grouped[str(row["request_group"])].append((row, score))
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     per_request: dict[str, list[float]] = defaultdict(list)
+
+
+
+
+
+
+
     top_posts: set[str] = set()
+
+
+
+
+
+
+
     for request_group in sorted(grouped):
+
+
+
+
+
+
+
         candidates = grouped[request_group]
+
+
+
+
+
+
+
         ranked = sorted(
+
+
+
+
+
+
+
             candidates,
+
+
+
+
+
+
+
             key=lambda pair: (
+
+
+
+
+
+
+
                 -pair[1],
+
+
+
+
+
+
+
                 int(pair[0]["position"]),
+
+
+
+
+
+
+
                 str(pair[0]["post_group"]),
+
+
+
+
+
+
+
             ),
-        )
-        ranked_ids = [str(row["post_group"]) for row, _ in ranked]
-        relevant = {
-            str(row["post_group"]) for row, _ in ranked if int(row["label"]) > 0
-        }
-        top = ranked[:k]
-        top_posts.update(str(row["post_group"]) for row, _ in top)
-        per_request["precision_at_k"].append(_precision(ranked_ids, relevant, k))
-        per_request["recall_at_k"].append(_recall(ranked_ids, relevant, k))
-        per_request["ndcg_at_k"].append(_ndcg(ranked_ids, relevant, k))
-        per_request["mrr"].append(_reciprocal_rank(ranked_ids, relevant))
-        per_request["ndcg_at_5"].append(_ndcg(ranked_ids, relevant, 5))
-        per_request["ndcg_at_10"].append(_ndcg(ranked_ids, relevant, 10))
-        auc = _impression_auc(candidates)
-        if auc is not None:
-            per_request["impression_auc"].append(auc)
-        per_request["hit_rate"].append(float(bool(set(ranked_ids[:k]) & relevant)))
-        per_request["diversity"].append(
-            len({str(row["candidate_source"]) for row, _ in top}) / len(top)
-            if top
-            else 0.0
-        )
-        per_request["strong_negative_rate"].append(
-            sum(row["label_name"] == "strong_negative" for row, _ in top) / k
+
+
+
+
+
+
+
         )
 
+
+
+
+
+
+
+        ranked_ids = [str(row["post_group"]) for row, _ in ranked]
+
+
+
+
+
+
+
+        relevant = {
+
+
+
+
+
+
+
+            str(row["post_group"]) for row, _ in ranked if int(row["label"]) > 0
+
+
+
+
+
+
+
+        }
+
+
+
+
+
+
+
+        top = ranked[:k]
+
+
+
+
+
+
+
+        top_posts.update(str(row["post_group"]) for row, _ in top)
+
+
+
+
+
+
+
+        per_request["precision_at_k"].append(_precision(ranked_ids, relevant, k))
+
+
+
+
+
+
+
+        per_request["recall_at_k"].append(_recall(ranked_ids, relevant, k))
+
+
+
+
+
+
+
+        per_request["ndcg_at_k"].append(_ndcg(ranked_ids, relevant, k))
+
+
+
+
+
+
+
+        per_request["mrr"].append(_reciprocal_rank(ranked_ids, relevant))
+
+
+
+
+
+
+
+        per_request["ndcg_at_5"].append(_ndcg(ranked_ids, relevant, 5))
+
+
+
+
+
+
+
+        per_request["ndcg_at_10"].append(_ndcg(ranked_ids, relevant, 10))
+
+
+
+
+
+
+
+        auc = _impression_auc(candidates)
+
+
+
+
+
+
+
+        if auc is not None:
+
+
+
+
+
+
+
+            per_request["impression_auc"].append(auc)
+
+
+
+
+
+
+
+        per_request["hit_rate"].append(float(bool(set(ranked_ids[:k]) & relevant)))
+
+
+
+
+
+
+
+        per_request["diversity"].append(
+
+
+
+
+
+
+
+            len({str(row["candidate_source"]) for row, _ in top}) / len(top)
+
+
+
+
+
+
+
+            if top
+
+
+
+
+
+
+
+            else 0.0
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+        per_request["strong_negative_rate"].append(
+
+
+
+
+
+
+
+            sum(row["label_name"] == "strong_negative" for row, _ in top) / k
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     catalog = {str(row["post_group"]) for row in rows}
+
+
+
+
+
+
+
     metrics = {
+
+
+
+
+
+
+
         name: _mean(per_request[name]) for name in METRIC_NAMES if name != "coverage"
+
+
+
+
+
+
+
     }
+
+
+
+
+
+
+
     metrics["coverage"] = round(len(top_posts) / len(catalog), 6) if catalog else 0.0
+
+
+
+
+
+
+
     metrics["sample_impressions"] = len(rows)
+
+
+
+
+
+
+
     metrics["impression_auc_eligible_requests"] = len(per_request["impression_auc"])
+
+
+
+
+
+
+
     metrics["impression_auc_excluded_requests"] = len(grouped) - len(
+
+
+
+
+
+
+
         per_request["impression_auc"]
+
+
+
+
+
+
+
     )
+
+
+
+
+
+
+
     return metrics, per_request
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def _bootstrap_ci95(
+
+
+
+
+
+
+
     values: Sequence[float], *, seed: int, resamples: int = 1_000
+
+
+
+
+
+
+
 ) -> list[float]:
+
+
+
+
+
+
+
     if not values:
+
+
+
+
+
+
+
         raise ValueError("confidence interval requires request-level values")
+
+
+
+
+
+
+
     if len(values) == 1:
+
+
+
+
+
+
+
         value = round(float(values[0]), 6)
+
+
+
+
+
+
+
         return [value, value]
+
+
+
+
+
+
+
     generator = random.Random(seed)
+
+
+
+
+
+
+
     sample_size = len(values)
+
+
+
+
+
+
+
     means = sorted(
+
+
+
+
+
+
+
         fmean(generator.choice(values) for _ in range(sample_size))
+
+
+
+
+
+
+
         for _ in range(resamples)
+
+
+
+
+
+
+
     )
+
+
+
+
+
+
+
     lower = means[round(0.025 * (resamples - 1))]
+
+
+
+
+
+
+
     upper = means[round(0.975 * (resamples - 1))]
+
+
+
+
+
+
+
     return [round(max(0.0, lower), 6), round(min(1.0, upper), 6)]
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def _validate_group_contract(rows: Sequence[Mapping[str, Any]]) -> None:
+
+
+
+
+
+
+
     splits_by_request: dict[str, set[str]] = defaultdict(set)
+
+
+
+
+
+
+
     users_by_request: dict[str, set[str]] = defaultdict(set)
+
+
+
+
+
+
+
     candidates_by_request: dict[str, int] = defaultdict(int)
+
+
+
+
+
+
+
     for row in rows:
+
+
+
+
+
+
+
         request_group = row.get("request_group")
+
+
+
+
+
+
+
         user_group = row.get("user_group")
+
+
+
+
+
+
+
         if not request_group or not user_group:
+
+
+
+
+
+
+
             raise ValueError("dataset requires stable user_group and request_group")
+
+
+
+
+
+
+
         request = str(request_group)
+
+
+
+
+
+
+
         splits_by_request[request].add(str(row.get("split")))
+
+
+
+
+
+
+
         users_by_request[request].add(str(user_group))
+
+
+
+
+
+
+
         candidates_by_request[request] += 1
+
+
+
+
+
+
+
     if any(len(splits) != 1 for splits in splits_by_request.values()):
+
+
+
+
+
+
+
         raise ValueError("request_group appears in multiple dataset splits")
+
+
+
+
+
+
+
     if any(len(users) != 1 for users in users_by_request.values()):
+
+
+
+
+
+
+
         raise ValueError("request_group has conflicting canonical identities")
+
+
+
+
+
+
+
     undersized = [
+
+
+
+
+
+
+
         request for request, count in candidates_by_request.items() if count < 2
+
+
+
+
+
+
+
     ]
+
+
+
+
+
+
+
     if undersized:
+
+
+
+
+
+
+
         raise ValueError("every request requires at least two candidates")
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def compare_holdout(
+
+
+
+
+
+
+
     rows: Sequence[Mapping[str, Any]],
+
+
+
+
+
+
+
     artifact: ScoreArtifact,
+
+
+
+
+
+
+
     *,
+
+
+
+
+
+
+
     k: int = 10,
+
+
+
+
+
+
+
     minimum_requests: int = 30,
+
+
+
+
+
+
+
     minimum_auc_requests: int | None = None,
+
+
+
+
+
+
+
     ndcg_tolerance: float = 0.01,
+
+
+
+
+
+
+
     guardrail_drop: float = 0.02,
+
+
+
+
+
+
+
     win_delta: float = 0.01,
+
+
+
+
+
+
+
 ) -> dict[str, Any]:
+
+
+
+
+
+
+
     if k <= 0:
+
+
+
+
+
+
+
         raise ValueError("k must be positive")
+
+
+
+
+
+
+
     if minimum_requests <= 0:
+
+
+
+
+
+
+
         raise ValueError("minimum_requests must be positive")
+
+
+
+
+
+
+
     minimum_auc_requests = (
+
+
+
+
+
+
+
         minimum_requests if minimum_auc_requests is None else minimum_auc_requests
+
+
+
+
+
+
+
     )
+
+
+
+
+
+
+
     if minimum_auc_requests <= 0:
+
+
+
+
+
+
+
         raise ValueError("minimum_auc_requests must be positive")
+
+
+
+
+
+
+
     _validate_group_contract(rows)
+
+
+
+
+
+
+
     holdout = [row for row in rows if row.get("split") == "test"]
+
+
+
+
+
+
+
     if not holdout:
+
+
+
+
+
+
+
         raise ValueError("dataset has no test holdout")
+
+
+
+
+
+
+
     records = [{name: row[name] for name in FEATURE_COLUMNS} for row in holdout]
-    ml_scores = artifact.predict_scores(records)
+
+
+
+
+
+
+
+    ml_scores = _predict_rank_scores(artifact, records)
+
+
+
+
+
+
+
     if len(ml_scores) != len(holdout):
+
+
+
+
+
+
+
         raise ValueError("model score count does not match holdout")
+
+
+
+
+
+
+
     baseline_scores = [float(row["heuristic_score"] or 0.0) for row in holdout]
+
+
+
+
+
+
+
     baseline, baseline_requests = _evaluate_scores(holdout, baseline_scores, k)
+
+
+
+
+
+
+
     ml, ml_requests = _evaluate_scores(holdout, ml_scores, k)
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     request_count = len({str(row["request_group"]) for row in holdout})
+
+
+
+
+
+
+
     auc_eligible_requests = ml["impression_auc_eligible_requests"]
+
+
+
+
+
+
+
     auc_excluded_requests = ml["impression_auc_excluded_requests"]
+
+
+
+
+
+
+
     conclusion = "no_regression"
+
+
+
+
+
+
+
     if request_count < minimum_requests or auc_eligible_requests < minimum_auc_requests:
+
+
+
+
+
+
+
         conclusion = "inconclusive"
+
+
+
+
+
+
+
     elif (
+
+
+
+
+
+
+
         ml["ndcg_at_k"] < baseline["ndcg_at_k"] - ndcg_tolerance
+
+
+
+
+
+
+
         or ml["impression_auc"] < baseline["impression_auc"] - ndcg_tolerance
+
+
+
+
+
+
+
         or ml["mrr"] < baseline["mrr"] - ndcg_tolerance
+
+
+
+
+
+
+
         or ml["ndcg_at_5"] < baseline["ndcg_at_5"] - ndcg_tolerance
+
+
+
+
+
+
+
         or ml["ndcg_at_10"] < baseline["ndcg_at_10"] - ndcg_tolerance
+
+
+
+
+
+
+
         or ml["coverage"] < baseline["coverage"] - guardrail_drop
+
+
+
+
+
+
+
         or ml["diversity"] < baseline["diversity"] - guardrail_drop
+
+
+
+
+
+
+
         or ml["strong_negative_rate"]
+
+
+
+
+
+
+
         > baseline["strong_negative_rate"] + guardrail_drop
+
+
+
+
+
+
+
     ):
+
+
+
+
+
+
+
         conclusion = "fail"
+
+
+
+
+
+
+
     elif ml["ndcg_at_k"] >= baseline["ndcg_at_k"] + win_delta:
+
+
+
+
+
+
+
         conclusion = "win"
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     confidence_intervals: dict[str, list[float] | None] | None = None
+
+
+
+
+
+
+
     if request_count >= 30:
+
+
+
+
+
+
+
         confidence_intervals = {}
+
+
+
+
+
+
+
         for index, metric in enumerate(
+
+
+
+
+
+
+
             (
+
+
+
+
+
+
+
                 "ndcg_at_k",
+
+
+
+
+
+
+
                 "impression_auc",
+
+
+
+
+
+
+
                 "mrr",
+
+
+
+
+
+
+
                 "ndcg_at_5",
+
+
+
+
+
+
+
                 "ndcg_at_10",
+
+
+
+
+
+
+
             )
+
+
+
+
+
+
+
         ):
+
+
+
+
+
+
+
             baseline_values = baseline_requests[metric]
+
+
+
+
+
+
+
             ml_values = ml_requests[metric]
+
+
+
+
+
+
+
             confidence_intervals[f"baseline_{metric}"] = (
+
+
+
+
+
+
+
                 _bootstrap_ci95(baseline_values, seed=index * 2)
+
+
+
+
+
+
+
                 if baseline_values
+
+
+
+
+
+
+
                 else None
+
+
+
+
+
+
+
             )
+
+
+
+
+
+
+
             confidence_intervals[f"ml_{metric}"] = (
+
+
+
+
+
+
+
                 _bootstrap_ci95(ml_values, seed=index * 2 + 1) if ml_values else None
+
+
+
+
+
+
+
             )
+
+
+
+
+
+
+
     sample_ids = sorted(str(row["sample_id"]) for row in holdout)
+
+
+
+
+
+
+
     checksum = hashlib.sha256("\n".join(sample_ids).encode()).hexdigest()
+
+
+
+
+
+
+
     manifest = artifact.manifest
+
+
+
+
+
+
+
     return {
+
+
+
+
+
+
+
         "report_schema_version": "recommendation-comparison-v1",
+
+
+
+
+
+
+
         "artifact": {
+
+
+
+
+
+
+
             "model_version": manifest["model_version"],
+
+
+
+
+
+
+
             "model_sha256": manifest["files"][MODEL_FILENAME]["sha256"],
+
+
+
+
+
+
+
         },
+
+
+
+
+
+
+
         "config": {
+
+
+
+
+
+
+
             "k": k,
+
+
+
+
+
+
+
             "minimum_requests": minimum_requests,
+
+
+
+
+
+
+
             "minimum_auc_requests": minimum_auc_requests,
+
+
+
+
+
+
+
             "ndcg_tolerance": ndcg_tolerance,
+
+
+
+
+
+
+
             "guardrail_drop": guardrail_drop,
+
+
+
+
+
+
+
             "win_delta": win_delta,
+
+
+
+
+
+
+
         },
+
+
+
+
+
+
+
         "sample": {
+
+
+
+
+
+
+
             "users": len({str(row["user_group"]) for row in holdout}),
+
+
+
+
+
+
+
             "requests": request_count,
+
+
+
+
+
+
+
             "impressions": len(holdout),
+
+
+
+
+
+
+
             "auc_eligible_requests": auc_eligible_requests,
+
+
+
+
+
+
+
             "auc_excluded_requests": auc_excluded_requests,
+
+
+
+
+
+
+
         },
+
+
+
+
+
+
+
         "holdout_checksum": checksum,
+
+
+
+
+
+
+
         "baseline": baseline,
+
+
+
+
+
+
+
         "ml": ml,
+
+
+
+
+
+
+
         "confidence_intervals": confidence_intervals,
+
+
+
+
+
+
+
         "confidence_interval_method": "request_group_bootstrap_percentile_95",
+
+
+
+
+
+
+
         "conclusion": conclusion,
+
+
+
+
+
+
+
     }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 # --- NRMS-like impression-aware ranker evaluation (T7, dataset schema v2) -
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 NRMS_SEGMENT_NAMES = (
+
     "user_tenure",
+
     "article_tenure",
+
     "history_length",
+
     "feed_source",
+
     "language",
+
 )
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def _cosine_similarity(left: Sequence[float], right: Sequence[float]) -> float:
+
+
+
+
+
+
+
     left_vector = np.asarray(left, dtype=float)
+
+
+
+
+
+
+
     right_vector = np.asarray(right, dtype=float)
+
+
+
+
+
+
+
     left_norm = np.linalg.norm(left_vector)
+
+
+
+
+
+
+
     right_norm = np.linalg.norm(right_vector)
+
+
+
+
+
+
+
     if left_norm == 0.0 or right_norm == 0.0:
+
+
+
+
+
+
+
         return 0.0
+
+
+
+
+
+
+
     return float(np.dot(left_vector, right_vector) / (left_norm * right_norm))
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def _mean_pool(vectors: Sequence[Sequence[float]]) -> np.ndarray | None:
+
+
+
+
+
+
+
     if not vectors:
+
+
+
+
+
+
+
         return None
+
+
+
+
+
+
+
     return np.asarray(vectors, dtype=float).mean(axis=0)
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def _naive_user_vector(row: Mapping[str, Any]) -> np.ndarray | None:
+
+
+
+
+
+
+
     history_vectors = [
+
+
+
+
+
+
+
         entry["article"]["embedding"]
+
+
+
+
+
+
+
         for entry in row.get("history") or ()
+
+
+
+
+
+
+
         if (entry.get("article") or {}).get("embedding") is not None
+
+
+
+
+
+
+
     ]
+
+
+
+
+
+
+
     pooled = _mean_pool(history_vectors)
+
+
+
+
+
+
+
     if pooled is not None:
+
+
+
+
+
+
+
         return pooled
+
+
+
+
+
+
+
     declared = row.get("declared_topic_embedding")
+
+
+
+
+
+
+
     return np.asarray(declared, dtype=float) if declared is not None else None
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def _logistic_baseline_feature(row: Mapping[str, Any]) -> float:
+
+
+
+
+
+
+
     user_vector = _naive_user_vector(row)
+
+
+
+
+
+
+
     candidate = (row.get("article") or {}).get("embedding")
+
+
+
+
+
+
+
     if user_vector is None or candidate is None:
+
+
+
+
+
+
+
         return 0.0
+
+
+
+
+
+
+
     return _cosine_similarity(user_vector, candidate)
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def _logistic_baseline_scores(
+
+
+
+
+
+
+
     rows_by_split: Mapping[str, Sequence[Mapping[str, Any]]],
+
+
+
+
+
+
+
 ) -> dict[str, float]:
+
+
+
+
+
+
+
     train_rows = rows_by_split.get("train", ())
+
+
+
+
+
+
+
     test_rows = rows_by_split.get("test", ())
+
+
+
+
+
+
+
     train_labels = [int(row["click_label"]) for row in train_rows]
+
+
+
+
+
+
+
     test_feature_rows = [[_logistic_baseline_feature(row)] for row in test_rows]
+
+
+
+
+
+
+
     if len(set(train_labels)) < 2:
+
+
+
+
+
+
+
         return {str(row["sample_id"]): 0.5 for row in test_rows}
+
+
+
+
+
+
+
     train_features = [[_logistic_baseline_feature(row)] for row in train_rows]
+
+
+
+
+
+
+
     model = LogisticRegression()
+
+
+
+
+
+
+
     model.fit(train_features, train_labels)
+
+
+
+
+
+
+
     probabilities = model.predict_proba(test_feature_rows)[:, 1]
+
+
+
+
+
+
+
     return {
+
+
+
+
+
+
+
         str(row["sample_id"]): float(score)
+
+
+
+
+
+
+
         for row, score in zip(test_rows, probabilities, strict=True)
+
+
+
+
+
+
+
     }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 def _post_policy_scores(
+
+
+
+
+
+
+
     request_rows: Sequence[Mapping[str, Any]],
+
+
+
+
+
+
+
     pure_scores: Mapping[str, float],
+
+
+
+
+
+
+
     heuristic_scores: Mapping[str, float],
+
+
+
+
+
+
+
     *,
+
+
+
+
+
+
+
+    confidence_scores: Mapping[str, float] | None = None,
+
+
+
+
+
+
+
     confidence_threshold: float = 0.5,
+
+
+
+
+
+
+
 ) -> dict[str, float]:
-    top_score = max(pure_scores.values())
+
+
+
+
+
+
+
+    del request_rows  # Reserved for future request-level policy constraints.
+
+
+
+
+
+
+
+    decision_scores = confidence_scores if confidence_scores is not None else pure_scores
+
+
+
+    top_score = max(decision_scores.values())
+
+
+
+
+
+
+
     if top_score < confidence_threshold:
+
+
+
+
+
+
+
         return dict(heuristic_scores)
+
+
+
+
+
+
+
     return dict(pure_scores)
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def _ndcg_binary(ranked_labels: Sequence[int], k: int) -> float:
+
+
+
+
+
+
+
     if not any(ranked_labels):
+
+
+
+
+
+
+
         return 0.0
+
+
+
+
+
+
+
     dcg = sum(
+
+
+
+
+
+
+
         1.0 / math.log2(index + 2)
+
+
+
+
+
+
+
         for index, label in enumerate(ranked_labels[:k])
+
+
+
+
+
+
+
         if label
+
+
+
+
+
+
+
     )
+
+
+
+
+
+
+
     ideal_hits = min(k, sum(ranked_labels))
+
+
+
+
+
+
+
     ideal = sum(1.0 / math.log2(index + 2) for index in range(ideal_hits))
+
+
+
+
+
+
+
     return dcg / ideal if ideal else 0.0
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def _mrr_binary(ranked_labels: Sequence[int]) -> float:
+
+
+
+
+
+
+
     for rank, label in enumerate(ranked_labels, start=1):
+
+
+
+
+
+
+
         if label:
+
+
+
+
+
+
+
             return 1.0 / rank
+
+
+
+
+
+
+
     return 0.0
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def _pairwise_auc(pairs: Sequence[tuple[float, int]]) -> float | None:
+
+
+
+
+
+
+
     positives = [score for score, label in pairs if label]
+
+
+
+
+
+
+
     negatives = [score for score, label in pairs if not label]
+
+
+
+
+
+
+
     if not positives or not negatives:
+
+
+
+
+
+
+
         return None
+
+
+
+
+
+
+
     credit = sum(
+
+
+
+
+
+
+
         1.0 if positive > negative else (0.5 if positive == negative else 0.0)
+
+
+
+
+
+
+
         for positive in positives
+
+
+
+
+
+
+
         for negative in negatives
+
+
+
+
+
+
+
     )
+
+
+
+
+
+
+
     return credit / (len(positives) * len(negatives))
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def _request_metrics(
+
+
+
+
+
+
+
     rows: Sequence[Mapping[str, Any]], scores_by_id: Mapping[str, float]
+
+
+
+
+
+
+
 ) -> dict[str, float | None]:
+
+
+
+
+
+
+
     ranked = sorted(
+
+
+
+
+
+
+
         rows,
+
+
+
+
+
+
+
         key=lambda row: (-scores_by_id[str(row["sample_id"])], int(row["position"])),
+
+
+
+
+
+
+
     )
+
+
+
+
+
+
+
     ranked_labels = [int(row["click_label"]) for row in ranked]
+
+
+
+
+
+
+
     pairs = [
+
+
+
+
+
+
+
         (scores_by_id[str(row["sample_id"])], int(row["click_label"])) for row in rows
+
+
+
+
+
+
+
     ]
+
+
+
+
+
+
+
     return {
+
+
+
+
+
+
+
         "mrr": _mrr_binary(ranked_labels),
+
+
+
+
+
+
+
         "ndcg_at_5": _ndcg_binary(ranked_labels, 5),
+
+
+
+
+
+
+
         "ndcg_at_10": _ndcg_binary(ranked_labels, 10),
+
+
+
+
+
+
+
         "impression_auc": _pairwise_auc(pairs),
+
+
+
+
+
+
+
     }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 def _paired_bootstrap_delta_ci95(
+
+
+
+
+
+
+
     deltas: Sequence[float], *, seed: int, resamples: int = 1_000
+
+
+
+
+
+
+
 ) -> list[float]:
+
+
+
+
+
+
+
     if not deltas:
+
+
+
+
+
+
+
         raise ValueError("paired confidence interval requires request-level deltas")
+
+
+
+
+
+
+
     if len(deltas) == 1:
+
+
+
+
+
+
+
         value = round(float(deltas[0]), 6)
+
+
+
+
+
+
+
         return [value, value]
+
+
+
+
+
+
+
     generator = random.Random(seed)
+
+
+
+
+
+
+
     sample_size = len(deltas)
+
+
+
+
+
+
+
     means = sorted(
+
+
+
+
+
+
+
         fmean(generator.choice(deltas) for _ in range(sample_size))
+
+
+
+
+
+
+
         for _ in range(resamples)
+
+
+
+
+
+
+
     )
+
+
+
+
+
+
+
     lower = means[round(0.025 * (resamples - 1))]
+
+
+
+
+
+
+
     upper = means[round(0.975 * (resamples - 1))]
+
+
+
+
+
+
+
     return [round(lower, 6), round(upper, 6)]
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def _paired_ranking_comparison(
+
+
+
+
+
+
+
     rows_by_request: Mapping[str, Sequence[Mapping[str, Any]]],
+
+
+
+
+
+
+
     model_scores: Mapping[str, float],
+
+
+
+
+
+
+
     baseline_scores: Mapping[str, float],
+
+
+
+
+
+
+
 ) -> dict[str, dict[str, Any]]:
+
+
+
+
+
+
+
     metrics = ("impression_auc", "mrr", "ndcg_at_5", "ndcg_at_10")
+
+
+
+
+
+
+
     deltas: dict[str, list[float]] = {metric: [] for metric in metrics}
+
+
+
+
+
+
+
     for request_group in sorted(rows_by_request):
+
+
+
+
+
+
+
         rows = rows_by_request[request_group]
+
+
+
+
+
+
+
         model_metrics = _request_metrics(rows, model_scores)
+
+
+
+
+
+
+
         baseline_metrics = _request_metrics(rows, baseline_scores)
+
+
+
+
+
+
+
         for metric in metrics:
+
+
+
+
+
+
+
             model_value = model_metrics[metric]
+
+
+
+
+
+
+
             baseline_value = baseline_metrics[metric]
+
+
+
+
+
+
+
             if model_value is not None and baseline_value is not None:
+
+
+
+
+
+
+
                 deltas[metric].append(float(model_value - baseline_value))
+
+
+
+
+
+
+
     return {
+
+
+
+
+
+
+
         metric: {
+
+
+
+
+
+
+
             "delta": _mean(values),
+
+
+
+
+
+
+
             "ci95": _paired_bootstrap_delta_ci95(values, seed=index),
+
+
+
+
+
+
+
             "requests": len(values),
+
+
+
+
+
+
+
         }
+
+
+
+
+
+
+
         for index, (metric, values) in enumerate(deltas.items())
+
+
+
+
+
+
+
         if values
+
+
+
+
+
+
+
     }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 def _embedding_diversity(rows: Sequence[Mapping[str, Any]]) -> float:
+
+
+
+
+
+
+
     vectors = [
+
+
+
+
+
+
+
         (row.get("article") or {}).get("embedding")
+
+
+
+
+
+
+
         for row in rows
+
+
+
+
+
+
+
         if (row.get("article") or {}).get("embedding") is not None
+
+
+
+
+
+
+
     ]
+
+
+
+
+
+
+
     if len(vectors) < 2:
+
+
+
+
+
+
+
         return 0.0
+
+
+
+
+
+
+
     distances = [
+
+
+
+
+
+
+
         1.0 - _cosine_similarity(vectors[left], vectors[right])
+
+
+
+
+
+
+
         for left in range(len(vectors))
+
+
+
+
+
+
+
         for right in range(left + 1, len(vectors))
+
+
+
+
+
+
+
     ]
+
+
+
+
+
+
+
     return fmean(distances)
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def _aggregate_model_metrics(
+
+
+
+
+
+
+
     rows_by_request: Mapping[str, Sequence[Mapping[str, Any]]],
+
+
+
+
+
+
+
     scores_by_id: Mapping[str, float],
+
+
+
+
+
+
+
     *,
+
+
+
+
+
+
+
     k: int = 5,
+
+
+
+
+
+
+
 ) -> dict[str, Any]:
+
+
+
+
+
+
+
     per_request = [
+
+
+
+
+
+
+
         _request_metrics(rows, scores_by_id) for rows in rows_by_request.values()
+
+
+
+
+
+
+
     ]
+
+
+
+
+
+
+
     result: dict[str, Any] = {}
+
+
+
+
+
+
+
     for key in ("mrr", "ndcg_at_5", "ndcg_at_10"):
+
+
+
+
+
+
+
         values = [entry[key] for entry in per_request]
+
+
+
+
+
+
+
         result[key] = round(fmean(values), 6) if values else 0.0
+
+
+
+
+
+
+
     auc_values = [
+
+
+
+
+
+
+
         entry["impression_auc"]
+
+
+
+
+
+
+
         for entry in per_request
+
+
+
+
+
+
+
         if entry["impression_auc"] is not None
+
+
+
+
+
+
+
     ]
+
+
+
+
+
+
+
     result["impression_auc"] = round(fmean(auc_values), 6) if auc_values else None
+
+
+
+
+
+
+
     result["impression_auc_eligible_requests"] = len(auc_values)
+
+
+
+
+
+
+
     result["requests"] = len(per_request)
+
+
+
+
+
+
+
     catalog = {
+
+
+
+
+
+
+
         str(row["candidate_group"]) for rows in rows_by_request.values() for row in rows
+
+
+
+
+
+
+
     }
+
+
+
+
+
+
+
     selected: list[Mapping[str, Any]] = []
+
+
+
+
+
+
+
     diversity_values: list[float] = []
+
+
+
+
+
+
+
     strong_negative_values: list[float] = []
+
+
+
+
+
+
+
     for rows in rows_by_request.values():
+
+
+
+
+
+
+
         ranked = sorted(
+
+
+
+
+
+
+
             rows,
+
+
+
+
+
+
+
             key=lambda row: (
+
+
+
+
+
+
+
                 -scores_by_id[str(row["sample_id"])],
+
+
+
+
+
+
+
                 int(row["position"]),
+
+
+
+
+
+
+
             ),
+
+
+
+
+
+
+
         )
+
+
+
+
+
+
+
         top = ranked[:k]
+
+
+
+
+
+
+
         selected.extend(top)
+
+
+
+
+
+
+
         diversity_values.append(_embedding_diversity(top))
+
+
+
+
+
+
+
         strong_negative_values.append(
+
+
+
+
+
+
+
             sum(row.get("utility_label_name") == "strong_negative" for row in top)
+
+
+
+
+
+
+
             / len(top)
+
+
+
+
+
+
+
             if top
+
+
+
+
+
+
+
             else 0.0
+
+
+
+
+
+
+
         )
+
+
+
+
+
+
+
     selected_candidates = {str(row["candidate_group"]) for row in selected}
+
+
+
+
+
+
+
     result["coverage_at_k"] = (
+
+
+
+
+
+
+
         round(len(selected_candidates) / len(catalog), 6) if catalog else 0.0
+
+
+
+
+
+
+
     )
+
+
+
+
+
+
+
     result["embedding_diversity_at_k"] = _mean(diversity_values)
+
+
+
+
+
+
+
     result["strong_negative_rate_at_k"] = _mean(strong_negative_values)
+
+
+
+
+
+
+
     return result
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def _validate_v2_segment_contract(rows: Sequence[Mapping[str, Any]]) -> None:
+
+
+
+
+
+
+
     missing_feed_source = any("feed_source" not in row for row in rows)
+
+
+
+
+
+
+
     if missing_feed_source:
+
+
+
+
+
+
+
         raise ValueError("dataset rows are missing required segment field feed_source")
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def _bucket_user_tenure(row: Mapping[str, Any]) -> str:
+
+
+
+
+
+
+
     return "existing" if row.get("history") else "new"
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
 def _bucket_article_tenure(
-    row: Mapping[str, Any], *, threshold_hours: float = 24.0
+
+    row: Mapping[str, Any],
+
+    *,
+
+    threshold_hours: float = 24.0,
+
 ) -> str:
+
+    """Bucket article age without inventing publication timestamps.
+
+
+
+    MIND does not provide publication timestamps for every article. When the
+
+    timestamp is unavailable (or malformed), return ``unknown`` so the
+
+    evaluation/release gate can correctly report missing segment evidence.
+
+    """
+
+
+
     article = row.get("article") or {}
+
+
+
     published_at = article.get("published_at")
+
     served = row.get("served_at")
+
+
+
     if published_at is None or served is None:
+
         return "unknown"
-    age_hours = (
-        parse_datetime(served) - parse_datetime(published_at)
-    ).total_seconds() / 3600.0
+
+
+
+    try:
+
+        age_hours = (
+
+            parse_datetime(served) - parse_datetime(published_at)
+
+        ).total_seconds() / 3600.0
+
+    except (TypeError, ValueError):
+
+        return "unknown"
+
+
+
+    if age_hours < 0:
+
+        return "unknown"
+
+
+
     return "new" if age_hours <= threshold_hours else "established"
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def _bucket_language(row: Mapping[str, Any]) -> str:
+
+
+
+
+
+
+
     article = row.get("article") or {}
+
+
+
+
+
+
+
     language = row.get("language") or article.get("language")
+
+
+
+
+
+
+
     return str(language) if language else "unknown"
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def _bucket_history_length(row: Mapping[str, Any]) -> str:
+
+
+
+
+
+
+
     length = len(row.get("history") or ())
+
+
+
+
+
+
+
     if length == 0:
+
+
+
+
+
+
+
         return "0"
+
+
+
+
+
+
+
     if length <= 2:
+
+
+
+
+
+
+
         return "1-2"
+
+
+
+
+
+
+
     return "3+"
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def _representative_positive(
+
+
+
+
+
+
+
     rows: Sequence[Mapping[str, Any]],
+
+
+
+
+
+
+
 ) -> Mapping[str, Any]:
+
+
+
+
+
+
+
     for row in rows:
+
+
+
+
+
+
+
         if int(row["click_label"]) == 1:
+
+
+
+
+
+
+
             return row
+
+
+
+
+
+
+
     return rows[0]
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def _segment_bucket_keys(rows: Sequence[Mapping[str, Any]]) -> dict[str, str]:
+
+
+
+
+
+
+
     representative = rows[0]
+
+
+
+
+
+
+
     positive = _representative_positive(rows)
+
+
+
+
+
+
+
     return {
+
+
+
+
+
+
+
         "user_tenure": _bucket_user_tenure(representative),
+
+
+
+
+
+
+
         "article_tenure": _bucket_article_tenure(positive),
+
+
+
+
+
+
+
         "history_length": _bucket_history_length(representative),
+
+
+
+
+
+
+
         "feed_source": str(representative.get("feed_source")),
+
+
+
+
+
+
+
         "language": _bucket_language(representative),
+
+
+
+
+
+
+
     }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 def _segment_report(
+
+
+
+
+
+
+
     rows_by_request: Mapping[str, Sequence[Mapping[str, Any]]],
+
+
+
+
+
+
+
     scores_by_id: Mapping[str, float],
+
+
+
+
+
+
+
     baselines: Mapping[str, Mapping[str, float]] | None = None,
+
+
+
+
+
+
+
 ) -> dict[str, dict[str, Any]]:
+
+
+
+
+
+
+
     bucket_requests: dict[str, dict[str, list[str]]] = {
+
+
+
+
+
+
+
         name: defaultdict(list) for name in NRMS_SEGMENT_NAMES
+
+
+
+
+
+
+
     }
+
+
+
+
+
+
+
     for request_group, rows in rows_by_request.items():
+
+
+
+
+
+
+
         keys = _segment_bucket_keys(rows)
+
+
+
+
+
+
+
         for name, bucket in keys.items():
+
+
+
+
+
+
+
             bucket_requests[name][bucket].append(request_group)
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     segments: dict[str, dict[str, Any]] = {}
+
+
+
+
+
+
+
     for name, buckets in bucket_requests.items():
+
+
+
+
+
+
+
         segments[name] = {
+
+
+
+
+
+
+
             bucket: _aggregate_model_metrics(
+
+
+
+
+
+
+
                 {request: rows_by_request[request] for request in requests},
+
+
+
+
+
+
+
                 scores_by_id,
+
+
+
+
+
+
+
             )
+
+
+
+
+
+
+
             for bucket, requests in buckets.items()
+
+
+
+
+
+
+
         }
+
+
+
+
+
+
+
     for name, buckets in bucket_requests.items():
+
+
+
+
+
+
+
         for bucket, requests in buckets.items():
+
+
+
+
+
+
+
             selected = {request: rows_by_request[request] for request in requests}
+
+
+
+
+
+
+
             segments[name][bucket]["comparisons"] = {
+
+
+
+
+
+
+
                 label: _paired_ranking_comparison(selected, scores_by_id, baseline)
+
+
+
+
+
+
+
                 for label, baseline in (baselines or {}).items()
+
+
+
+
+
+
+
             }
+
+
+
+
+
+
+
     return segments
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def compare_nrms_holdout(
+
+
+
+
+
+
+
     rows: Sequence[Mapping[str, Any]],
+
+
+
+
+
+
+
     artifact: ScoreArtifact,
+
+
+
+
+
+
+
     *,
+
+
+
+
+
+
+
     minimum_requests: int = 30,
+
+
+
+
+
+
+
     minimum_auc_requests: int | None = None,
+
+
+
+
+
+
+
     ranking_tolerance: float = 0.01,
+
+
+
+
+
+
+
     guardrail_tolerance: float = 0.02,
+
+
+
+
+
+
+
     k: int = 5,
+
+
+
+
+
+
+
 ) -> dict[str, Any]:
+
+
+
+
+
+
+
     if minimum_requests <= 0:
+
+
+
+
+
+
+
         raise ValueError("minimum_requests must be positive")
+
+
+
+
+
+
+
     minimum_auc_requests = (
+
+
+
+
+
+
+
         minimum_requests if minimum_auc_requests is None else minimum_auc_requests
+
+
+
+
+
+
+
     )
+
+
+
+
+
+
+
     if minimum_auc_requests <= 0:
+
+
+
+
+
+
+
         raise ValueError("minimum_auc_requests must be positive")
+
+
+
+
+
+
+
     _validate_v2_segment_contract(rows)
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     rows_by_split: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
+
+
+
+
+
+
+
     for row in rows:
+
+
+
+
+
+
+
         rows_by_split[str(row["split"])].append(row)
+
+
+
+
+
+
+
     test_rows = rows_by_split.get("test", [])
+
+
+
+
+
+
+
     if not test_rows:
+
+
+
+
+
+
+
         raise ValueError("dataset has no test holdout")
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     test_by_request: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
+
+
+
+
+
+
+
     for row in test_rows:
+
+
+
+
+
+
+
         test_by_request[str(row["request_group"])].append(row)
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     heuristic_scores = {
+
+
+
+
+
+
+
         str(row["sample_id"]): -float(row["position"]) for row in test_rows
+
+
+
+
+
+
+
     }
+
+
+
+
+
+
+
     logistic_scores = _logistic_baseline_scores(rows_by_split)
-    pure_scores = dict(
-        zip(
-            (str(row["sample_id"]) for row in test_rows),
-            artifact.predict_scores(test_rows),
-            strict=True,
-        )
-    )
+
+
+
+
+
+
+
+    # Ranking metrics must use order-preserving rank scores.  Calibrated
+
+
+
+    # probabilities are kept separately for the confidence/fallback policy.
+
+
+
+    rank_values = _predict_rank_scores(artifact, test_rows)
+
+
+
+    calibrated_values = [float(value) for value in artifact.predict_scores(test_rows)]
+
+
+
+
+
+
+
+    if len(rank_values) != len(test_rows):
+
+
+
+        raise ValueError("model rank score count does not match test holdout")
+
+
+
+    if len(calibrated_values) != len(test_rows):
+
+
+
+        raise ValueError("model calibrated score count does not match test holdout")
+
+
+
+
+
+
+
+    sample_ids = [str(row["sample_id"]) for row in test_rows]
+
+
+
+    pure_scores = dict(zip(sample_ids, rank_values, strict=True))
+
+
+
+    confidence_scores = dict(zip(sample_ids, calibrated_values, strict=True))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     post_policy_scores: dict[str, float] = {}
+
+
+
+
+
+
+
     for request_rows in test_by_request.values():
+
+
+
+
+
+
+
         ids = [str(row["sample_id"]) for row in request_rows]
+
+
+
+
+
+
+
         request_pure = {sample_id: pure_scores[sample_id] for sample_id in ids}
+
+
+
+
+
+
+
         request_heuristic = {
+
+
+
+
+
+
+
             sample_id: heuristic_scores[sample_id] for sample_id in ids
+
+
+
+
+
+
+
         }
+
+
+
+
+
+
+
+        request_confidence = {
+
+
+
+            sample_id: confidence_scores[sample_id] for sample_id in ids
+
+
+
+        }
+
+
+
+
+
+
+
         post_policy_scores.update(
-            _post_policy_scores(request_rows, request_pure, request_heuristic)
+
+
+
+
+
+
+
+            _post_policy_scores(
+
+
+
+                request_rows,
+
+
+
+                request_pure,
+
+
+
+                request_heuristic,
+
+
+
+                confidence_scores=request_confidence,
+
+
+
+            )
+
+
+
+
+
+
+
         )
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     models = {
+
+
+
+
+
+
+
         "logged_position_baseline": _aggregate_model_metrics(
+
+
+
+
+
+
+
             test_by_request, heuristic_scores, k=k
+
+
+
+
+
+
+
         ),
+
+
+
+
+
+
+
         "mean_pool_logistic_baseline": _aggregate_model_metrics(
+
+
+
+
+
+
+
             test_by_request, logistic_scores, k=k
+
+
+
+
+
+
+
         ),
+
+
+
+
+
+
+
         "pure_model": _aggregate_model_metrics(test_by_request, pure_scores, k=k),
+
+
+
+
+
+
+
         "post_policy": _aggregate_model_metrics(
+
+
+
+
+
+
+
             test_by_request, post_policy_scores, k=k
+
+
+
+
+
+
+
         ),
+
+
+
+
+
+
+
     }
+
+
+
+
+
+
+
     segments = _segment_report(
+
+
+
+
+
+
+
         test_by_request,
+
+
+
+
+
+
+
         pure_scores,
+
+
+
+
+
+
+
         {
+
+
+
+
+
+
+
             "logged_position": heuristic_scores,
+
+
+
+
+
+
+
             "logistic": logistic_scores,
+
+
+
+
+
+
+
         },
+
+
+
+
+
+
+
     )
+
+
+
+
+
+
+
     comparisons = {
         "pure_vs_logged_position": _paired_ranking_comparison(
             test_by_request,
@@ -713,249 +5753,1871 @@ def compare_nrms_holdout(
             heuristic_scores,
         ),
         "pure_vs_logistic": _paired_ranking_comparison(
-            test_by_request, pure_scores, logistic_scores
+            test_by_request,
+            pure_scores,
+            logistic_scores,
+        ),
+        "post_policy_vs_logged_position": _paired_ranking_comparison(
+            test_by_request,
+            post_policy_scores,
+            heuristic_scores,
         ),
     }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     request_count = len(test_by_request)
-    auc_eligible_requests = models["pure_model"]["impression_auc_eligible_requests"]
-    missing_segment_metadata = any(
-        bucket == "unknown" for segment in segments.values() for bucket in segment
+
+
+
+
+
+
+
+    serving_model_key = "post_policy"
+    serving_model = models[serving_model_key]
+
+    auc_eligible_requests = serving_model["impression_auc_eligible_requests"]
+
+
+
+
+
+
+
+    # MIND does not provide reliable article publication timestamps. Therefore
+    # article_tenure="unknown" is expected for this benchmark and must not make
+    # the evaluation ineligible. Other segment metadata is still validated.
+    source_formats = {
+        str(row.get("source_format", "unknown"))
+        for row in rows
+    }
+    is_mind_benchmark = "official-mind-tsv-v1" in source_formats
+
+    required_segment_names = (
+        tuple(
+            name
+            for name in NRMS_SEGMENT_NAMES
+            if name != "article_tenure"
+        )
+        if is_mind_benchmark
+        else NRMS_SEGMENT_NAMES
     )
+
+    missing_segment_metadata = any(
+        bucket == "unknown"
+        for name, segment in segments.items()
+        if name in required_segment_names
+        for bucket in segment
+    )
+
+
+
+
+
+
+
     ranking_regression = any(
-        models["pure_model"][metric]
+        serving_model[metric]
         < models["logged_position_baseline"][metric] - ranking_tolerance
-        for metric in ("mrr", "ndcg_at_5", "ndcg_at_10", "impression_auc")
-        if models["pure_model"][metric] is not None
+        for metric in (
+            "mrr",
+            "ndcg_at_5",
+            "ndcg_at_10",
+            "impression_auc",
+        )
+        if serving_model[metric] is not None
         and models["logged_position_baseline"][metric] is not None
     )
+
+
+
+
+
+
+
     guardrail_regression = (
-        models["pure_model"]["coverage_at_k"]
-        < models["logged_position_baseline"]["coverage_at_k"] - guardrail_tolerance
-        or models["pure_model"]["embedding_diversity_at_k"]
+        serving_model["coverage_at_k"]
+        < models["logged_position_baseline"]["coverage_at_k"]
+        - guardrail_tolerance
+
+        or serving_model["embedding_diversity_at_k"]
         < models["logged_position_baseline"]["embedding_diversity_at_k"]
         - guardrail_tolerance
-        or models["pure_model"]["strong_negative_rate_at_k"]
+
+        or serving_model["strong_negative_rate_at_k"]
         > models["logged_position_baseline"]["strong_negative_rate_at_k"]
         + guardrail_tolerance
     )
+
+
+
+
+
+
+
     if request_count < minimum_requests:
+
+
+
+
+
+
+
         promotion: dict[str, Any] = {
+
+
+
+
+
+
+
             "eligible": False,
+
+
+
+
+
+
+
             "reason": "insufficient_test_requests",
-        }
-    elif auc_eligible_requests < minimum_auc_requests:
-        promotion = {
-            "eligible": False,
-            "reason": "insufficient_auc_eligible_requests",
-        }
-    elif missing_segment_metadata:
-        promotion = {
-            "eligible": False,
-            "reason": "missing_segment_metadata",
-        }
-    elif ranking_regression:
-        promotion = {
-            "eligible": False,
-            "reason": "ranking_metric_regression",
-        }
-    elif guardrail_regression:
-        promotion = {
-            "eligible": False,
-            "reason": "product_guardrail_regression",
-        }
-    else:
-        ndcg_ci = comparisons["pure_vs_logged_position"]["ndcg_at_10"]["ci95"]
-        promotion = {
-            "eligible": True,
-            "conclusion": "win" if ndcg_ci[0] > 0.0 else "no_regression",
+
+
+
+
+
+
+
         }
 
+
+
+
+
+
+
+    elif auc_eligible_requests < minimum_auc_requests:
+
+
+
+
+
+
+
+        promotion = {
+
+
+
+
+
+
+
+            "eligible": False,
+
+
+
+
+
+
+
+            "reason": "insufficient_auc_eligible_requests",
+
+
+
+
+
+
+
+        }
+
+
+
+
+
+
+
+    elif missing_segment_metadata:
+
+
+
+
+
+
+
+        promotion = {
+
+
+
+
+
+
+
+            "eligible": False,
+
+
+
+
+
+
+
+            "reason": "missing_segment_metadata",
+
+
+
+
+
+
+
+        }
+
+
+
+
+
+
+
+    elif ranking_regression:
+
+
+
+
+
+
+
+        promotion = {
+
+
+
+
+
+
+
+            "eligible": False,
+
+
+
+
+
+
+
+            "reason": "ranking_metric_regression",
+
+
+
+
+
+
+
+        }
+
+
+
+
+
+
+
+    elif guardrail_regression:
+
+
+
+
+
+
+
+        promotion = {
+
+
+
+
+
+
+
+            "eligible": False,
+
+
+
+
+
+
+
+            "reason": "product_guardrail_regression",
+
+
+
+
+
+
+
+        }
+
+
+
+
+
+
+
+    else:
+
+
+
+
+
+
+
+        ndcg_ci = comparisons["post_policy_vs_logged_position"]["ndcg_at_10"]["ci95"]
+
+
+
+
+
+
+
+        promotion = {
+
+
+
+
+
+
+
+            "eligible": True,
+
+
+
+
+
+
+
+            "conclusion": "win" if ndcg_ci[0] > 0.0 else "no_regression",
+
+
+
+
+
+
+
+        }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     return {
+
+
+
+
+
+
+
         "report_schema_version": "recommendation-nrms-comparison-v1",
+
+
+
+
+
+
+
         "evaluation_scope": "untouched-temporal-test-requests",
+
+
+
+
+
+
+
         "raw_model_precedes_post_policy": True,
+
+
+
+
+
+
+
         "baseline_definitions": {
+
+
+
+
+
+
+
             "logged_position_baseline": "original served order",
+
+
+
+
+
+
+
             "mean_pool_logistic_baseline": (
+
+
+
+
+
+
+
                 "logistic regression over mean-history candidate cosine similarity"
+
+
+
+
+
+
+
             ),
+
+
+
+
+
+
+
         },
+
+
+
+
+
+
+
         "config": {
+
+
+
+
+
+
+
             "k": k,
+
+
+
+
+
+
+
             "ranking_tolerance": ranking_tolerance,
+
+
+
+
+
+
+
             "guardrail_tolerance": guardrail_tolerance,
+
+
+
+
+
+
+
         },
+
+
+
+
+
+
+
         "sample": {
+
+
+
+
+
+
+
             "requests": request_count,
+
+
+
+
+
+
+
             "impressions": len(test_rows),
+
+
+
+
+
+
+
             "auc_eligible_requests": auc_eligible_requests,
+
+
+
+
+
+
+
         },
+
+
+
+
+
+
+
         "models": models,
+
+
+
+
+
+
+
         "comparisons": comparisons,
+
+
+
+
+
+
+
         "segments": segments,
+
+
+
+
+
+
+
         "promotion": promotion,
+
+
+
+
+
+
+
     }
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def write_nrms_comparison_report(
+
+
+
+
+
+
+
     report: Mapping[str, Any], output: Path
+
+
+
+
+
+
+
 ) -> tuple[Path, Path]:
+
+
+
+
+
+
+
     json_path = output if output.suffix == ".json" else output.with_suffix(".json")
+
+
+
+
+
+
+
     markdown_path = json_path.with_suffix(".md")
+
+
+
+
+
+
+
     json_path.parent.mkdir(parents=True, exist_ok=True)
+
+
+
+
+
+
+
     json_path.write_text(
+
+
+
+
+
+
+
         json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+
+
+
+
+
+
+
     )
+
+
+
+
+
+
+
     models = report["models"]
+
+
+
+
+
+
+
     metric_names = ("impression_auc", "mrr", "ndcg_at_5", "ndcg_at_10")
+
+
+
+
+
+
+
     markdown_path.write_text(
+
+
+
+
+
+
+
         "\n".join(
+
+
+
+
+
+
+
             [
+
+
+
+
+
+
+
                 "# NRMS recommendation model comparison",
+
+
+
+
+
+
+
                 "",
+
+
+
+
+
+
+
                 f"- Promotion eligible: **{report['promotion']['eligible']}**",
+
+
+
+
+
+
+
                 (
+
+
+
+
+
+
+
                     "- Promotion outcome: `"
+
+
+
+
+
+
+
                     + report["promotion"].get(
+
+
+
+
+
+
+
                         "reason", report["promotion"].get("conclusion", "eligible")
+
+
+
+
+
+
+
                     )
+
+
+
+
+
+
+
                     + "`"
+
+
+
+
+
+
+
                 ),
+
+
+
+
+
+
+
                 f"- Holdout impressions: {report['sample']['impressions']}",
+
+
+
+
+
+
+
                 f"- Holdout requests: {report['sample']['requests']}",
+
+
+
+
+
+
+
                 "",
+
+
+
+
+
+
+
                 "| Model | Impression AUC | MRR | nDCG@5 | nDCG@10 |",
+
+
+
+
+
+
+
                 "|---|---:|---:|---:|---:|",
+
+
+
+
+
+
+
                 *[
+
+
+
+
+
+
+
                     "| "
+
+
+
+
+
+
+
                     + name
+
+
+
+
+
+
+
                     + " | "
+
+
+
+
+
+
+
                     + " | ".join(
+
+
+
+
+
+
+
                         (
+
+
+
+
+
+
+
                             f"{metrics[metric]:.6f}"
+
+
+
+
+
+
+
                             if metrics[metric] is not None
+
+
+
+
+
+
+
                             else "n/a"
+
+
+
+
+
+
+
                         )
+
+
+
+
+
+
+
                         for metric in metric_names
+
+
+
+
+
+
+
                     )
+
+
+
+
+
+
+
                     + " |"
+
+
+
+
+
+
+
                     for name, metrics in models.items()
+
+
+
+
+
+
+
                 ],
+
+
+
+
+
+
+
                 "",
+
+
+
+
+
+
+
             ]
+
+
+
+
+
+
+
         ),
+
+
+
+
+
+
+
         encoding="utf-8",
+
+
+
+
+
+
+
     )
+
+
+
+
+
+
+
     return json_path, markdown_path
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 def write_comparison_report(
+
+
+
+
+
+
+
     report: Mapping[str, Any], output: Path
+
+
+
+
+
+
+
 ) -> tuple[Path, Path]:
+
+
+
+
+
+
+
     json_path = output if output.suffix == ".json" else output.with_suffix(".json")
+
+
+
+
+
+
+
     markdown_path = json_path.with_suffix(".md")
+
+
+
+
+
+
+
     json_path.parent.mkdir(parents=True, exist_ok=True)
+
+
+
+
+
+
+
     json_path.write_text(
+
+
+
+
+
+
+
         json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+
+
+
+
+
+
+
     )
+
+
+
+
+
+
+
     baseline = report["baseline"]
+
+
+
+
+
+
+
     ml = report["ml"]
+
+
+
+
+
+
+
     markdown_path.write_text(
+
+
+
+
+
+
+
         "\n".join(
+
+
+
+
+
+
+
             [
+
+
+
+
+
+
+
                 "# Recommendation model comparison",
+
+
+
+
+
+
+
                 "",
+
+
+
+
+
+
+
                 f"- Conclusion: **{report['conclusion']}**",
+
+
+
+
+
+
+
                 f"- Holdout impressions: {report['sample']['impressions']}",
+
+
+
+
+
+
+
                 f"- Holdout requests: {report['sample']['requests']}",
+
+
+
+
+
+
+
                 (
+
+
+
+
+
+
+
                     "- Impression AUC requests: "
+
+
+
+
+
+
+
                     f"{report['sample']['auc_eligible_requests']} eligible, "
+
+
+
+
+
+
+
                     f"{report['sample']['auc_excluded_requests']} excluded"
+
+
+
+
+
+
+
                 ),
+
+
+
+
+
+
+
                 f"- Artifact: `{report['artifact']['model_version']}`",
+
+
+
+
+
+
+
                 "",
+
+
+
+
+
+
+
                 "| Metric | Baseline | ML |",
+
+
+
+
+
+
+
                 "|---|---:|---:|",
+
+
+
+
+
+
+
                 *[
+
+
+
+
+
+
+
                     f"| {name} | {baseline[name]:.6f} | {ml[name]:.6f} |"
+
+
+
+
+
+
+
                     for name in METRIC_NAMES
+
+
+
+
+
+
+
                 ],
+
+
+
+
+
+
+
                 "",
+
+
+
+
+
+
+
             ]
+
+
+
+
+
+
+
         ),
+
+
+
+
+
+
+
         encoding="utf-8",
+
+
+
+
+
+
+
     )
+
+
+
+
+
+
+
     return json_path, markdown_path
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def _parser() -> argparse.ArgumentParser:
+
+
+
+
+
+
+
     parser = argparse.ArgumentParser(
+
+
+
+
+
+
+
         description="Compare heuristic and ML ranking on one temporal test holdout."
+
+
+
+
+
+
+
     )
+
+
+
+
+
+
+
     parser.add_argument("--dataset", required=True, type=Path)
+
+
+
+
+
+
+
     parser.add_argument("--artifact", required=True, type=Path)
+
+
+
+
+
+
+
     parser.add_argument("--output", required=True, type=Path)
+
+
+
+
+
+
+
     parser.add_argument("--k", type=int, default=10)
+
+
+
+
+
+
+
     parser.add_argument("--minimum-requests", type=int, default=30)
+
+
+
+
+
+
+
     parser.add_argument("--minimum-auc-requests", type=int)
+
+
+
+
+
+
+
     return parser
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def main(argv: Sequence[str] | None = None) -> int:
+
+
+
+
+
+
+
     args = _parser().parse_args(argv)
+
+
+
+
+
+
+
     rows = pq.read_table(args.dataset).to_pylist()
+
+
+
+
+
+
+
     artifact = load_artifact(args.artifact)
+
+
+
+
+
+
+
     if artifact.manifest.get("model_type") == NRMS_MODEL_TYPE:
+
+
+
+
+
+
+
         report = compare_nrms_holdout(
+
+
+
+
+
+
+
             rows,
+
+
+
+
+
+
+
             artifact,
+
+
+
+
+
+
+
             k=args.k,
+
+
+
+
+
+
+
             minimum_requests=args.minimum_requests,
+
+
+
+
+
+
+
             minimum_auc_requests=args.minimum_auc_requests,
+
+
+
+
+
+
+
         )
+
+
+
+
+
+
+
         from .artifact import sha256_file
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         report["data_provenance"] = {
+
+
+
+
+
+
+
             "source_formats": sorted(
+
+
+
+
+
+
+
                 {str(row.get("source_format", "unknown")) for row in rows}
+
+
+
+
+
+
+
             ),
+
+
+
+
+
+
+
             "dataset_sha256": sha256_file(args.dataset),
+
+
+
+
+
+
+
             "model_sha256": sha256_file(args.artifact / "model.joblib"),
+
+
+
+
+
+
+
             "artifact_dataset_sha256": artifact.manifest.get("dataset", {}).get(
+
+
+
+
+
+
+
                 "parquet_sha256"
+
+
+
+
+
+
+
             ),
+
+
+
+
+
+
+
             "post_policy_definition": "confidence-threshold-fallback-only; serving diversity parity requires separate evidence",
+
+
+
+
+
+
+
         }
+
+
+
+
+
+
+
         json_path, markdown_path = write_nrms_comparison_report(report, args.output)
+
+
+
+
+
+
+
         conclusion = (
+
+
+
+
+
+
+
             report["promotion"].get("conclusion", "eligible")
+
+
+
+
+
+
+
             if report["promotion"]["eligible"]
+
+
+
+
+
+
+
             else report["promotion"]["reason"]
+
+
+
+
+
+
+
         )
+
+
+
+
+
+
+
     else:
+
+
+
+
+
+
+
         report = compare_holdout(
+
+
+
+
+
+
+
             rows,
+
+
+
+
+
+
+
             artifact,
+
+
+
+
+
+
+
             k=args.k,
+
+
+
+
+
+
+
             minimum_requests=args.minimum_requests,
+
+
+
+
+
+
+
             minimum_auc_requests=args.minimum_auc_requests,
+
+
+
+
+
+
+
         )
+
+
+
+
+
+
+
         json_path, markdown_path = write_comparison_report(report, args.output)
+
+
+
+
+
+
+
         conclusion = report["conclusion"]
+
+
+
+
+
+
+
     print(
+
+
+
+
+
+
+
         json.dumps(
+
+
+
+
+
+
+
             {
+
+
+
+
+
+
+
                 "conclusion": conclusion,
+
+
+
+
+
+
+
                 "json": str(json_path),
+
+
+
+
+
+
+
                 "markdown": str(markdown_path),
+
+
+
+
+
+
+
             },
+
+
+
+
+
+
+
             sort_keys=True,
+
+
+
+
+
+
+
         )
+
+
+
+
+
+
+
     )
+
+
+
+
+
+
+
     return 0
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 if __name__ == "__main__":
+
+
+
+
+
+
+
     raise SystemExit(main())
