@@ -143,4 +143,17 @@ describe('notifications store', () => {
     expect(get(notifications).items[0]?.read).toBe(false);
     expect(get(notifications).unread).toBe(1);
   });
+
+  it('refreshes the global count when reading an older notification outside the first page', async () => {
+    const { initNotifications, notifications, markNotificationAsRead } = await import('./notifications');
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ items: [], next_cursor: 'older' }))
+      .mockResolvedValueOnce(jsonResponse({ count: 21 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(jsonResponse({ count: 20 }));
+    await initNotifications(fetchMock as any);
+    await markNotificationAsRead('older-notice', fetchMock as any);
+
+    expect(get(notifications).unread).toBe(20);
+  });
 });

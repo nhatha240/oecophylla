@@ -287,6 +287,27 @@ mod tests {
     }
 
     #[test]
+    fn producer_reply_event_routes_to_reply_notification() {
+        assert_eq!(interaction_kind("comment_replied"), Some(InteractionKind::Replied));
+    }
+
+    #[test]
+    fn reply_notifies_parent_and_distinct_post_author() {
+        let commenter = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
+        let post_author = Uuid::parse_str("22222222-2222-2222-2222-222222222222").unwrap();
+        let parent_author = Uuid::parse_str("33333333-3333-3333-3333-333333333333").unwrap();
+        assert_eq!(
+            comment_recipients(commenter, post_author, Some(parent_author)),
+            vec![(parent_author, "replied"), (post_author, "commented")]
+        );
+        assert_eq!(
+            comment_recipients(commenter, post_author, Some(post_author)),
+            vec![(post_author, "replied")]
+        );
+        assert_eq!(comment_recipients(post_author, post_author, None), vec![]);
+    }
+
+    #[test]
     fn interaction_handler_ignores_saved_shared_hidden() {
         for event_type in ["saved", "shared", "hidden", "reported", "viewed"] {
             let env = parse_envelope(&format!(
