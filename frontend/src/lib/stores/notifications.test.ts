@@ -87,4 +87,25 @@ describe('notifications store', () => {
 
     unsubscribe();
   });
+
+  it('adds a backend notification once and keeps the global unread count on duplicate delivery', async () => {
+    const { initNotifications, notifications, subscribeSSE } = await import('./notifications');
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ items: [], next_cursor: null }))
+      .mockResolvedValueOnce(jsonResponse({ count: 0 }));
+    await initNotifications(fetchMock as any);
+    const unsubscribe = subscribeSSE(fetchMock as any);
+    const notice = {
+      id: 'notice-1', kind: 'liked', actor: { id: 'user-2', username: 'nguyen', avatar_url: null },
+      post: { id: 'post-1', snippet: 'Bài viết' }, comment_id: null, payload: {}, read: false,
+      created_at: '2026-10-08T02:00:00Z'
+    };
+
+    FakeEventSource.instances[0]?.emit('notification', { data: JSON.stringify(notice) } as MessageEvent);
+    FakeEventSource.instances[0]?.emit('notification', { data: JSON.stringify(notice) } as MessageEvent);
+
+    expect(get(notifications).items).toEqual([notice]);
+    expect(get(notifications).unread).toBe(1);
+    unsubscribe();
+  });
 });
