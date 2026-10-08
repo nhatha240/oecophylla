@@ -7,6 +7,7 @@ use uuid::Uuid;
 pub struct ActorDto {
     pub id: Uuid,
     pub username: String,
+    pub display_name: Option<String>,
     pub avatar_url: Option<String>,
 }
 

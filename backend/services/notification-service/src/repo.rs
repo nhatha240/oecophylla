@@ -15,6 +15,7 @@ fn map_row(row: &PgRow) -> NotificationDto {
     let actor = actor_id.zip(actor_username).map(|(id, username)| ActorDto {
         id,
         username,
+        display_name: row.get("actor_display_name"),
         avatar_url: row.get("actor_avatar_url"),
     });
 
@@ -47,6 +48,7 @@ const BASE_SELECT: &str = r#"
         n.kind::text           AS kind,
         n.actor_id,
         u.username             AS actor_username,
+        u.display_name         AS actor_display_name,
         u.avatar_url           AS actor_avatar_url,
         n.post_id,
         LEFT(p.content, $SNIP$) AS post_snippet,

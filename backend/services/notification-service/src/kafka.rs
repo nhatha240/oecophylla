@@ -42,6 +42,39 @@ struct CommentData {
     content_preview: String,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum InteractionKind {
+    Liked,
+    Commented,
+    Replied,
+}
+
+fn interaction_kind(event_type: &str) -> Option<InteractionKind> {
+    match event_type {
+        "liked" => Some(InteractionKind::Liked),
+        "commented" => Some(InteractionKind::Commented),
+        "comment_replied" | "replied" => Some(InteractionKind::Replied),
+        _ => None,
+    }
+}
+
+fn comment_recipients(
+    commenter: Uuid,
+    post_author: Uuid,
+    parent_author: Option<Uuid>,
+) -> Vec<(Uuid, &'static str)> {
+    let mut recipients = Vec::with_capacity(2);
+    if let Some(parent_author) = parent_author {
+        if parent_author != commenter {
+            recipients.push((parent_author, "replied"));
+        }
+    }
+    if post_author != commenter && Some(post_author) != parent_author {
+        recipients.push((post_author, "commented"));
+    }
+    recipients
+}
+
 #[derive(Debug, Deserialize)]
 struct UserFollowedData {
     follower_id: Uuid,
@@ -274,13 +307,13 @@ mod tests {
 
     #[test]
     fn interaction_handler_matches_liked_commented_replied() {
-        for event_type in ["liked", "commented", "replied"] {
+        for event_type in ["liked", "commented", "comment_replied"] {
             let env = parse_envelope(&format!(
                 r#"{{"event_type":"{event_type}","data":{{"user_id":"11111111-1111-1111-1111-111111111111","post_id":"22222222-2222-2222-2222-222222222222","post_author_id":"33333333-3333-3333-3333-333333333333","commenter_id":"44444444-4444-4444-4444-444444444444","comment_id":"55555555-5555-5555-5555-555555555555","parent_comment_id":null,"content_preview":"test"}}}}"#
             ));
             // These event types enter the match arms (not the catch-all).
             assert!(
-                matches!(env.event_type.as_str(), "liked" | "commented" | "replied"),
+                interaction_kind(&env.event_type).is_some(),
                 "should match {event_type}"
             );
         }
@@ -288,7 +321,10 @@ mod tests {
 
     #[test]
     fn producer_reply_event_routes_to_reply_notification() {
-        assert_eq!(interaction_kind("comment_replied"), Some(InteractionKind::Replied));
+        assert_eq!(
+            interaction_kind("comment_replied"),
+            Some(InteractionKind::Replied)
+        );
     }
 
     #[test]
@@ -352,8 +388,8 @@ mod tests {
 }
 
 async fn handle_interaction(state: AppState, env: InboundEnvelope) -> anyhow::Result<()> {
-    match env.event_type.as_str() {
-        "liked" => {
+    match interaction_kind(&env.event_type) {
+        Some(InteractionKind::Liked) => {
             let d: ToggleData = serde_json::from_value(env.data)?;
             // Skip self-like.
             if d.user_id == d.post_author_id {
@@ -370,26 +406,24 @@ async fn handle_interaction(state: AppState, env: InboundEnvelope) -> anyhow::Re
             )
             .await
         }
-        "commented" => {
+        Some(InteractionKind::Commented) => {
             let d: CommentData = serde_json::from_value(env.data)?;
-            // Skip self-comment.
-            if d.commenter_id == d.post_author_id {
-                return Ok(());
+            for (recipient, kind) in comment_recipients(d.commenter_id, d.post_author_id, None) {
+                dispatch_notification(
+                    &state,
+                    recipient,
+                    kind,
+                    Some(d.commenter_id),
+                    Some(d.post_id),
+                    Some(d.comment_id),
+                    serde_json::json!({ "preview": d.content_preview }),
+                )
+                .await?;
             }
-            dispatch_notification(
-                &state,
-                d.post_author_id,
-                "commented",
-                Some(d.commenter_id),
-                Some(d.post_id),
-                Some(d.comment_id),
-                serde_json::json!({ "preview": d.content_preview }),
-            )
-            .await
+            Ok(())
         }
-        "replied" => {
+        Some(InteractionKind::Replied) => {
             let d: CommentData = serde_json::from_value(env.data)?;
-            // The recipient is the parent comment's author.
             let parent_id = match d.parent_comment_id {
                 Some(id) => id,
                 None => {
@@ -407,32 +441,33 @@ async fn handle_interaction(state: AppState, env: InboundEnvelope) -> anyhow::Re
                     .fetch_optional(&state.db)
                     .await?;
 
-            let recipient = match parent_author {
-                Some(id) => id,
-                None => return Ok(()), // parent deleted
-            };
-
-            // Skip self-reply.
-            if d.commenter_id == recipient {
-                return Ok(());
+            for (recipient, kind) in
+                comment_recipients(d.commenter_id, d.post_author_id, parent_author)
+            {
+                dispatch_notification(
+                    &state,
+                    recipient,
+                    kind,
+                    Some(d.commenter_id),
+                    Some(d.post_id),
+                    Some(d.comment_id),
+                    serde_json::json!({ "preview": d.content_preview }),
+                )
+                .await?;
             }
-
-            dispatch_notification(
-                &state,
-                recipient,
-                "replied",
-                Some(d.commenter_id),
-                Some(d.post_id),
-                Some(d.comment_id),
-                serde_json::json!({ "preview": d.content_preview }),
-            )
-            .await
+            Ok(())
         }
         // Intentionally ignored event types.
-        "saved" | "shared" | "hidden" | "reported" | "viewed" => Ok(()),
-        other => {
+        None if matches!(
+            env.event_type.as_str(),
+            "saved" | "shared" | "hidden" | "reported" | "viewed"
+        ) =>
+        {
+            Ok(())
+        }
+        None => {
             tracing::debug!(
-                event_type = other,
+                event_type = env.event_type,
                 "unrecognised interaction event — skipping"
             );
             Ok(())

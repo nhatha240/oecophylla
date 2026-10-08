@@ -34,7 +34,7 @@ export interface BatchMeResponse { items: Record<string, MyInteractions>; }
 export type NotificationType =
   | 'liked'
   | 'commented'
-  | 'comment_replied'
+  | 'replied'
   | 'followed'
   | 'post_hidden'
   | 'author_warned'
@@ -43,16 +43,13 @@ export type NotificationType =
 
 export interface Notification {
   id: string;
-  user_id: string;
-  type: NotificationType;
-  actor_id: string;
-  post_id?: string | null;
-  comment_id?: string | null;
-  is_read: boolean;
+  kind: NotificationType;
+  actor: { id: string; username: string; display_name?: string | null; avatar_url: string | null } | null;
+  post: { id: string; snippet: string } | null;
+  comment_id: string | null;
+  payload: { preview?: string };
+  read: boolean;
   created_at: string;
-  actor_username: string;
-  actor_display_name: string | null;
-  snippet?: string | null;
 }
 
 export interface NotificationListResponse {

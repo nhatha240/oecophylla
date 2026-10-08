@@ -32,15 +32,6 @@ let reconnectDelay = 1000;
 let active = false;
 let recovering = false;
 
-function dedupe(items: Notification[]): Notification[] {
-  const seen = new Set<string>();
-  return items.filter((item) => {
-    if (seen.has(item.id)) return false;
-    seen.add(item.id);
-    return true;
-  });
-}
-
 function setDisconnected(unavailable = false): void {
   store.update((state) => ({ ...state, connected: false, unavailable }));
 }
@@ -152,11 +143,14 @@ async function openStream(fetchImpl: typeof fetch): Promise<void> {
   stream.addEventListener('notification', (event) => {
     try {
       const item = JSON.parse((event as MessageEvent).data) as Notification;
-      store.update((state) => ({
-        ...state,
-        items: dedupe([item, ...state.items]).slice(0, 20),
-        unread: state.unread + (item.is_read ? 0 : 1)
-      }));
+      store.update((state) => {
+        if (state.items.some((existing) => existing.id === item.id)) return state;
+        return {
+          ...state,
+          items: [item, ...state.items].slice(0, 20),
+          unread: state.unread + (item.read ? 0 : 1)
+        };
+      });
     } catch {
       return;
     }
@@ -198,33 +192,28 @@ export function subscribeSSE(fetchImpl: typeof fetch = fetch): () => void {
 }
 
 export async function markNotificationAsRead(id: string, fetchImpl: typeof fetch = fetch): Promise<void> {
-  try {
-    await markNotificationRead(fetchImpl, id);
-  } catch (error) {
-    if (!isServiceUnavailable(error)) {
-      throw error;
-    }
+  await markNotificationRead(fetchImpl, id);
+
+  if (!get(store).items.some((item) => item.id === id)) {
+    const unread = await getNotificationUnreadCount(fetchImpl);
+    store.update((state) => ({ ...state, unread: unread.count }));
+    return;
   }
 
   store.update((state) => {
-    const items = state.items.map((item) => (item.id === id ? { ...item, is_read: true } : item));
-    const unread = items.reduce((count, item) => count + (item.is_read ? 0 : 1), 0);
+    const wasUnread = state.items.some((item) => item.id === id && !item.read);
+    const items = state.items.map((item) => (item.id === id ? { ...item, read: true } : item));
+    const unread = wasUnread ? Math.max(0, state.unread - 1) : state.unread;
     return { ...state, items, unread };
   });
 }
 
 export async function markAllNotificationsAsRead(fetchImpl: typeof fetch = fetch): Promise<void> {
-  try {
-    await markAllNotificationsRead(fetchImpl);
-  } catch (error) {
-    if (!isServiceUnavailable(error)) {
-      throw error;
-    }
-  }
+  await markAllNotificationsRead(fetchImpl);
 
   store.update((state) => ({
     ...state,
-    items: state.items.map((item) => ({ ...item, is_read: true })),
+    items: state.items.map((item) => ({ ...item, read: true })),
     unread: 0
   }));
 }
