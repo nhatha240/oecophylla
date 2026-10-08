@@ -108,4 +108,39 @@ describe('notifications store', () => {
     expect(get(notifications).unread).toBe(1);
     unsubscribe();
   });
+
+  it('decrements the global count when one listed notification is read', async () => {
+    const { initNotifications, notifications, markNotificationAsRead } = await import('./notifications');
+    const notice = {
+      id: 'notice-1', kind: 'commented', actor: { id: 'user-2', username: 'nguyen', avatar_url: null },
+      post: { id: 'post-1', snippet: 'Bài viết' }, comment_id: 'comment-1', payload: { preview: 'Hay quá' }, read: false,
+      created_at: '2026-10-08T02:00:00Z'
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ items: [notice], next_cursor: null }))
+      .mockResolvedValueOnce(jsonResponse({ count: 21 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    await initNotifications(fetchMock as any);
+    await markNotificationAsRead(notice.id, fetchMock as any);
+
+    expect(get(notifications).items[0]?.read).toBe(true);
+    expect(get(notifications).unread).toBe(20);
+  });
+
+  it('does not mark a notification read when the API rejects the change', async () => {
+    const { initNotifications, notifications, markNotificationAsRead } = await import('./notifications');
+    const notice = {
+      id: 'notice-1', kind: 'liked', actor: null, post: null, comment_id: null, payload: {}, read: false,
+      created_at: '2026-10-08T02:00:00Z'
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ items: [notice], next_cursor: null }))
+      .mockResolvedValueOnce(jsonResponse({ count: 1 }))
+      .mockResolvedValueOnce(jsonResponse({ error: { code: 'UNAVAILABLE' } }, 503));
+    await initNotifications(fetchMock as any);
+    await expect(markNotificationAsRead(notice.id, fetchMock as any)).rejects.toBeDefined();
+
+    expect(get(notifications).items[0]?.read).toBe(false);
+    expect(get(notifications).unread).toBe(1);
+  });
 });
