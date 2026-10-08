@@ -1,4 +1,5 @@
 import type { AdminAuditLog, AdminReport, ApiError, BatchMeResponse, CursorPage, DashboardMetrics, FeedResponse, ModerationAction, Post, PostListResponse, ResolveResponse, SavedPostResponse, SearchPostResponse, SearchUserResponse, UserPreferences } from './types';
+import { notifyPreferenceAction } from './preferenceActions';
 
 export class ApiException extends Error {
   constructor(public status: number, public code: string, public details?: unknown) {
@@ -117,6 +118,7 @@ export async function apiFetch<T>(
     if (!init.quiet) console.error('API error', { path, status: res.status, body });
     throw new ApiException(res.status, body?.error?.code ?? 'UNKNOWN', body?.error?.details);
   }
+  notifyPreferenceAction(path, init.method);
   const text = await res.text();
   if (!text) return undefined as T;
   return JSON.parse(text) as T;

@@ -3,16 +3,24 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
-  import type { User } from '$lib/types';
+  import type { User, UserPreferences } from '$lib/types';
   import { user } from '$lib/stores/auth';
   import { initNotifications, notifications, subscribeSSE } from '$lib/stores/notifications';
+  import { getUserPreferences } from '$lib/api';
+  import { PREFERENCE_ACTION_EVENT } from '$lib/preferenceActions';
+  import { buildSidebarTopics } from '$lib/sidebarTopics';
   import Logo from '$lib/components/Logo.svelte';
   import Icon from '$lib/apple-glass/components/Icon.svelte';
   import '../app.css';
 
-  export let data: { user: User | null };
+  export let data: { user: User | null; learnedPrefs: UserPreferences | null };
   let query = '';
+  let learnedPrefs = data.learnedPrefs;
   $: if (browser) user.set(data.user);
+  $: learnedPrefs = data.learnedPrefs;
+  $: sidebarTopics = buildSidebarTopics(data.user?.topic_prefs, learnedPrefs?.topic_weights ?? null);
+  $: selectedTopics = sidebarTopics.filter((topic) => topic.source === 'selected');
+  $: activityTopics = sidebarTopics.filter((topic) => topic.source === 'activity');
   $: path = $page.url.pathname as string;
   $: authPage = path === '/login' || path === '/register';
   $: profileHref = data.user ? '/profile/' + data.user.id : '/login';
@@ -38,6 +46,35 @@
       generation += 1;
       stopWatchingUser();
       stopStream?.();
+    };
+  });
+
+  onMount(() => {
+    const delays = [400, 1600, 4000, 8000];
+    let timers: number[] = [];
+    let generation = 0;
+    const refresh = async (userId: string, current: number) => {
+      const next = await getUserPreferences(fetch, userId);
+      if (!next || current !== generation || $user?.id !== userId) return;
+      if (!learnedPrefs || Date.parse(next.updated_at) >= Date.parse(learnedPrefs.updated_at)) {
+        learnedPrefs = next;
+      }
+    };
+    const onAction = () => {
+      for (const timer of timers) window.clearTimeout(timer);
+      timers = [];
+      const userId = $user?.id;
+      const current = ++generation;
+      if (!userId) return;
+      for (const delay of delays) {
+        timers.push(window.setTimeout(() => { void refresh(userId, current); }, delay));
+      }
+    };
+    window.addEventListener(PREFERENCE_ACTION_EVENT, onAction);
+    return () => {
+      generation += 1;
+      for (const timer of timers) window.clearTimeout(timer);
+      window.removeEventListener(PREFERENCE_ACTION_EVENT, onAction);
     };
   });
 </script>
@@ -74,14 +111,20 @@
           {#if data.user?.role === 'admin'}<a class:active={path.startsWith('/admin')} href="/admin"><Icon name="Shield" size={17} /> Quản trị</a>{/if}
         </nav>
         <p class="side-label">Chủ đề yêu thích</p>
-        <nav class="side-nav">
-          <a href="/search?q=Thời sự"><Icon name="Globe" size={16} /> Thời sự</a>
-          <a href="/search?q=Kinh tế"><Icon name="ChartBar" size={16} /> Kinh tế</a>
-          <a href="/search?q=Khoa học"><Icon name="Atom" size={16} /> Khoa học</a>
-          <a href="/search?q=Môi trường"><Icon name="Heart" size={16} /> Môi trường</a>
-          <a href="/search?q=Công nghệ"><Icon name="Cpu" size={16} /> Công nghệ</a>
-          <a href="/search?q=Giáo dục"><Icon name="Book" size={16} /> Giáo dục</a>
-        </nav>
+        {#if selectedTopics.length}
+          <nav class="side-nav" aria-label="Chủ đề đã chọn">
+            {#each selectedTopics as topic (topic.key)}<a href={topic.href}><Icon name={topic.icon} size={16} /> {topic.label}</a>{/each}
+          </nav>
+        {/if}
+        {#if activityTopics.length}
+          <p class="side-sub-label">Từ hoạt động của bạn</p>
+          <nav class="side-nav" aria-label="Chủ đề từ hoạt động">
+            {#each activityTopics as topic (topic.key)}<a href={topic.href}><Icon name={topic.icon} size={16} /> {topic.label}</a>{/each}
+          </nav>
+        {/if}
+        {#if sidebarTopics.length === 0}
+          <p class="sidebar-empty">Chưa có chủ đề nào. <a href="/settings">Chọn chủ đề yêu thích</a></p>
+        {/if}
         <p class="sidebar-quote">“Những cuộc đối thoại tốt đẹp hơn, tạo nên thế giới tốt đẹp hơn.”<span>— Oecophylla</span></p>
       </aside>
       <main class="oec-main"><slot /></main>
@@ -97,6 +140,9 @@
 {/if}
 
 <style>
+  .side-sub-label { margin: 18px 14px 8px; color: #82938f; font-size: 10px; font-weight: 700; letter-spacing: .08em; }
+  .sidebar-empty { margin: 0 14px; color: #738982; font-size: 11px; line-height: 1.6; }
+  .sidebar-empty a { color: #1d5b54; text-decoration: underline; }
   .notification-count { position: absolute; top: -4px; right: -8px; min-width: 18px; height: 18px; padding: 0 4px; display: grid; place-items: center; border-radius: 999px; background: #ba453f; color: white; font-size: 10px; font-weight: 700; }
   .side-count { margin-left: auto; min-width: 20px; height: 20px; padding: 0 5px; display: grid; place-items: center; border-radius: 999px; background: #ba453f; color: white; font-size: 10px; font-weight: 700; }
   .mobile-count { position: absolute; top: 5px; right: 12px; width: 7px; height: 7px; border-radius: 50%; background: #ba453f; }
