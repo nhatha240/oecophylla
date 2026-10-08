@@ -1,6 +1,7 @@
 use axum::{
-    extract::{Path, Query, State},
-    http::StatusCode,
+    body::Body,
+    extract::{Multipart, Path, Query, State},
+    http::{header, HeaderValue, Response, StatusCode},
     response::IntoResponse,
     Json,
 };
@@ -15,9 +16,11 @@ use std::future::Future;
 use uuid::Uuid;
 
 use crate::{
-    cursor, repo,
+    cursor,
+    image::validate_post_image,
+    repo,
     state::AppState,
-    update::{validate_update_post, UpdatePostInput},
+    update::{validate_owned_uploads, validate_update_post, UpdatePostInput},
 };
 
 #[derive(Deserialize)]
@@ -29,6 +32,139 @@ pub struct CreatePostReq {
     pub tags: Vec<String>,
     #[serde(default)]
     pub topics: Vec<String>,
+}
+
+#[derive(serde::Serialize)]
+pub struct ImageUploadResponse {
+    pub image_url: String,
+}
+
+pub async fn upload_image(
+    State(s): State<AppState>,
+    Path(id): Path<Uuid>,
+    h: axum::http::HeaderMap,
+    mut multipart: Multipart,
+) -> AppResult<Json<ImageUploadResponse>> {
+    let me = current(&s, &h).await?.ok_or(AppError::Unauthorized)?;
+    let post = repo::by_id(&s.db, id).await?.ok_or(AppError::NotFound {
+        kind: "post".into(),
+    })?;
+    if post.author_id != me.id && me.role != UserRole::Admin {
+        return Err(AppError::Forbidden);
+    }
+    let mut image = None;
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|_| AppError::Validation {
+            field: "image".into(),
+            message: "invalid multipart upload".into(),
+        })?
+    {
+        if field.name() != Some("image") {
+            continue;
+        }
+        if image.is_some() {
+            return Err(AppError::Validation {
+                field: "image".into(),
+                message: "upload exactly one image".into(),
+            });
+        }
+        let filename = field.file_name().unwrap_or_default().to_owned();
+        let content_type = field.content_type().unwrap_or_default().to_owned();
+        let bytes = field.bytes().await.map_err(|_| AppError::Validation {
+            field: "image".into(),
+            message: "could not read image upload".into(),
+        })?;
+        let format = validate_post_image(&content_type, &filename, &bytes)?;
+        image = Some((format, bytes));
+    }
+    let (format, bytes) = image.ok_or(AppError::Validation {
+        field: "image".into(),
+        message: "image file is required".into(),
+    })?;
+    let image_url = repo::insert_image(&s.db, id, format, &bytes).await?;
+    publish_image_change(&s, id).await?;
+    Ok(Json(ImageUploadResponse { image_url }))
+}
+
+async fn publish_image_change(s: &AppState, id: Uuid) -> AppResult<()> {
+    let row = repo::by_id(&s.db, id).await?.ok_or(AppError::NotFound {
+        kind: "post".into(),
+    })?;
+    let env = Envelope::new(
+        "content.updated",
+        "content-service",
+        ContentCreated {
+            post_id: row.id,
+            author_id: row.author_id,
+            content: row.content,
+            tags: row.tags,
+            created_at: row.updated_at,
+        },
+    );
+    s.kafka
+        .produce_json(TOPIC_CONTENT_CREATED, id.to_string().as_str(), &env)
+        .await;
+    Ok(())
+}
+
+pub async fn image(
+    State(s): State<AppState>,
+    Path((id, image_id)): Path<(Uuid, Uuid)>,
+    h: axum::http::HeaderMap,
+) -> AppResult<Response<Body>> {
+    let post = repo::by_id(&s.db, id).await?.ok_or(AppError::NotFound {
+        kind: "image".into(),
+    })?;
+    let image_url = format!("/api/v1/posts/{id}/images/{image_id}");
+    if !post.media_urls.contains(&image_url)
+        || (post.status != PostStatus::Published
+            && !current(&s, &h).await?.is_some_and(|viewer| {
+                viewer.id == post.author_id || viewer.role == UserRole::Admin
+            }))
+    {
+        return Err(AppError::NotFound {
+            kind: "image".into(),
+        });
+    }
+    let image = repo::get_image(&s.db, id, image_id)
+        .await?
+        .ok_or(AppError::NotFound {
+            kind: "image".into(),
+        })?;
+    let content_type = HeaderValue::from_str(&image.content_type)
+        .map_err(|error| AppError::Other(error.into()))?;
+    let mut response = Response::new(Body::from(image.image_data));
+    response
+        .headers_mut()
+        .insert(header::CONTENT_TYPE, content_type);
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("private, no-store"),
+    );
+    response.headers_mut().insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff"),
+    );
+    Ok(response)
+}
+
+pub async fn delete_image(
+    State(s): State<AppState>,
+    Path((id, image_id)): Path<(Uuid, Uuid)>,
+    h: axum::http::HeaderMap,
+) -> AppResult<StatusCode> {
+    let me = current(&s, &h).await?.ok_or(AppError::Unauthorized)?;
+    let post = repo::by_id(&s.db, id).await?.ok_or(AppError::NotFound {
+        kind: "post".into(),
+    })?;
+    if post.author_id != me.id && me.role != UserRole::Admin {
+        return Err(AppError::Forbidden);
+    }
+    repo::delete_image(&s.db, id, image_id).await?;
+    publish_image_change(&s, id).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[derive(Deserialize)]
@@ -119,7 +255,8 @@ pub async fn get_one(
     // A direct URL must enforce the same publication boundary as public lists.
     // Authors and administrators can still inspect content awaiting moderation.
     if row.status != PostStatus::Published
-        && !current(&s, &h).await?
+        && !current(&s, &h)
+            .await?
             .is_some_and(|viewer| viewer.id == row.author_id || viewer.role == UserRole::Admin)
     {
         return Err(AppError::NotFound {
@@ -143,6 +280,7 @@ pub async fn update_post(
         return Err(AppError::Forbidden);
     }
     let body = validate_update_post(body)?;
+    validate_owned_uploads(body.media_urls.as_deref(), &existing.media_urls)?;
     let row = repo::update(
         &s.db,
         id,

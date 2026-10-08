@@ -68,6 +68,18 @@ export async function uploadAvatar(
   });
 }
 
+export async function uploadCover(fetcher: Fetch, userId: string, file: File): Promise<{ cover_url: string }> {
+  const form = new FormData();
+  form.set('cover', file, file.name);
+  return apiFetch(fetcher, `/users/${userId}/cover`, { method: 'PUT', body: form });
+}
+
+export async function uploadPostImage(fetcher: Fetch, postId: string, file: File): Promise<{ image_url: string }> {
+  const form = new FormData();
+  form.set('image', file, file.name);
+  return apiFetch(fetcher, `/posts/${postId}/images`, { method: 'POST', body: form });
+}
+
 function canRefresh(path: string): boolean {
   return !path.startsWith('/auth/login')
     && !path.startsWith('/auth/register')

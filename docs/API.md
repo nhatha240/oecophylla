@@ -111,6 +111,8 @@ Source: `backend/services/user-service/src/{main.rs,handlers.rs}`
 | PUT | `/api/v1/users/{id}` | 🔒 (self) | Update own profile |
 | GET | `/api/v1/users/{id}/avatar` | — | Redirect/stream avatar image |
 | PUT | `/api/v1/users/{id}/avatar` | 🔒 (self) | Upload avatar, multipart, max 5 MiB |
+| GET | `/api/v1/users/{id}/cover` | — | Stream profile cover image |
+| PUT | `/api/v1/users/{id}/cover` | 🔒 (self) | Upload profile cover, multipart, max 5 MiB |
 | POST | `/api/v1/users/{id}/follow` | 🔒 | Follow a user |
 | DELETE | `/api/v1/users/{id}/follow` | 🔒 | Unfollow a user |
 | GET | `/api/v1/users/{id}/followers` | — | List followers, `?limit=` |
@@ -130,7 +132,7 @@ Request `UpdateProfileReq` (all optional — send only fields to change):
   "display_name": "string | null",
   "bio": "string | null",
   "avatar_url": "string | null",
-  "topic_prefs": ["string"] | null
+  "topic_prefs": "[\"string\"] | \"null\""
 }
 ```
 
@@ -139,6 +141,10 @@ Profile updates accept validated HTTPS avatar URLs or the same user’s currentl
 ### PUT `/api/v1/users/{id}/avatar`
 
 `multipart/form-data` image upload. Response `AvatarUploadResponse`: `{ "avatar_url": "string" }`.
+
+### PUT `/api/v1/users/{id}/cover`
+
+Send one `cover` file as `multipart/form-data`. JPEG, PNG and WebP are accepted up to 5 MiB; MIME type, extension and file signature must agree. Response: `{ "cover_url": "/api/v1/users/{id}/cover?v=..." }`. Profile responses include `cover_url`.
 
 ### GET `/api/v1/users/{id}/followers` / `/following`
 
@@ -163,6 +169,9 @@ Source: `backend/services/content-service/src/{main.rs,handlers.rs,update.rs}`
 | PATCH | `/api/v1/posts/{id}` | 🔒 (author) | Partially update editable fields |
 | DELETE | `/api/v1/posts/{id}` | 🔒 (author) | Soft-delete a post |
 | POST | `/api/v1/posts/{id}/view` | — | Record a view (fire-and-forget) |
+| POST | `/api/v1/posts/{id}/images` | 🔒 (author/admin) | Upload one post image, max 5 MiB |
+| GET | `/api/v1/posts/{id}/images/{image_id}` | Public if published; author/admin otherwise | Stream an attached image |
+| DELETE | `/api/v1/posts/{id}/images/{image_id}` | 🔒 (author/admin) | Remove an uploaded image |
 | GET | `/api/v1/search` | — | Full-text post search |
 
 ### POST `/api/v1/posts`
@@ -177,6 +186,8 @@ Request `CreatePostReq`:
 }
 ```
 Response: the created `PostRow` (`201`). Emits a `content.created` Kafka event.
+
+To attach a device image, create the post, then POST a `multipart/form-data` field named `image` to `/api/v1/posts/{id}/images`. The upload returns `{ "image_url": "..." }` and appends the URL to `media_urls`. A post can contain up to six images. JPEG, PNG and WebP files are accepted up to 5 MiB each. Uploaded image URLs in subsequent post updates must already belong to that post.
 
 ### GET `/api/v1/posts`
 

@@ -51,6 +51,8 @@ separate offline pipeline for model training.
 | `behavior_events` | Raw client behavior (visible/view/dwell) | `..0013_recommendation_telemetry` |
 | `feature_event_receipts` | Idempotency receipts for the feature worker | `..0015`, `..0016` |
 | `user_avatars` | Avatar blobs/metadata | `..0018_user_avatars` |
+| `user_covers` | Profile cover blobs/metadata | `..0021_uploaded_images` |
+| `post_images` | Uploaded post image blobs | `..0021_uploaded_images` |
 | `post_content_features` | Topics, keywords, multilingual embedding per encoder version | `..0019_post_content_features` |
 | `post_content_encoder_versions` | Registered encoder versions | `..0019_post_content_features` |
 

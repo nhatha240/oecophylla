@@ -1,8 +1,9 @@
-.PHONY: up down logs ps test test-python test-phase-2b test-ai-pipeline smoke-ai-telemetry evaluate-ai train-ai prune-ai-telemetry sync-agent-md check-agent-md fmt lint deny audit sqlx-prepare clean
+.PHONY: up down logs ps test test-python test-phase-2b test-ai-pipeline smoke-ai-telemetry evaluate-ai train-ai benchmark-ai prune-ai-telemetry sync-agent-md check-agent-md fmt lint deny audit sqlx-prepare clean
 
 AI_DATASET ?= artifacts/datasets/dataset.parquet
 AI_ARTIFACT ?= artifacts/models/current
 AI_REPORT ?= artifacts/models/current/comparison
+AI_BENCHMARK ?= artifacts/benchmarks/current
 
 up:
 	docker compose -f compose.yaml -f compose.dev.yaml up -d --build
@@ -36,6 +37,9 @@ train-ai:
 
 evaluate-ai:
 	uv run --with-requirements ai_pipeline/requirements.txt python -m ai_pipeline.evaluate --dataset "$(AI_DATASET)" --artifact "$(AI_ARTIFACT)" --output "$(AI_REPORT)"
+
+benchmark-ai:
+	uv run --with-requirements ai_pipeline/requirements.training.txt python -m ai_pipeline.benchmark --run-dir "$(AI_BENCHMARK)"
 
 prune-ai-telemetry:
 	docker compose exec -T postgres psql -U "$${POSTGRES_USER:-oecophylla}" -d "$${POSTGRES_DB:-oecophylla}" -v ON_ERROR_STOP=1 -c "SELECT * FROM prune_recommendation_telemetry(INTERVAL '$${TELEMETRY_RETENTION_DAYS:-180} days'); SELECT prune_recommendation_candidate_events($${CANDIDATE_TELEMETRY_RETENTION_DAYS:-7}, 10000);"

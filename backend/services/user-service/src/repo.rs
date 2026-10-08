@@ -9,6 +9,7 @@ pub struct ProfileRow {
     pub display_name: Option<String>,
     pub bio: Option<String>,
     pub avatar_url: Option<String>,
+    pub cover_url: Option<String>,
     pub role: String,
     pub topic_prefs: Vec<String>,
     pub created_at: chrono::DateTime<chrono::Utc>,
@@ -18,6 +19,45 @@ pub struct ProfileRow {
 pub struct AvatarRow {
     pub content_type: String,
     pub image_data: Vec<u8>,
+}
+
+pub async fn upsert_cover(
+    db: &PgPool,
+    user_id: Uuid,
+    content_type: &str,
+    image_data: &[u8],
+) -> Result<String, AppError> {
+    let version = Uuid::now_v7();
+    let cover_url = format!("/api/v1/users/{user_id}/cover?v={version}");
+    let mut tx = db.begin().await?;
+    sqlx::query(
+        "INSERT INTO user_covers (user_id, content_type, image_data, version)
+        VALUES ($1, $2, $3, $4) ON CONFLICT (user_id) DO UPDATE SET
+        content_type = EXCLUDED.content_type, image_data = EXCLUDED.image_data,
+        version = EXCLUDED.version, updated_at = NOW()",
+    )
+    .bind(user_id)
+    .bind(content_type)
+    .bind(image_data)
+    .bind(version)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query("UPDATE users SET cover_url = $2 WHERE id = $1 AND is_active = true")
+        .bind(user_id)
+        .bind(&cover_url)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(cover_url)
+}
+
+pub async fn get_cover(db: &PgPool, user_id: Uuid) -> Result<Option<AvatarRow>, AppError> {
+    Ok(sqlx::query_as::<_, AvatarRow>(
+        "SELECT content_type, image_data FROM user_covers WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .fetch_optional(db)
+    .await?)
 }
 
 pub async fn upsert_avatar(
@@ -64,7 +104,7 @@ pub async fn get_avatar(db: &PgPool, user_id: Uuid) -> Result<Option<AvatarRow>,
 
 pub async fn get_profile(db: &PgPool, id: Uuid) -> Result<Option<ProfileRow>, AppError> {
     Ok(sqlx::query_as::<_, ProfileRow>(
-        "SELECT id, username, display_name, bio, avatar_url, role::text AS role, topic_prefs, created_at
+        "SELECT id, username, display_name, bio, avatar_url, cover_url, role::text AS role, topic_prefs, created_at
          FROM users WHERE id = $1 AND is_active = true",
     )
     .bind(id)
@@ -87,7 +127,7 @@ pub async fn update_profile(
             avatar_url   = COALESCE($4, avatar_url),
             topic_prefs  = COALESCE($5, topic_prefs)
          WHERE id = $1
-         RETURNING id, username, display_name, bio, avatar_url, role::text AS role, topic_prefs, created_at",
+         RETURNING id, username, display_name, bio, avatar_url, cover_url, role::text AS role, topic_prefs, created_at",
     )
     .bind(id)
     .bind(display_name)
@@ -125,7 +165,7 @@ pub async fn list_followers(
     limit: i64,
 ) -> Result<Vec<ProfileRow>, AppError> {
     Ok(sqlx::query_as::<_, ProfileRow>(
-        "SELECT u.id, u.username, u.display_name, u.bio, u.avatar_url, u.role::text AS role, u.topic_prefs, u.created_at
+        "SELECT u.id, u.username, u.display_name, u.bio, u.avatar_url, u.cover_url, u.role::text AS role, u.topic_prefs, u.created_at
          FROM follows f JOIN users u ON u.id = f.follower_id
          WHERE f.followee_id = $1 ORDER BY f.created_at DESC LIMIT $2",
     )
@@ -141,7 +181,7 @@ pub async fn list_following(
     limit: i64,
 ) -> Result<Vec<ProfileRow>, AppError> {
     Ok(sqlx::query_as::<_, ProfileRow>(
-        "SELECT u.id, u.username, u.display_name, u.bio, u.avatar_url, u.role::text AS role, u.topic_prefs, u.created_at
+        "SELECT u.id, u.username, u.display_name, u.bio, u.avatar_url, u.cover_url, u.role::text AS role, u.topic_prefs, u.created_at
          FROM follows f JOIN users u ON u.id = f.followee_id
          WHERE f.follower_id = $1 ORDER BY f.created_at DESC LIMIT $2",
     )
@@ -169,7 +209,7 @@ pub async fn search_users(
     .await?;
 
     let items = sqlx::query_as::<_, ProfileRow>(
-        "SELECT id, username, display_name, bio, avatar_url, role::text AS role, topic_prefs, created_at
+        "SELECT id, username, display_name, bio, avatar_url, cover_url, role::text AS role, topic_prefs, created_at
          FROM users
          WHERE is_active = true
            AND (username ILIKE '%' || $1 || '%' OR display_name ILIKE '%' || $1 || '%')

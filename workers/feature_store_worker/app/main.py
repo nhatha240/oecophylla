@@ -6,7 +6,7 @@ import json
 import logging
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
@@ -23,6 +23,7 @@ from .features import (
     apply_topic_delta,
     build_preference_vector_v2,
 )
+from .recent_topics import WINDOW_DAYS, ranked_view_topics
 from .settings import settings as load_settings
 
 logger = logging.getLogger("feature_store_worker")
@@ -70,6 +71,7 @@ class Worker:
             flush_interval_seconds=self.cfg.flush_interval_seconds,
         )
         self._metrics_server: Any | None = None
+        self._last_recent_refresh = datetime.min.replace(tzinfo=timezone.utc)
 
     @property
     def _buffer(self) -> list[dict[str, Any]]:
@@ -86,6 +88,7 @@ class Worker:
         self.redis = redis_async.from_url(self.cfg.redis_url, decode_responses=True)
         if self.cfg.preference_backfill_on_start:
             await self._backfill_v2()
+        await self._refresh_due_recent_topics()
         self.consumer = build_json_consumer(
             topic=self.cfg.interactions_topic,
             brokers=self.cfg.kafka_brokers,
@@ -127,6 +130,8 @@ class Worker:
                     # uncommitted so the batch is retried instead of lost.
                     if ok:
                         await self.consumer.commit()
+                if datetime.now(timezone.utc) - self._last_recent_refresh >= timedelta(minutes=1):
+                    await self._refresh_due_recent_topics()
         except asyncio.CancelledError:
             ok = await self._flush()
             if ok:
@@ -269,7 +274,7 @@ class Worker:
                     ignored_events = applied_events
                     applied_events = []
 
-                if applied_events:
+                if any(_event_type(env) != "view_observed" for env in applied_events):
                     post_ids = {
                         env.get("data", {}).get("post_id") for env in applied_events
                     }
@@ -345,6 +350,12 @@ class Worker:
                     )
                     if vector_v2 is not None:
                         await _upsert_vector_v2(conn, user_id, vector_v2)
+                if any(
+                    _event_type(env)
+                    in {"viewed", "view_observed", "qualified_read", "dwell"}
+                    for env in applied_events
+                ):
+                    await _refresh_recent_topics_for_user(conn, user_id)
 
         if user_exists:
             await _refresh_preference_cache(
@@ -441,6 +452,42 @@ class Worker:
                     pipe.zincrby("trending:24h", delta, pid)
             pipe.expire("trending:24h", self.cfg.trending_ttl_seconds)
             await pipe.execute()
+
+    async def _refresh_due_recent_topics(self) -> None:
+        """Expire old inferred topics even when the user generates no new events."""
+        assert self.pool is not None
+        assert self.redis is not None
+        self._last_recent_refresh = datetime.now(timezone.utc)
+        rows = await self.pool.fetch(
+            """
+            SELECT user_id::text AS user_id
+            FROM user_recent_topic_preferences
+            WHERE next_refresh_at <= now()
+            ORDER BY next_refresh_at, user_id
+            LIMIT 100
+            """
+        )
+        for row in rows:
+            user_id = str(row["user_id"])
+            async with self.pool.acquire() as conn:  # noqa: SIM117
+                async with conn.transaction():
+                    tracked = await conn.fetchrow(
+                        "SELECT user_id FROM user_recent_topic_preferences "
+                        "WHERE user_id=$1::uuid FOR UPDATE",
+                        user_id,
+                    )
+                    if tracked is None:
+                        continue
+                    await _refresh_recent_topics_for_user(conn, user_id)
+            try:
+                await self.redis.delete(*preference_cache_keys(user_id))
+            except Exception:
+                logger.exception("failed to invalidate refreshed topic preferences")
+                await self.pool.execute(
+                    "UPDATE user_recent_topic_preferences "
+                    "SET next_refresh_at=now() WHERE user_id=$1::uuid",
+                    user_id,
+                )
 
 
 def _extract_user(env: dict[str, Any]) -> str | None:
@@ -563,6 +610,65 @@ def _canonical_preference_events(rows: list[Any]) -> list[PreferenceEvent]:
             )
         )
     return events
+
+
+async def _refresh_recent_topics_for_user(
+    conn: Any, user_id: str, *, at: datetime | None = None
+) -> list[str]:
+    """Replace inferred topic_prefs from the current three-week view window."""
+    now = at or datetime.now(timezone.utc)
+    rows = await conn.fetch(
+        """
+        SELECT
+            event.id::text AS event_id,
+            event.post_id::text AS post_id,
+            event.impression_id::text AS impression_id,
+            event.session_id::text AS session_id,
+            event.event_type,
+            event.dwell_ms,
+            event.metadata ->> 'trigger' AS read_trigger,
+            event.metadata ->> 'visit_id' AS visit_id,
+            event.topic_snapshot,
+            event.occurred_at,
+            post.topics,
+            post.tags
+        FROM behavior_events AS event
+        JOIN posts AS post ON post.id = event.post_id
+        WHERE event.user_id = $1::uuid
+          AND event.event_type IN ('view', 'dwell')
+          AND event.occurred_at >= $2
+          AND event.occurred_at <= $3
+        ORDER BY event.occurred_at, event.id
+        """,
+        user_id,
+        now - timedelta(days=WINDOW_DAYS),
+        now,
+    )
+    topics = ranked_view_topics(_canonical_preference_events(rows), at=now)
+    await conn.execute(
+        "UPDATE users SET topic_prefs=$2::text[] "
+        "WHERE id=$1::uuid AND topic_prefs IS DISTINCT FROM $2::text[]",
+        user_id,
+        topics,
+    )
+    await conn.execute(
+        """
+        INSERT INTO user_recent_topic_preferences
+            (user_id, refreshed_at, next_refresh_at)
+        VALUES (
+            $1::uuid, $2,
+            CASE WHEN $3::boolean THEN $2::timestamptz + interval '1 hour'
+                 ELSE 'infinity'::timestamptz END
+        )
+        ON CONFLICT (user_id) DO UPDATE SET
+            refreshed_at=EXCLUDED.refreshed_at,
+            next_refresh_at=EXCLUDED.next_refresh_at
+        """,
+        user_id,
+        now,
+        bool(topics),
+    )
+    return topics
 
 
 async def _upsert_vector_v2(

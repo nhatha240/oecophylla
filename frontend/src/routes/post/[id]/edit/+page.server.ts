@@ -19,6 +19,7 @@ export const load: PageServerLoad = async ({ params, fetch }) => {
 
 export const actions: Actions = {
   default: async ({ params, request, fetch }) => {
+    const previous = await apiFetch<Post>(fetch, `/posts/${params.id}`);
     const form = await request.formData();
     const tags = String(form.get('tags') ?? '')
       .split(',')
@@ -31,6 +32,11 @@ export const actions: Actions = {
         tags,
         media_urls
       });
+      for (const url of previous.media_urls) {
+        if (url.startsWith(`/api/v1/posts/${params.id}/images/`) && !media_urls.includes(url)) {
+          await apiFetch(fetch, url.slice('/api/v1'.length), { method: 'DELETE' });
+        }
+      }
     } catch (cause) {
       if (cause instanceof ApiException && cause.status === 400) {
         return fail(400, { error: 'Nội dung cập nhật không hợp lệ' });

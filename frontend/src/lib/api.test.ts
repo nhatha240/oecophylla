@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { apiFetch, ApiException, getFeed, updatePost, uploadAvatar } from './api';
+import { apiFetch, getFeed, updatePost, uploadAvatar, uploadCover, uploadPostImage } from './api';
 
 describe('apiFetch', () => {
   it('sends credentials and x-requested-with', async () => {
@@ -126,5 +126,19 @@ describe('profile and post mutations', () => {
       method: 'PUT',
       body: JSON.stringify({ content: 'Nội dung mới' })
     }));
+  });
+
+  it('uploads a cover and post image as multipart', async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify({ image_url: '/image' }), { status: 200 }));
+    const file = new File([new Uint8Array([0x89, 0x50])], 'photo.png', { type: 'image/png' });
+    await uploadCover(fetchMock as any, 'u1', file);
+    await uploadPostImage(fetchMock as any, 'p1', file);
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      '/api/v1/users/u1/cover', '/api/v1/posts/p1/images'
+    ]);
+    for (const [, init] of fetchMock.mock.calls) {
+      expect(init.body).toBeInstanceOf(FormData);
+      expect(new Headers(init.headers).has('content-type')).toBe(false);
+    }
   });
 });

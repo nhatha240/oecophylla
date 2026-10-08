@@ -21,6 +21,7 @@
     initialContent={data.post.content}
     initialTags={data.post.tags}
     initialMediaUrls={data.post.media_urls}
+    postId={data.post.id}
     submitLabel="Lưu thay đổi"
   />
 </div>

@@ -95,11 +95,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/posts/{id}/report", post(handlers::report_post))
         .layer(from_fn_with_state(rl("report", 10), enforce_rate_limit));
 
-    let comments = Router::new()
-        .route(
-            "/api/v1/posts/{id}/comments",
-            get(handlers::list_comments).post(handlers::create_comment),
-        )
+    let comment_reads = Router::new()
+        .route("/api/v1/posts/{id}/comments", get(handlers::list_comments))
         .route(
             "/api/v1/posts/{id}/comments/stream",
             get(handlers::comments_sse_stream),
@@ -107,6 +104,16 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/api/v1/comments/{id}/replies",
             get(handlers::list_comment_replies),
+        )
+        .layer(from_fn_with_state(
+            rl("comments_read", 200),
+            enforce_rate_limit,
+        ));
+
+    let comment_writes = Router::new()
+        .route(
+            "/api/v1/posts/{id}/comments",
+            post(handlers::create_comment),
         )
         .route("/api/v1/comments/{id}", delete(handlers::delete_comment))
         .layer(from_fn_with_state(rl("comments", 20), enforce_rate_limit));
@@ -135,7 +142,8 @@ async fn main() -> anyhow::Result<()> {
         .merge(saved)
         .merge(toggles)
         .merge(report)
-        .merge(comments)
+        .merge(comment_reads)
+        .merge(comment_writes)
         .merge(me_routes);
     if env_flag("BEHAVIOR_EVENTS_ENABLED", true) {
         app = app.merge(behavior_events);

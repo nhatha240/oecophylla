@@ -16,8 +16,10 @@ export default defineConfig({
     command: 'pnpm build && PORT=4173 node build',
     url: 'http://localhost:4173',
     env: {
+      BODY_SIZE_LIMIT: '6M',
       API_ENDPOINT: process.env.API_ENDPOINT ?? 'http://localhost:8080',
       ORIGIN: process.env.ORIGIN ?? 'http://localhost:4173',
+      PUBLIC_RECOMMENDATION_TELEMETRY_ENABLED: 'true',
     },
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,

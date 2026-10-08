@@ -20,6 +20,7 @@ data:
   FEED_CANDIDATE_POOL_SIZE: {{ .Values.config.feedCandidatePoolSize | quote }}
   RECOMMENDATION_SERVICE_URL: {{ printf "http://%s-recommendation-api:8090" (include "oecophylla.fullname" .) | quote }}
   ENVOY_URL: {{ printf "http://%s-envoy:8080" (include "oecophylla.fullname" .) | quote }}
+  BODY_SIZE_LIMIT: "6M"
   PUBLIC_API_BASE: {{ .Values.config.publicApiBase | quote }}
   PUBLIC_RECOMMENDATION_TELEMETRY_ENABLED: {{ .Values.config.publicRecommendationTelemetryEnabled | quote }}
   RECOMMENDATION_LABEL_VERSION: {{ .Values.config.recommendationLabelVersion | quote }}

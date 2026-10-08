@@ -1,4 +1,5 @@
 export const TOPIC_OPTIONS = [
+  { key: 'ai', label: 'AI', icon: 'Cpu' },
   { key: 'tech', label: 'Công nghệ', icon: 'Cpu' },
   { key: 'science', label: 'Khoa học', icon: 'Atom' },
   { key: 'sports', label: 'Thể thao', icon: 'Trophy' },

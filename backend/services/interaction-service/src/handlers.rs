@@ -272,6 +272,17 @@ pub async fn ingest_behavior_events(
                     source_event_type: event.event_type.clone(),
                 },
             )
+        } else if event.event_type == "view" {
+            serde_json::to_value(view_observed_envelope(BehaviorTelemetryData {
+                user_id: me.id,
+                post_id: event.post_id,
+                client_event_id: event.client_event_id,
+                behavior_event_id: event.id,
+                impression_id: event.impression_id,
+                session_id: event.session_id,
+                occurred_at: event.occurred_at,
+            }))
+            .ok()
         } else {
             None
         };

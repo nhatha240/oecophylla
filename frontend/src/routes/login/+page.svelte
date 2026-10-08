@@ -36,9 +36,9 @@
 
         <form method="POST" class="auth-form">
           <label for="email_or_username">Email hoặc tên người dùng</label>
-          <div class="input-wrap"><Icon name="User" size={18} /><input id="email_or_username" name="email_or_username" type="text" autocomplete="username" value={form?.email_or_username ?? ''} placeholder="Nhập email hoặc tên người dùng" maxlength="254" required /></div>
+          <div class="input-wrap"><label class="input-target" for="email_or_username"><Icon name="User" size={18} /><input id="email_or_username" name="email_or_username" type="text" autocomplete="username" value={form?.email_or_username ?? ''} placeholder="Nhập email hoặc tên người dùng" maxlength="254" required /></label></div>
           <label for="password">Mật khẩu</label>
-          <div class="input-wrap"><Icon name="Shield" size={18} /><input id="password" name="password" type={showPassword ? 'text' : 'password'} autocomplete="current-password" placeholder="Nhập mật khẩu" maxlength="256" required /><button type="button" class="toggle-password" on:click={() => showPassword = !showPassword} aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}><Icon name={showPassword ? 'EyeOff' : 'Eye'} size={17} /></button></div>
+          <div class="input-wrap"><label class="input-target" for="password"><Icon name="Shield" size={18} /><input id="password" name="password" type={showPassword ? 'text' : 'password'} autocomplete="current-password" placeholder="Nhập mật khẩu" maxlength="256" required /></label><button type="button" class="toggle-password" on:click={() => showPassword = !showPassword} aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}><Icon name={showPassword ? 'EyeOff' : 'Eye'} size={17} /></button></div>
           {#if form?.error}<p class="form-error" role="alert">{form.error}</p>{/if}
           <button class="submit" type="submit">Đăng nhập <Icon name="ArrowRight" size={18} /></button>
         </form>
@@ -58,7 +58,8 @@
 </div>
 
 <style>
-  .auth-backdrop { height: 100vh; height: 100dvh; display: grid; place-items: center; overflow: hidden; padding: 0; background: #fff; }
+  .auth-backdrop { height: 100vh;
+    display: grid; place-items: center; overflow: hidden; padding: 0; background: #fff; }
   .auth-frame { display: grid; grid-template-rows: clamp(58px, 8vh, 78px) minmax(0, 1fr); width: 100%; height: 100%; min-height: 0; overflow: hidden; border: 0; border-radius: 0; background: #fdfdfc; box-shadow: none; }
   .auth-header { min-width: 0; display: flex; align-items: center; gap: 26px; padding: 0 54px; }
   .auth-header a { display: inline-flex; }
@@ -79,11 +80,12 @@
   .panel-intro { margin: 10px 0 28px; color: #65736d; font: 15px/1.55 'Lora', Georgia, serif; }
   .auth-form { display: grid; gap: 10px; }
   label { margin-top: 7px; font: 600 13px 'Lora', Georgia, serif; color: #193d3a; }
-  .input-wrap { display: flex; align-items: center; gap: 12px; height: 47px; padding: 0 14px; border: 1px solid #dbe4e0; border-radius: 6px; color: #325b55; background: #fff; }
-  .input-wrap:focus-within { border-color: #2c7569; box-shadow: 0 0 0 3px #dfefea; }
-  input { flex: 1; width: 0; border: 0; outline: 0; color: #163b35; background: transparent; font-size: 12px; }
+  .input-wrap { display: flex; align-items: center; height: 47px; border: 1px solid #dbe4e0; border-radius: 6px; color: #325b55; background: #fff; }
+  .input-wrap:focus-within { border-color: #1d675b; box-shadow: 0 0 0 3px rgba(29,103,91,.22); }
+  .input-target { display: flex; align-items: center; flex: 1; gap: 12px; min-width: 0; height: 100%; margin: 0; padding: 0 14px; font: inherit; cursor: text; }
+  input { flex: 1; width: 0; height: 100%; border: 0; outline: 0; color: #163b35; background: transparent; font-size: 12px; }
   input::placeholder { color: #9aa9a4; }
-  .toggle-password { display: grid; place-items: center; border: 0; background: transparent; color: #45645f; }
+  .toggle-password { display: grid; place-items: center; flex: 0 0 32px; height: 32px; margin-right: 7px; border: 0; background: transparent; color: #45645f; }
   .submit, .register-link { height: 48px; display: flex; align-items: center; justify-content: center; gap: 12px; border-radius: 99px; font-weight: 600; font-size: 13px; }
   .submit { margin-top: 18px; border: 0; color: #fff; background: #1e5b54; }
   .submit:hover { background: #103f3a; }
@@ -103,6 +105,8 @@
   @media (min-width: 961px) and (max-height: 850px) { .auth-panel { padding-top: 18px; padding-bottom: 18px; } .panel-intro { margin-bottom: 18px; } .values, .auth-footnote { display: none; } .story-copy > p:last-child { margin-top: 18px; } }
   @media (min-width: 961px) and (max-height: 650px) { .auth-header { gap: 16px; } .auth-story { padding-bottom: 18px; } .story-copy > p:last-child, .image-caption { display: none; } .auth-panel { padding-top: 10px; padding-bottom: 10px; } .panel-intro { margin-bottom: 10px; font-size: 13px; } .auth-form { gap: 6px; } label { margin-top: 2px; } .submit { margin-top: 8px; } .or { margin: 12px 0; } }
   @media (max-width: 1100px) { .auth-story { padding-left: 15%; } .auth-content { grid-template-columns: 51% 49%; } .auth-header { padding: 0 28px; } .auth-panel { padding: 32px; margin-right: 0; } }
-  @media (max-width: 960px) { .auth-backdrop { display: block; height: auto; min-height: 100vh; min-height: 100dvh; overflow: visible; padding: 0; } .auth-frame { display: block; height: auto; min-height: 100vh; min-height: 100dvh; overflow: visible; border: 0; border-radius: 0; } .auth-header { height: 66px; padding: 0 20px; } .auth-header :global(.brand-logo) { --mark-size: 29px !important; } .brand-divider, .tagline, .auth-header-right { display: none; } .auth-content { display: flex; flex-direction: column; } .auth-story { min-height: 245px; padding: 38px 24px 22px; background-position: center 62%; } .story-copy .eyebrow { margin-bottom: 12px; color: #ebf4ef; text-shadow: 0 1px 5px #16453e; } h1 { max-width: 430px; color: white; font-size: clamp(27px, 7vw, 38px); text-shadow: 0 2px 9px #123c36; } .story-copy > p:last-child, .image-caption { display: none; } .auth-panel { position: relative; display: block; margin: -16px 0 0; padding: 32px 24px 26px; border-radius: 18px 18px 0 0; } .panel-intro { margin-bottom: 22px; } .values { padding: 16px 5px; } .values > div { padding: 0 8px; } }
+  @media (max-width: 960px) { .auth-backdrop { display: block; height: auto; min-height: 100vh;
+    overflow: visible; padding: 0; }  .auth-frame { display: block; height: auto; min-height: 100vh;
+                                        overflow: visible; border: 0; border-radius: 0; }  .auth-header { height: 66px; padding: 0 20px; }  .auth-header :global(.brand-logo) { --mark-size: 29px !important; }  .brand-divider, .tagline, .auth-header-right { display: none; }  .auth-content { display: flex; flex-direction: column; }  .auth-story { min-height: 245px; padding: 38px 24px 22px; background-position: center 62%; }  .story-copy .eyebrow { margin-bottom: 12px; color: #ebf4ef; text-shadow: 0 1px 5px #16453e; }  h1 { max-width: 430px; color: white; font-size: clamp(27px, 7vw, 38px); text-shadow: 0 2px 9px #123c36; }  .story-copy > p:last-child, .image-caption { display: none; }  .auth-panel { position: relative; display: block; margin: -16px 0 0; padding: 32px 24px 26px; border-radius: 18px 18px 0 0; }  .panel-intro { margin-bottom: 22px; }  .values { padding: 16px 5px; }  .values > div { padding: 0 8px; } }
   @media (max-width: 420px) { .values span { display: none; } .values { margin-top: 23px; } }
 </style>

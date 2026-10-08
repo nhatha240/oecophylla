@@ -541,15 +541,25 @@ async fn behavior_batch_is_authenticated_partial_idempotent_and_append_only() {
             .await
             .unwrap();
     assert_eq!(stored_dwell, 5_000, "sub-positive view remains telemetry");
+    let durable_short_view_id: Uuid =
+        sqlx::query_scalar("SELECT id FROM behavior_events WHERE client_event_id = $1")
+            .bind(under_guardrail_id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
     let kafka_events = kafka_topic_snapshot();
     assert!(
         kafka_events.contains(&view_id.to_string()),
         "positive view should publish viewed envelope; Kafka output: {kafka_events}"
     );
-    assert!(
-        !kafka_events.contains(&under_guardrail_id.to_string()),
-        "view below positive dwell guardrail must not publish a preference signal"
-    );
+    let short_view_envelopes = kafka_events
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .filter(|event| event["event_id"] == durable_short_view_id.to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(short_view_envelopes.len(), 1);
+    assert_eq!(short_view_envelopes[0]["event_type"], "view_observed");
+    assert!(short_view_envelopes[0]["data"].get("weight").is_none());
     let click_envelopes = kafka_events
         .lines()
         .filter_map(|line| serde_json::from_str::<Value>(line).ok())

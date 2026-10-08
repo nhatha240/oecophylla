@@ -72,6 +72,19 @@ pub fn viewed_envelope(data: BehaviorTelemetryData) -> Envelope<BehaviorTelemetr
     }
 }
 
+/// Notify the feature worker of a stored, unqualified view. This updates the
+/// recent topic list without assigning an interaction preference weight.
+pub fn view_observed_envelope(data: BehaviorTelemetryData) -> Envelope<BehaviorTelemetryData> {
+    Envelope {
+        event_id: data.behavior_event_id,
+        event_type: "view_observed",
+        event_version: 1,
+        occurred_at: data.occurred_at,
+        producer: "interaction-service",
+        data,
+    }
+}
+
 /// A persisted click refreshes recommendation caches without assigning a
 /// preference weight. The behavior row ID stays stable across producer retries.
 pub fn click_envelope(data: BehaviorTelemetryData) -> Envelope<BehaviorTelemetryData> {
@@ -159,6 +172,23 @@ fn env_or(key: &str, default: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unqualified_view_event_has_no_preference_weight() {
+        let behavior_id = Uuid::now_v7();
+        let event = view_observed_envelope(BehaviorTelemetryData {
+            user_id: Uuid::now_v7(),
+            post_id: Uuid::now_v7(),
+            client_event_id: Uuid::now_v7(),
+            behavior_event_id: behavior_id,
+            impression_id: None,
+            session_id: None,
+            occurred_at: Utc::now(),
+        });
+
+        assert_eq!(event.event_id, behavior_id);
+        assert_eq!(event.event_type, "view_observed");
+    }
 
     #[test]
     fn viewed_envelope_matches_the_shared_v1_contract() {

@@ -26,12 +26,13 @@ pub fn validate_update_post(mut input: UpdatePostInput) -> Result<UpdatePostInpu
             input.topics = Some(Vec::new());
         }
     }
-    if input
-        .media_urls
-        .as_ref()
-        .is_some_and(|urls| urls.len() > 6 || urls.iter().any(|url| !url.starts_with("https://")))
-    {
-        return Err(invalid("media_urls", "<=6 https urls"));
+    if input.media_urls.as_ref().is_some_and(|urls| {
+        urls.len() > 6
+            || urls
+                .iter()
+                .any(|url| !url.starts_with("https://") && !url.starts_with("/api/v1/posts/"))
+    }) {
+        return Err(invalid("media_urls", "<=6 https urls or owned uploads"));
     }
     if input.tags.as_ref().is_some_and(|tags| tags.len() > 8) {
         return Err(invalid("tags", "<=8 tags"));
@@ -40,6 +41,22 @@ pub fn validate_update_post(mut input: UpdatePostInput) -> Result<UpdatePostInpu
         return Err(invalid("topics", "<=8 topics"));
     }
     Ok(input)
+}
+
+pub fn validate_owned_uploads(
+    media_urls: Option<&[String]>,
+    existing: &[String],
+) -> Result<(), AppError> {
+    if media_urls.is_some_and(|urls| {
+        urls.iter()
+            .any(|url| url.starts_with("/api/v1/posts/") && !existing.contains(url))
+    }) {
+        return Err(invalid(
+            "media_urls",
+            "uploaded images must belong to this post",
+        ));
+    }
+    Ok(())
 }
 
 fn invalid(field: &str, message: &str) -> AppError {
@@ -51,7 +68,7 @@ fn invalid(field: &str, message: &str) -> AppError {
 
 #[cfg(test)]
 mod tests {
-    use super::super::update::{validate_update_post, UpdatePostInput};
+    use super::super::update::{validate_owned_uploads, validate_update_post, UpdatePostInput};
 
     fn empty_update() -> UpdatePostInput {
         UpdatePostInput {
@@ -93,5 +110,17 @@ mod tests {
         let mut input = empty_update();
         input.tags = Some((0..9).map(|index| format!("tag-{index}")).collect());
         assert!(validate_update_post(input).is_err());
+    }
+
+    #[test]
+    fn accepts_existing_post_uploads_and_rejects_other_posts_uploads() {
+        let own = "/api/v1/posts/post-a/images/image-a".to_string();
+        let other = "/api/v1/posts/post-b/images/image-b".to_string();
+        assert!(validate_owned_uploads(Some(&[own.clone()]), &[own]).is_ok());
+        assert!(validate_owned_uploads(Some(&[other]), &[]).is_err());
+        assert!(
+            validate_owned_uploads(Some(&["https://cdn.example.test/photo.jpg".into()]), &[])
+                .is_ok()
+        );
     }
 }

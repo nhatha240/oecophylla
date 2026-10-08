@@ -69,6 +69,28 @@ async def fetch_user_vector(
 
     cfg = config or load_settings()
     declared_topic_weight = float(getattr(cfg, "declared_topic_weight", 1.0))
+    recent = await db.pool.fetchrow(
+        """
+        SELECT CASE
+            WHEN recent.refreshed_at IS NULL
+              OR recent.next_refresh_at = 'infinity'::timestamptz
+            THEN '{}'::text[]
+            ELSE u.topic_prefs
+        END AS topic_prefs
+        FROM users AS u
+        JOIN user_recent_topic_preferences AS recent ON recent.user_id = u.id
+        WHERE u.id = $1
+        """,
+        user_id,
+    )
+    if recent is not None:
+        # The worker orders these topics by recent view evidence. Keep that
+        # order in the scoring vector and exclude legacy, unbounded vectors.
+        topics = list(dict.fromkeys(recent["topic_prefs"] or []))
+        return {
+            topic: (len(topics) - index) / len(topics)
+            for index, topic in enumerate(topics)
+        }
     if cfg.preference_schema_version == "v2":
         raw_v2 = await redis.cli.get(f"pref:v2:{user_id}")
         payload = _decode_v2_payload(raw_v2)
@@ -311,7 +333,21 @@ def _merge_with_config(
 
 
 async def _fetch_declared_topics(db: DB, user_id: UUID) -> list[str]:
-    row = await db.pool.fetchrow("SELECT topic_prefs FROM users WHERE id=$1", user_id)
+    row = await db.pool.fetchrow(
+        """
+        SELECT CASE
+            WHEN recent.user_id IS NOT NULL
+             AND (recent.refreshed_at IS NULL
+               OR recent.next_refresh_at = 'infinity'::timestamptz)
+            THEN '{}'::text[]
+            ELSE users.topic_prefs
+        END AS topic_prefs
+        FROM users
+        LEFT JOIN user_recent_topic_preferences AS recent ON recent.user_id = users.id
+        WHERE users.id=$1
+        """,
+        user_id,
+    )
     return list(row["topic_prefs"] or []) if row else []
 
 

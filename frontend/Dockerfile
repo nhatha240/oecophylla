@@ -12,7 +12,7 @@ RUN pnpm build
 
 FROM node:24-trixie AS runtime
 WORKDIR /app
-ENV NODE_ENV=production HOST=0.0.0.0 PORT=3000
+ENV NODE_ENV=production HOST=0.0.0.0 PORT=3000 BODY_SIZE_LIMIT=6M
 # package.json contains only devDependencies and the generated adapter-node
 # output is self-contained, so the runtime needs no pnpm or node_modules layer.
 COPY --from=builder --chown=node:node /app/build ./build

@@ -120,6 +120,8 @@ def test_compact_dataset_is_private_and_temporal_without_test_labels(tmp_path):
     assert max(times["train"]) < min(times["validation"]) < min(times["test"])
     assert all(len(r["history"]) == 2 and len(r["candidates"]) == 2 for r in rows)
     assert len({r["request_group"] for r in rows}) == len(rows)
+    assert all(len(r["user_group"]) == 64 for r in rows)
+    assert len({r["user_group"] for r in rows}) <= 12
     exported = json.dumps(result)
     assert '"U0"' not in exported and '"N0"' not in exported
     assert "engaged_at" not in exported and "published_at" not in exported

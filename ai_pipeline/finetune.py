@@ -192,6 +192,18 @@ def _validate_splits(train, validation):
         raise ValueError("train and validation request groups must be disjoint")
 
 
+def listwise_loss(logits, labels, mask):
+    """Full logged slate CE with equal mass across its observed clicks."""
+    if logits.shape != labels.shape or mask.shape != labels.shape:
+        raise ValueError("listwise tensors must have aligned shapes")
+    targets = labels * mask
+    clicks = targets.sum(dim=1, keepdim=True)
+    if (clicks <= 0).any():
+        raise ValueError("listwise training rows need a click")
+    log_probabilities = logits.masked_fill(~mask, -1e9).log_softmax(dim=1)
+    return -(targets / clicks * log_probabilities).sum(dim=1).mean()
+
+
 def fit(
     train,
     validation,
@@ -206,8 +218,20 @@ def fit(
     patience=3,
     freeze_values=False,
     semantic_residual=0.0,
+    initial_ranker=None,
+    objective="sampled_ce",
+    negatives_per_positive=4,
+    anchor_strength=0.0,
 ):
     _validate_splits(train, validation)
+    if objective not in {"sampled_ce", "listwise_ce"}:
+        raise ValueError("unknown training objective")
+    if (
+        negatives_per_positive < 1
+        or not np.isfinite(anchor_strength)
+        or anchor_strength < 0
+    ):
+        raise ValueError("invalid negatives or anchor strength")
     if freeze_values and position_scale != 0:
         raise ValueError("frozen semantic values require position_scale=0")
     if (
@@ -235,6 +259,12 @@ def fit(
         for positive, label in zip(row["candidates"], row["labels"], strict=True)
         if label and 0 in row["labels"]
     ]
+    if objective == "listwise_ce":
+        examples = [
+            (row, None)
+            for row in train
+            if row["history"] and 1 in row["labels"] and 0 in row["labels"]
+        ]
     if not examples:
         raise ValueError("no warm-history positive/negative training pairs")
     popular = vectors[positive_ids].mean(axis=0)
@@ -248,14 +278,35 @@ def fit(
         semantic_residual,
     )
     initial = initialize_ranker(architecture, popular)
+    if initial_ranker is not None:
+        if initial_ranker.architecture.embedding_dimension != dimension:
+            raise ValueError("checkpoint embedding dimension mismatch")
+        initial = replace(
+            initial_ranker,
+            architecture=replace(
+                initial_ranker.architecture,
+                history_length=history_limit,
+                seed=seed,
+                position_scale=position_scale,
+                semantic_residual=semantic_residual,
+            ),
+            popular_embedding=popular,
+        )
     best = initial
-    best_score = metrics(
+    initial_metrics = metrics(
         validation, score_requests(initial, validation, vectors), segments=False
-    )["ndcg_at_10"]
-    semantic_baseline = metrics(
-        validation, mean_pool_scores(validation, vectors, popular), segments=False
     )
-    if freeze_values:
+    best_score = initial_metrics["ndcg_at_10"]
+    semantic_baseline = metrics(
+        validation,
+        mean_pool_scores(
+            [{**row, "history": row["history"][-history_limit:]} for row in validation],
+            vectors,
+            popular,
+        ),
+        segments=False,
+    )
+    if freeze_values and semantic_baseline["ndcg_at_10"] > best_score:
         # The untrained semantic baseline is a first-class validation candidate.
         best = initialize_ranker(replace(architecture, position_scale=0.0), popular)
         best_score = semantic_baseline["ndcg_at_10"]
@@ -264,12 +315,14 @@ def fit(
         "epoch": 0,
         "validation_ndcg_at_10": best_score,
         "attention_finetuned": False,
+        "checkpoint_retained": initial_ranker is not None and best is initial,
     }
     trials = []
     steps = 0
     for rate in learning_rates:
         rng = np.random.default_rng(seed)
         model = TorchNRMS(initial, freeze_values=freeze_values)
+        anchor = model.value.detach().clone()
         optimizer = torch.optim.AdamW(model.parameters(), lr=rate, weight_decay=0.01)
         trial_best = -float("inf")
         stale = 0
@@ -281,8 +334,12 @@ def fit(
                 histories = [
                     vectors[row["history"][-history_limit:]] for row, _ in batch
                 ]
-                candidates = []
+                candidates, candidate_labels = [], []
                 for row, positive in batch:
+                    if objective == "listwise_ce":
+                        candidates.append(row["candidates"])
+                        candidate_labels.append(row["labels"])
+                        continue
                     negatives = [
                         c
                         for c, label in zip(
@@ -294,21 +351,43 @@ def fit(
                         [
                             positive,
                             *rng.choice(
-                                negatives, size=4, replace=len(negatives) < 4
+                                negatives,
+                                size=negatives_per_positive,
+                                replace=len(negatives) < negatives_per_positive,
                             ).tolist(),
                         ]
                     )
                 history, mask = history_batch(
                     histories, dimension=dimension, device="cpu"
                 )
+                width = max(map(len, candidates))
+                indices = np.zeros((len(batch), width), dtype=int)
+                candidate_mask = np.zeros(indices.shape, dtype=bool)
+                labels = np.zeros(indices.shape, dtype=np.float32)
+                for i, ids in enumerate(candidates):
+                    indices[i, : len(ids)] = ids
+                    candidate_mask[i, : len(ids)] = True
+                    if candidate_labels:
+                        labels[i, : len(ids)] = candidate_labels[i]
                 candidate_vectors = torch.from_numpy(
-                    np.asarray(vectors[np.asarray(candidates)], dtype=np.float32)
+                    np.asarray(vectors[indices], dtype=np.float32)
                 )
                 user = model(history, mask)
                 logits = torch.einsum("bd,bcd->bc", user, candidate_vectors) * 10.0
-                loss = nn.functional.cross_entropy(
-                    logits, torch.zeros(len(batch), dtype=torch.long)
-                )
+                if objective == "listwise_ce":
+                    loss = listwise_loss(
+                        logits,
+                        torch.from_numpy(labels),
+                        torch.from_numpy(candidate_mask),
+                    )
+                else:
+                    loss = nn.functional.cross_entropy(
+                        logits, torch.zeros(len(batch), dtype=torch.long)
+                    )
+                if anchor_strength and not freeze_values:
+                    loss = (
+                        loss + anchor_strength * (model.value - anchor).square().mean()
+                    )
                 if not torch.isfinite(loss):
                     raise ValueError("non-finite training loss")
                 optimizer.zero_grad()
@@ -317,6 +396,20 @@ def fit(
                 optimizer.step()
                 total_loss += float(loss.detach()) * len(batch)
                 steps += 1
+                if (start // batch_size + 1) % 500 == 0:
+                    print(
+                        json.dumps(
+                            {
+                                "stage": "training_progress",
+                                "learning_rate": rate,
+                                "epoch": epoch,
+                                "examples_processed": start + len(batch),
+                                "examples_total": len(examples),
+                                "mean_loss": total_loss / (start + len(batch)),
+                            }
+                        ),
+                        flush=True,
+                    )
             ranker = model.export()
             validation_metric = metrics(
                 validation, score_requests(ranker, validation, vectors), segments=False
@@ -351,12 +444,15 @@ def fit(
     raw = np.concatenate(validation_scores)
     labels = np.concatenate([r["labels"] for r in validation])
 
-    def objective(parameters):
+    def calibration_objective(parameters):
         logits = raw * np.exp(parameters[0]) + parameters[1]
         return float(np.mean(np.logaddexp(0, logits) - labels * logits))
 
     optimum = minimize(
-        objective, [0.0, -3.0], bounds=[(-6, 6), (-30, 30)], method="L-BFGS-B"
+        calibration_objective,
+        [0.0, -3.0],
+        bounds=[(-6, 6), (-30, 30)],
+        method="L-BFGS-B",
     )
     if not optimum.success or not np.isfinite(optimum.x).all():
         raise ValueError("validation calibration did not converge")
@@ -371,7 +467,13 @@ def fit(
         "optimizer": "AdamW",
         "optimizer_steps": steps,
         "training_examples": len(examples),
-        "negatives_per_positive": 4,
+        "negatives_per_positive": negatives_per_positive
+        if objective == "sampled_ce"
+        else None,
+        "objective": objective,
+        "anchor_strength": anchor_strength,
+        "initial_checkpoint_validation": initial_metrics,
+        "warm_start": initial_ranker is not None,
         "train_requests": len(train),
         "validation_requests": len(validation),
         "encoder_frozen": True,

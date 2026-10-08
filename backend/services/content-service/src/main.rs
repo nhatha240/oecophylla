@@ -1,4 +1,5 @@
 use axum::{
+    extract::DefaultBodyLimit,
     middleware::from_fn,
     routing::{get, post},
     Router,
@@ -11,9 +12,26 @@ use std::{net::SocketAddr, sync::Arc};
 
 mod cursor;
 mod handlers;
+mod image;
 mod repo;
 mod state;
 mod update;
+
+#[cfg(test)]
+mod image_upload_tests {
+    use crate::image::{validate_post_image, MAX_POST_IMAGE_BYTES};
+
+    #[test]
+    fn accepts_real_png_and_rejects_spoofed_or_oversized_files() {
+        assert!(validate_post_image("image/png", "photo.png", b"\x89PNG\r\n\x1a\nimage").is_ok());
+        assert!(validate_post_image("image/png", "photo.png", b"<script>").is_err());
+        assert!(validate_post_image("image/png", "photo.jpg", b"\x89PNG\r\n\x1a\nimage").is_err());
+        assert!(
+            validate_post_image("image/png", "photo.png", &vec![0; MAX_POST_IMAGE_BYTES + 1])
+                .is_err()
+        );
+    }
+}
 
 use state::AppState;
 
@@ -47,6 +65,14 @@ async fn main() -> anyhow::Result<()> {
                 .delete(handlers::delete_post),
         )
         .route("/api/v1/posts/{id}/view", post(handlers::view))
+        .route(
+            "/api/v1/posts/{id}/images",
+            post(handlers::upload_image).layer(DefaultBodyLimit::max(5 * 1024 * 1024 + 64 * 1024)),
+        )
+        .route(
+            "/api/v1/posts/{id}/images/{image_id}",
+            get(handlers::image).delete(handlers::delete_image),
+        )
         .route("/api/v1/search", get(handlers::search))
         .layer(from_fn(common::middleware::metrics_layer::track_metrics))
         .with_state(state);

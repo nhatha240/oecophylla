@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { goto, invalidateAll } from '$app/navigation';
-  import Icon from '$lib/apple-glass/components/Icon.svelte';
   import { user } from '$lib/stores/auth';
   import { apiFetch, ApiException, changePassword, deleteAccount, uploadAvatar } from '$lib/api';
   import { showToast } from '$lib/stores/toast';
@@ -273,6 +272,7 @@
   <!-- Section 2: Sở thích chủ đề -->
   <section class="glass-surface rounded-2xl p-6 flex flex-col gap-5">
     <h2 class="text-lg font-medium">Sở thích chủ đề</h2>
+    <p class="text-sm text-slate-600">Chủ đề được cập nhật từ các bài viết bạn xem trong 3 tuần gần nhất. Lựa chọn thủ công có thể thay đổi khi bạn xem bài viết mới.</p>
 
     <div class="grid grid-cols-2 gap-3">
       {#each allTopics as t}

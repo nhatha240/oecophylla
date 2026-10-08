@@ -12,6 +12,7 @@ from app.main import Worker, _event_id, _extract_user, _occurred_at
 class Closeable:
     def __init__(self) -> None:
         self.close = AsyncMock()
+        self.fetch = AsyncMock(return_value=[])
 
 
 class FakeConsumer(Closeable):
@@ -43,6 +44,7 @@ async def test_worker_starts_and_stops_all_runtime_resources(monkeypatch):
     consumer.stop.assert_awaited_once()
     redis.close.assert_awaited_once()
     pool.close.assert_awaited_once()
+    pool.fetch.assert_awaited_once()
     metrics_server.shutdown.assert_called_once()
     metrics_server.server_close.assert_called_once()
     main.build_json_consumer.assert_called_once_with(
@@ -99,6 +101,7 @@ async def test_run_flushes_records_commits_and_flushes_again_on_cancel():
     worker.consumer = consumer  # type: ignore[assignment]
     worker._should_flush = Mock(return_value=True)  # type: ignore[method-assign]
     worker._flush = AsyncMock(return_value=True)  # type: ignore[method-assign]
+    worker._refresh_due_recent_topics = AsyncMock()  # type: ignore[method-assign]
 
     with pytest.raises(asyncio.CancelledError):
         await worker.run()

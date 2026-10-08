@@ -7,6 +7,7 @@ from uuid import UUID
 import pytest
 from app import db as db_module
 from app.db import DB, RedisCli, fetch_user_vector, merge_preference_vector_v2
+from app.ranking import relevance
 
 USER_ID = UUID("00000000-0000-0000-0000-000000000001")
 NOW = datetime(2026, 8, 31, 12, 0, tzinfo=timezone.utc)
@@ -23,12 +24,19 @@ class FakeRedisClient:
 
 
 class FakePool:
-    def __init__(self, rows: list[dict | None]) -> None:
+    def __init__(self, rows: list[dict | None], recent_prefs: list[str] | None = None) -> None:
         self.rows = list(rows)
+        self.recent_prefs = recent_prefs
         self.queries: list[str] = []
 
     async def fetchrow(self, query: str, *_args):
         self.queries.append(query)
+        if "FROM users AS u" in query and "JOIN user_recent_topic_preferences" in query:
+            return (
+                {"topic_prefs": self.recent_prefs}
+                if self.recent_prefs is not None
+                else None
+            )
         return self.rows.pop(0) if self.rows else None
 
 
@@ -64,6 +72,39 @@ def test_v2_payload_decays_at_read_time_and_blends_declared_topics_separately():
     )
 
     assert merged == pytest.approx({"ai": 0.375, "politics": -0.375, "sports": 0.25})
+
+
+@pytest.mark.asyncio
+async def test_recent_view_topics_rank_in_order_without_legacy_behavior():
+    redis_client = FakeRedisClient({f"pref:v1:{USER_ID}": '{"old": 100}'})
+    pool = FakePool([], recent_prefs=["science", "ai", "science"])
+
+    result = await fetch_user_vector(
+        SimpleNamespace(pool=pool),
+        SimpleNamespace(cli=redis_client),
+        USER_ID,
+        config=_cfg(preference_schema_version="v1"),
+    )
+
+    assert result == {"science": 1.0, "ai": 0.5}
+    assert relevance(result, ["science"]) > relevance(result, ["ai"])
+    assert redis_client.reads == []
+
+
+@pytest.mark.asyncio
+async def test_expired_recent_view_topics_do_not_fall_back_to_old_vector():
+    redis_client = FakeRedisClient({f"pref:v1:{USER_ID}": '{"old": 100}'})
+    pool = FakePool([], recent_prefs=[])
+
+    result = await fetch_user_vector(
+        SimpleNamespace(pool=pool),
+        SimpleNamespace(cli=redis_client),
+        USER_ID,
+        config=_cfg(preference_schema_version="v1"),
+    )
+
+    assert result == {}
+    assert redis_client.reads == []
 
 
 @pytest.mark.asyncio

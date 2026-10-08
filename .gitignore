@@ -32,6 +32,7 @@ __pycache__/
 *.pyc
 .venv/
 /artifacts/models/
+/artifacts/benchmarks/
 
 # Playwright
 test-results/

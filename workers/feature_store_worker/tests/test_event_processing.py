@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
 from app.features import build_preference_vector_v2
-from app.main import Worker, _canonical_preference_events
+from app.main import Worker, _canonical_preference_events, _refresh_recent_topics_for_user
 
 ROOT = Path(__file__).resolve().parents[3]
 VIEWED_FIXTURE = json.loads(
@@ -41,12 +41,16 @@ class FakeConnection:
         self.vector_v2: dict | None = None
         self.canonical_events: list[dict] = []
         self.user_exists = True
+        self.topic_prefs: list[str] = []
+        self.recent_pref_refreshes = 0
 
     def transaction(self) -> FakeTransaction:
         return FakeTransaction(self)
 
     async def fetchrow(self, query: str, *_args: object):
         assert self.in_transaction
+        if "FROM user_recent_topic_preferences" in query:
+            return {"user_id": _args[0]}
         if "FROM users" in query:
             return {
                 "user_exists": self.user_exists,
@@ -66,6 +70,7 @@ class FakeConnection:
             claimed = []
             canonical_name = {
                 "viewed": "view",
+                "view_observed": "view",
                 "qualified_read": "dwell",
                 "liked": "like",
                 "unliked": "unlike",
@@ -114,6 +119,12 @@ class FakeConnection:
 
     async def execute(self, query: str, *_args: object) -> None:
         assert self.in_transaction
+        if "UPDATE users SET topic_prefs" in query:
+            self.topic_prefs = list(_args[1])
+            return
+        if "INSERT INTO user_recent_topic_preferences" in query:
+            self.recent_pref_refreshes += 1
+            return
         if "user_preference_vectors" not in query:
             raise AssertionError(f"unexpected execute query: {query}")
         if not self.user_exists:
@@ -145,9 +156,13 @@ class AcquireConnection:
 class FakePool:
     def __init__(self, conn: FakeConnection) -> None:
         self.conn = conn
+        self.due_users: list[str] = []
 
     def acquire(self) -> AcquireConnection:
         return AcquireConnection(self.conn)
+
+    async def fetch(self, _query: str):
+        return [{"user_id": user_id} for user_id in self.due_users]
 
 
 class FakeRedis:
@@ -272,6 +287,7 @@ async def test_viewed_envelope_updates_preference_exactly_once_on_replay(monkeyp
     ] == {"ai": 0.5}
     assert f"feed:{VIEWED_FIXTURE['data']['user_id']}" in redis.deleted
     assert conn.vector_updates == 1
+    assert conn.recent_pref_refreshes == 1
     assert ("applied", "viewed", 1) in counter.records
     assert ("duplicate", "viewed", 1) in counter.records
 
@@ -315,7 +331,7 @@ async def test_click_replays_v2_without_changing_v1_on_redelivery(monkeypatch):
     assert ("duplicate", "click", 1) in counter.records
 
 
-@pytest.mark.parametrize("event_type", ["click", "dwell", "unhide"])
+@pytest.mark.parametrize("event_type", ["click", "dwell", "unhide", "view_observed"])
 async def test_zero_delta_trigger_does_not_refresh_trending_expiry(event_type):
     worker = Worker()
     worker.redis = FakeRedis()  # type: ignore[assignment]
@@ -540,3 +556,35 @@ async def test_event_for_deleted_user_is_receipted_and_not_retried(monkeypatch):
     assert conn.vector_updates == 0
     assert redis.cached == {}
     assert ("ignored", "viewed", 1) in counter.records
+
+
+async def test_recent_view_event_writes_topic_prefs_and_expiry_clears_them(monkeypatch):
+    worker, conn, redis, _counter = worker_with_fakes(monkeypatch)
+    current = datetime.now(timezone.utc)
+    viewed = event("0198f36d-0d80-7000-8000-000000000061", "view_observed")
+    viewed["occurred_at"] = current.isoformat()
+
+    worker._buffer = [viewed]
+    assert await worker._flush() is True
+    assert conn.topic_prefs == ["ai"]
+    assert conn.vector == {}
+    assert conn.vector_updates == 0
+    assert f"feed:{viewed['data']['user_id']}" in redis.deleted
+
+    async with conn.transaction():
+        await _refresh_recent_topics_for_user(
+            conn, viewed["data"]["user_id"], at=current + timedelta(days=22)
+        )
+    assert conn.topic_prefs == []
+
+
+async def test_due_refresh_expires_topics_without_new_kafka_events(monkeypatch):
+    worker, conn, redis, _counter = worker_with_fakes(monkeypatch)
+    user_id = VIEWED_FIXTURE["data"]["user_id"]
+    conn.topic_prefs = ["ai"]
+    worker.pool.due_users = [user_id]
+
+    await worker._refresh_due_recent_topics()
+
+    assert conn.topic_prefs == []
+    assert f"feed:{user_id}" in redis.deleted

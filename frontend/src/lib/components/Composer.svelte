@@ -1,5 +1,9 @@
 <script lang="ts">
   import Icon from '$lib/apple-glass/components/Icon.svelte';
+  import MentionTextarea from '$lib/components/MentionTextarea.svelte';
+  import PostImagePicker from '$lib/components/PostImagePicker.svelte';
+  import { goto } from '$app/navigation';
+  import { apiFetch, updatePost, uploadPostImage } from '$lib/api';
   export let action = '/post/new';
   export let error: string | null = null;
   // When true, render the dedicated compose surface with a prominent writing well.
@@ -8,6 +12,7 @@
   export let initialTags: string[] = [];
   export let initialMediaUrls: string[] = [];
   export let submitLabel = 'Đăng';
+  export let postId: string | null = null;
 
   let content = initialContent;
   let tagsRaw = initialTags.join(', ');
@@ -15,6 +20,10 @@
   let showPreview = false;
   let showImageInput = false;
   let imageUrl = '';
+  let imageFiles: File[] = [];
+  let uploading = false;
+  let uploadError = '';
+  let pickerError = '';
 
   const MAX_CHARS = 4000;
   $: charsLeft = MAX_CHARS - content.length;
@@ -117,22 +126,50 @@
 
   function addImageUrl(): void {
     const url = imageUrl.trim();
-    if (url && mediaUrls.length < 4) {
+    if (url && mediaUrls.length + imageFiles.length < 6) {
       mediaUrls = [...mediaUrls, url];
       imageUrl = '';
       showImageInput = false;
     }
   }
 
-  function removeImage(idx: number): void {
-    mediaUrls = mediaUrls.filter((_, i) => i !== idx);
+  async function submitWithImages(event: SubmitEvent): Promise<void> {
+    if (pickerError) { event.preventDefault(); return; }
+    if (!postId || imageFiles.length === 0) return;
+    event.preventDefault();
+    if (uploading) return;
+    uploading = true;
+    uploadError = '';
+    try {
+      // Save removals before uploading so a full post has room for replacement photos.
+      await updatePost(fetch, postId, {
+        content, tags: tagsRaw.split(',').map((tag) => tag.trim()).filter(Boolean),
+        media_urls: mediaUrls
+      });
+      for (const url of initialMediaUrls) {
+        if (url.startsWith(`/api/v1/posts/${postId}/images/`) && !mediaUrls.includes(url)) {
+          await apiFetch(fetch, url.slice('/api/v1'.length), { method: 'DELETE' });
+        }
+      }
+      while (imageFiles.length) {
+        const result = await uploadPostImage(fetch, postId, imageFiles[0]);
+        mediaUrls = [...mediaUrls, result.image_url];
+        imageFiles = imageFiles.slice(1);
+      }
+      await goto(`/post/${postId}`);
+    } catch {
+      uploadError = 'Không tải được ảnh. Vui lòng thử lưu lại.';
+    } finally {
+      uploading = false;
+    }
   }
 </script>
 
-<form method="post" action={action} class="composer" class:composer-prominent={prominent}>
+<form method="post" action={action} class="composer" class:composer-prominent={prominent} on:submit={submitWithImages}>
   <div class="avatar s40">O</div>
   <div class="right">
     {#if showPreview}
+      <input type="hidden" name="content" value={content} />
       <div class="whitespace-pre-wrap text-slate-800 text-sm leading-relaxed min-h-[4.5rem] p-2 rounded-lg bg-slate-50 mb-5">
         {#if content}
           {@html renderMarkdown(content)}
@@ -143,37 +180,28 @@
     {:else if prominent}
       <div class="writing-well" class:has-content={content.length > 0}>
         <span class="writing-well-label">Nội dung bài viết</span>
-        <textarea
+        <MentionTextarea
           name="content"
-          rows="3"
-          maxlength="4000"
+          rows={3}
+          maxlength={4000}
           bind:value={content}
           placeholder="Bạn muốn chia sẻ tin tức hoặc góc nhìn gì hôm nay?"
-        ></textarea>
+        />
       </div>
     {:else}
-      <textarea
+      <MentionTextarea
         name="content"
-        rows="3"
-        maxlength="4000"
+        rows={3}
+        maxlength={4000}
         bind:value={content}
         placeholder="Bạn muốn chia sẻ tin tức hoặc góc nhìn gì hôm nay?"
-      ></textarea>
+      />
     {/if}
+    <small>Gõ @ và ít nhất 2 ký tự để gắn tên người dùng.</small>
 
-    {#if mediaUrls.length > 0}
-      <div class="flex gap-2 mt-2 flex-wrap">
-        {#each mediaUrls as url, i}
-          <div class="relative group">
-            <img src={url} alt="media {i}" class="w-16 h-16 object-cover rounded-lg border border-slate-200" />
-            <button
-              type="button"
-              class="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity"
-              on:click={() => removeImage(i)}
-            >×</button>
-          </div>
-        {/each}
-      </div>
+    {#if postId}
+      <PostImagePicker bind:files={imageFiles} bind:existingUrls={mediaUrls}
+        inputId="composer-image-files" locked={uploading} bind:error={pickerError} />
     {/if}
 
     {#if showImageInput}
@@ -221,6 +249,7 @@
         <Icon name="AlertCircle" size={12} /> {error}
       </p>
     {/if}
+    {#if uploadError}<p class="field err-msg" role="alert">{uploadError}</p>{/if}
 
     <div class="composer-foot">
       <div class="composer-actions">
@@ -246,8 +275,8 @@
       </div>
       <span class="text-xs {charsClass} tabular-nums">{charsLeft}</span>
       <span class="t-meta" style="margin-left:auto;">Hiển thị công khai · có kiểm duyệt</span>
-      <button class="btn emerald sm" type="submit" data-testid="composer-submit">
-        {submitLabel} <Icon name="Send" size={12} />
+      <button class="btn emerald sm" type="submit" data-testid="composer-submit" disabled={uploading}>
+        {uploading ? 'Đang tải ảnh…' : submitLabel} <Icon name="Send" size={12} />
       </button>
     </div>
   </div>

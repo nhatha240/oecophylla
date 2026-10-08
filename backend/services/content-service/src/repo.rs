@@ -22,6 +22,83 @@ pub struct PostRow {
     pub updated_at: DateTime<Utc>,
 }
 
+#[derive(sqlx::FromRow)]
+pub struct PostImageRow {
+    pub content_type: String,
+    pub image_data: Vec<u8>,
+}
+
+pub async fn insert_image(
+    db: &PgPool,
+    post_id: Uuid,
+    content_type: &str,
+    image_data: &[u8],
+) -> Result<String, AppError> {
+    let image_id = Uuid::now_v7();
+    let image_url = format!("/api/v1/posts/{post_id}/images/{image_id}");
+    let mut tx = db.begin().await?;
+    let media_urls: Vec<String> =
+        sqlx::query_scalar("SELECT media_urls FROM posts WHERE id = $1 FOR UPDATE")
+            .bind(post_id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or(AppError::NotFound {
+                kind: "post".into(),
+            })?;
+    let stored_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM post_images WHERE post_id = $1")
+            .bind(post_id)
+            .fetch_one(&mut *tx)
+            .await?;
+    if media_urls.len() >= 6 || stored_count >= 6 {
+        return Err(AppError::Validation {
+            field: "image".into(),
+            message: "a post can hold up to 6 uploaded images".into(),
+        });
+    }
+    sqlx::query(
+        "INSERT INTO post_images (id, post_id, content_type, image_data) VALUES ($1, $2, $3, $4)",
+    )
+    .bind(image_id)
+    .bind(post_id)
+    .bind(content_type)
+    .bind(image_data)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query("UPDATE posts SET media_urls = array_append(media_urls, $2), updated_at = NOW() WHERE id = $1")
+        .bind(post_id).bind(&image_url).execute(&mut *tx).await?;
+    tx.commit().await?;
+    Ok(image_url)
+}
+
+pub async fn get_image(
+    db: &PgPool,
+    post_id: Uuid,
+    image_id: Uuid,
+) -> Result<Option<PostImageRow>, AppError> {
+    Ok(sqlx::query_as::<_, PostImageRow>(
+        "SELECT content_type, image_data FROM post_images WHERE post_id = $1 AND id = $2",
+    )
+    .bind(post_id)
+    .bind(image_id)
+    .fetch_optional(db)
+    .await?)
+}
+
+pub async fn delete_image(db: &PgPool, post_id: Uuid, image_id: Uuid) -> Result<(), AppError> {
+    let image_url = format!("/api/v1/posts/{post_id}/images/{image_id}");
+    let mut tx = db.begin().await?;
+    sqlx::query("DELETE FROM post_images WHERE post_id = $1 AND id = $2")
+        .bind(post_id)
+        .bind(image_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("UPDATE posts SET media_urls = array_remove(media_urls, $2), updated_at = NOW() WHERE id = $1")
+        .bind(post_id).bind(image_url).execute(&mut *tx).await?;
+    tx.commit().await?;
+    Ok(())
+}
+
 pub async fn insert(
     db: &PgPool,
     author: Uuid,

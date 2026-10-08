@@ -1,0 +1,21 @@
+{
+  "repository": "https://github.com/andreeaiana/xMIND",
+  "revision": "857194358da33e0a8014d95c3f245a5de7ac0657",
+  "license": "CC-BY-NC-SA-4.0; MIND terms also apply",
+  "files": {
+    "xMINDlarge_train.zip": {
+      "url": "https://raw.githubusercontent.com/andreeaiana/xMIND/857194358da33e0a8014d95c3f245a5de7ac0657/xMIND/vie/xMINDlarge_train.zip",
+      "git_blob_sha1": "689ce15a2ef9aedd73a6420f631dfcf06a145891",
+      "sha256": "1ec28dabfb8f84ea7e80458c94c93c5a438be0d545e60d83ed3441c0202cab37",
+      "extracted_file": "xMINDlarge_train.tsv",
+      "extracted_sha256": "b57aa4a472c24f2f9ea32969b8ad2b19639aee6733f527f152ba56560fabace5"
+    },
+    "xMINDlarge_dev.zip": {
+      "url": "https://raw.githubusercontent.com/andreeaiana/xMIND/857194358da33e0a8014d95c3f245a5de7ac0657/xMIND/vie/xMINDlarge_dev.zip",
+      "git_blob_sha1": "26cdb51af14ec092ec4f9c95e34ee5ed73d73501",
+      "sha256": "c646748d21e302256087d30392fcdcee80eea7190e1d641318febf8fcf609ecc",
+      "extracted_file": "xMINDlarge_dev.tsv",
+      "extracted_sha256": "dbc9a71133bf23f0141f05f4f56f71e5e716ff7c63ac0968ee403ee44b3058a5"
+    }
+  }
+}

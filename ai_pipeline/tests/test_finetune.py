@@ -155,3 +155,65 @@ def test_experiment_writes_bound_report_and_prevents_overwrite(tmp_path):
     )
     with pytest.raises(FileExistsError):
         finetune.run_experiment(data, np.eye(8, dtype=np.float32), tmp_path, **kwargs)
+
+
+def test_listwise_loss_keeps_all_clicks_and_masks_padding():
+    logits = torch.tensor([[2.0, 0.0, 1.0, 100.0]], requires_grad=True)
+    labels = torch.tensor([[1.0, 0.0, 1.0, 0.0]])
+    mask = torch.tensor([[True, True, True, False]])
+    loss = finetune.listwise_loss(logits, labels, mask)
+    expected = -torch.log_softmax(logits[0, :3], dim=0)[[0, 2]].mean()
+    torch.testing.assert_close(loss, expected)
+    loss.backward()
+    assert logits.grad[0, 3] == 0
+    with pytest.raises(ValueError, match="click"):
+        finetune.listwise_loss(logits, torch.zeros_like(labels), mask)
+
+
+def test_continuation_retains_best_checkpoint_and_does_not_mutate_source():
+    vectors = np.eye(8, dtype=np.float32)
+    initial = finetune.initialize_ranker(
+        NRMSArchitecture(8, 2, 4, 7, 0.0, 0.5), vectors[1]
+    )
+    initial = initial.__class__(
+        **{**initial.__dict__, "value_projection": initial.value_projection + 0.1}
+    )
+    before = initial.value_projection.copy()
+    ranker, report = finetune.fit(
+        toy_requests("train"),
+        toy_requests("validation"),
+        vectors,
+        initial_ranker=initial,
+        objective="listwise_ce",
+        anchor_strength=1.0,
+        epochs=1,
+        learning_rates=[0.001],
+        batch_size=4,
+        seed=7,
+        history_limit=4,
+        position_scale=0.0,
+        semantic_residual=0.5,
+    )
+    assert report["initial_checkpoint_validation"]["ndcg_at_10"] == 1
+    assert report["selected"]["epoch"] == 0
+    assert report["objective"] == "listwise_ce"
+    np.testing.assert_array_equal(initial.value_projection, before)
+    np.testing.assert_array_equal(ranker.value_projection, before)
+
+
+def test_continuation_rejects_incompatible_embeddings_and_invalid_objective():
+    initial = finetune.initialize_ranker(NRMSArchitecture(4, 2, 4, 7), np.ones(4))
+    with pytest.raises(ValueError, match="dimension"):
+        finetune.fit(
+            toy_requests("train"),
+            toy_requests("validation"),
+            np.eye(8),
+            initial_ranker=initial,
+        )
+    with pytest.raises(ValueError, match="objective"):
+        finetune.fit(
+            toy_requests("train"),
+            toy_requests("validation"),
+            np.eye(8),
+            objective="invalid",
+        )

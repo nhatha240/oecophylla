@@ -56,6 +56,7 @@ WEIGHTS: dict[str, float] = {
     # existing weights and must not gain a second click contribution. Dwell
     # and unhide likewise trigger v2 replay without a legacy v1 delta.
     "click": 0.0,
+    "view_observed": 0.0,
     "dwell": 0.0,
     "unhide": 0.0,
     "viewed": 0.5,

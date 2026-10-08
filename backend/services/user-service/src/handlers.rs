@@ -16,7 +16,9 @@ use std::collections::HashSet;
 use uuid::Uuid;
 
 use crate::{
-    avatar::{validate_avatar_upload, validate_avatar_url, MAX_AVATAR_BYTES},
+    avatar::{
+        validate_avatar_upload, validate_avatar_url, validate_cover_upload, MAX_AVATAR_BYTES,
+    },
     repo,
     state::AppState,
 };
@@ -51,6 +53,11 @@ pub struct SuggestionsQ {
 #[derive(serde::Serialize)]
 pub struct AvatarUploadResponse {
     pub avatar_url: String,
+}
+
+#[derive(serde::Serialize)]
+pub struct CoverUploadResponse {
+    pub cover_url: String,
 }
 
 #[derive(serde::Serialize)]
@@ -251,6 +258,74 @@ pub async fn avatar(State(s): State<AppState>, Path(id): Path<Uuid>) -> AppResul
     response.headers_mut().insert(
         header::CACHE_CONTROL,
         HeaderValue::from_static("public, max-age=31536000, immutable"),
+    );
+    response.headers_mut().insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff"),
+    );
+    Ok(response)
+}
+
+pub async fn upload_cover(
+    State(s): State<AppState>,
+    Path(id): Path<Uuid>,
+    h: axum::http::HeaderMap,
+    mut multipart: Multipart,
+) -> AppResult<Json<CoverUploadResponse>> {
+    let me = current_user(&s, &h).await?.ok_or(AppError::Unauthorized)?;
+    if me.id != id {
+        return Err(AppError::Forbidden);
+    }
+    let mut cover = None;
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|_| AppError::Validation {
+            field: "cover".into(),
+            message: "invalid multipart upload".into(),
+        })?
+    {
+        if field.name() != Some("cover") {
+            continue;
+        }
+        if cover.is_some() {
+            return Err(AppError::Validation {
+                field: "cover".into(),
+                message: "upload exactly one cover file".into(),
+            });
+        }
+        let filename = field.file_name().unwrap_or_default().to_owned();
+        let content_type = field.content_type().unwrap_or_default().to_owned();
+        let bytes = field.bytes().await.map_err(|_| AppError::Validation {
+            field: "cover".into(),
+            message: "could not read cover upload".into(),
+        })?;
+        let format = validate_cover_upload(&content_type, &filename, &bytes)?;
+        cover = Some((format, bytes));
+    }
+    let (format, bytes) = cover.ok_or(AppError::Validation {
+        field: "cover".into(),
+        message: "cover file is required".into(),
+    })?;
+    let cover_url = repo::upsert_cover(&s.db, id, format.content_type(), &bytes).await?;
+    Ok(Json(CoverUploadResponse { cover_url }))
+}
+
+pub async fn cover(State(s): State<AppState>, Path(id): Path<Uuid>) -> AppResult<Response<Body>> {
+    let cover = repo::get_cover(&s.db, id)
+        .await?
+        .ok_or(AppError::NotFound {
+            kind: "cover".into(),
+        })?;
+    let content_type = HeaderValue::from_str(&cover.content_type)
+        .map_err(|error| AppError::Other(error.into()))?;
+    let mut response = Response::new(Body::from(cover.image_data));
+    response
+        .headers_mut()
+        .insert(header::CONTENT_TYPE, content_type);
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("public, max-age=60"),
     );
     response.headers_mut().insert(
         header::X_CONTENT_TYPE_OPTIONS,

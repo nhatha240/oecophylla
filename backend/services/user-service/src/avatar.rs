@@ -53,6 +53,19 @@ pub fn validate_avatar_upload(
     Ok(format)
 }
 
+pub fn validate_cover_upload(
+    declared_content_type: &str,
+    filename: &str,
+    bytes: &[u8],
+) -> Result<AvatarFormat, AppError> {
+    validate_avatar_upload(declared_content_type, filename, bytes).map_err(|_| {
+        AppError::Validation {
+            field: "cover".into(),
+            message: "cover must be a JPEG, PNG, or WebP up to 5 MiB".into(),
+        }
+    })
+}
+
 pub fn validate_avatar_url(value: &str) -> Result<(), AppError> {
     if value.len() > 2048
         || !value.starts_with("https://")
@@ -123,5 +136,11 @@ mod tests {
         assert!(
             validate_avatar_url(&format!("https://example.test/{}", "x".repeat(2048))).is_err()
         );
+    }
+
+    #[test]
+    fn cover_upload_uses_the_same_verified_image_formats() {
+        assert!(super::validate_cover_upload("image/png", "cover.png", PNG).is_ok());
+        assert!(super::validate_cover_upload("image/png", "cover.png", b"<svg/>").is_err());
     }
 }

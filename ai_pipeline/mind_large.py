@@ -129,6 +129,7 @@ def prepare_dataset(
             parsed.append(
                 {
                     "request_group": _private_id(salt, "mind-request", identity),
+                    "user_group": _private_id(salt, "mind-user", user),
                     "served_at": _parse_timestamp(when).isoformat(),
                     "history": history_ids,
                     "candidates": candidate_ids,

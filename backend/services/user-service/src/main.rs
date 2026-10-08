@@ -50,6 +50,12 @@ async fn main() -> anyhow::Result<()> {
                 .layer(DefaultBodyLimit::max(5 * 1024 * 1024 + 64 * 1024)),
         )
         .route(
+            "/api/v1/users/{id}/cover",
+            get(handlers::cover)
+                .put(handlers::upload_cover)
+                .layer(DefaultBodyLimit::max(5 * 1024 * 1024 + 64 * 1024)),
+        )
+        .route(
             "/api/v1/users/{id}/follow",
             post(handlers::follow).delete(handlers::unfollow),
         )

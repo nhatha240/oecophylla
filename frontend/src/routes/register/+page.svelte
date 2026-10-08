@@ -17,10 +17,10 @@
     <div class="mobile-brand"><a href="/" aria-label="Trang chủ Oecophylla"><Logo size={32} /></a></div>
     <p class="eyebrow">CHÀO MỪNG BẠN ĐẾN VỚI</p><h2 class="serif" id="register-title">Tạo tài khoản</h2><p class="intro">Gia nhập cộng đồng Oecophylla để đọc, thảo luận và cùng kiến tạo những giá trị tích cực.</p>
     <form method="POST">
-      <label for="display_name">Họ và tên</label><div class="field"><Icon name="User" size={18} /><input id="display_name" name="display_name" autocomplete="name" placeholder="Nhập họ và tên" maxlength="100" /></div>
-      <label for="username">Tên người dùng</label><div class="field"><Icon name="User" size={18} /><input id="username" name="username" autocomplete="username" pattern={'[a-z0-9_]{3,30}'} title="3–30 ký tự: chữ thường, số hoặc dấu gạch dưới" placeholder="tennguoidung" required /></div>
-      <label for="email">Email</label><div class="field"><Icon name="Link" size={18} /><input id="email" name="email" type="email" autocomplete="email" placeholder="ban@vidu.com" required /></div>
-      <label for="password">Mật khẩu</label><div class="field"><Icon name="Shield" size={18} /><input id="password" name="password" type={showPassword ? 'text' : 'password'} autocomplete="new-password" minlength="8" maxlength="128" placeholder="Tạo mật khẩu" required /><button type="button" aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'} on:click={() => showPassword = !showPassword}><Icon name={showPassword ? 'EyeOff' : 'Eye'} size={17} /></button></div>
+      <label for="display_name">Họ và tên</label><div class="field"><label class="field-target" for="display_name"><Icon name="User" size={18} /><input id="display_name" name="display_name" autocomplete="name" placeholder="Nhập họ và tên" maxlength="100" /></label></div>
+      <label for="username">Tên người dùng</label><div class="field"><label class="field-target" for="username"><Icon name="User" size={18} /><input id="username" name="username" autocomplete="username" pattern={'[a-z0-9_]{3,30}'} title="3–30 ký tự: chữ thường, số hoặc dấu gạch dưới" placeholder="tennguoidung" required /></label></div>
+      <label for="email">Email</label><div class="field"><label class="field-target" for="email"><Icon name="Link" size={18} /><input id="email" name="email" type="email" autocomplete="email" placeholder="ban@vidu.com" required /></label></div>
+      <label for="password">Mật khẩu</label><div class="field"><label class="field-target" for="password"><Icon name="Shield" size={18} /><input id="password" name="password" type={showPassword ? 'text' : 'password'} autocomplete="new-password" minlength="8" maxlength="128" placeholder="Tạo mật khẩu" required /></label><button type="button" aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'} on:click={() => showPassword = !showPassword}><Icon name={showPassword ? 'EyeOff' : 'Eye'} size={17} /></button></div>
       <p class="hint">Tối thiểu 8 ký tự. Hãy chọn mật khẩu khó đoán.</p>
       {#if form?.error}<p class="error" role="alert">{form.error}</p>{/if}
       <button type="submit" class="submit">Đăng ký <Icon name="ArrowRight" size={18} /></button>
@@ -42,11 +42,12 @@
   .intro { margin: 0 0 28px; color: #71817b; font: 14px/1.6 'Lora', serif; }
   form { min-height: 0; flex: 1; display: grid; align-content: start; gap: 9px; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding-right: 4px; }
   label { margin-top: 11px; font: 600 13px 'Lora', serif; }
-  .field { display: flex; align-items: center; gap: 10px; height: 46px; padding: 0 13px; border: 1px solid #dfe8e3; border-radius: 7px; color: #43675f; }
-  .field:focus-within { border-color: #34786b; box-shadow: 0 0 0 3px #e5f1eb; }
-  input { flex: 1; width: 0; border: 0; outline: 0; background: transparent; font-size: 12px; }
+  .field { display: flex; align-items: center; height: 46px; border: 1px solid #dfe8e3; border-radius: 7px; color: #43675f; }
+  .field:focus-within { border-color: #1d675b; box-shadow: 0 0 0 3px rgba(29,103,91,.22); }
+  .field-target { display: flex; align-items: center; flex: 1; gap: 10px; min-width: 0; height: 100%; margin: 0; padding: 0 13px; font: inherit; cursor: text; }
+  input { flex: 1; width: 0; height: 100%; border: 0; outline: 0; background: transparent; font-size: 12px; }
   input::placeholder { color: #a2afa9; }
-  .field button { border: 0; background: transparent; color: #42675f; }
+  .field button { display: grid; place-items: center; flex: 0 0 32px; height: 32px; margin-right: 6px; border: 0; background: transparent; color: #42675f; }
   .hint { margin: 0; color: #879891; font-size: 10px; }
   .error { margin: 0; color: #ad4144; font-size: 12px; }
   .submit { display: flex; justify-content: center; align-items: center; gap: 10px; height: 48px; margin-top: 15px; border: 0; border-radius: 99px; color: white; background: #1d5b54; font-weight: 600; }

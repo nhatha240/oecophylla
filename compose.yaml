@@ -355,6 +355,7 @@ services:
     depends_on:
       envoy: { condition: service_started }
     environment:
+      BODY_SIZE_LIMIT: 6M
       ORIGIN: ${ORIGIN}
       ENVOY_URL: ${ENVOY_URL}
       PUBLIC_API_BASE: ${PUBLIC_API_BASE}
